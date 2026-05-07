@@ -104,6 +104,44 @@ test.describe('SSO admin — feature flag gating', () => {
     // eslint-disable-next-line security/detect-unsafe-regex -- bounded literal pattern over Playwright-supplied page.url(), no user input; anchors and greedy \d+ make backtracking polynomial
     await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/?(?:#.*)?$/)
   })
+
+  // Regression test for the boot-time race: useFeature must not return a
+  // stale "disabled" verdict before /api/features resolves, otherwise pages
+  // that gate on `if (!enabled) <Navigate />` redirect away during the
+  // initial fetch. The deliberate 300 ms delay below makes the race
+  // deterministic.
+  test('Providers does not redirect during /api/features initial load', async ({ loggedInPage: page }) => {
+    await mockMe(page, { groups: [adminGroup] })
+    await mockProviders(page, [])
+    await page.route('**/api/features', async (route) => {
+      await new Promise((r) => setTimeout(r, 300))
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ features: { 'sso.admin': true } }),
+      })
+    })
+
+    await page.goto('/admin/sso/providers')
+    await expect(page.getByText(/No SSO provider configured yet/i)).toBeVisible()
+    await expect(page).toHaveURL(/\/admin\/sso\/providers$/)
+  })
+
+  test('ProviderEdit does not redirect during /api/features initial load', async ({ loggedInPage: page }) => {
+    await mockMe(page, { groups: [adminGroup] })
+    await page.route('**/api/features', async (route) => {
+      await new Promise((r) => setTimeout(r, 300))
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ features: { 'sso.admin': true } }),
+      })
+    })
+
+    await page.goto('/admin/sso/providers/new')
+    await expect(page.getByTestId('provider-form')).toBeVisible()
+    await expect(page).toHaveURL(/\/admin\/sso\/providers\/new$/)
+  })
 })
 
 test.describe('SSO admin — providers list', () => {

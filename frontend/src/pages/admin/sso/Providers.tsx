@@ -14,7 +14,7 @@ export default function Providers() {
   const queryClient = useQueryClient()
   const me = useStore((s) => s.me)
 
-  const ssoEnabled = useFeature('sso.admin')
+  const { enabled: ssoEnabled, isLoading: featuresLoading } = useFeature('sso.admin')
 
   // Hooks must be called unconditionally. Gate via `enabled:` instead of
   // placing them after early-return guards — avoids "Rendered more hooks"
@@ -38,6 +38,7 @@ export default function Providers() {
 
   if (!me) return null
   if (!hasPerm(me.groups, 'settings:manage')) return <Navigate to="/admin" replace />
+  if (featuresLoading) return null
   if (!ssoEnabled) return <Navigate to="/admin" replace />
 
   const handleDelete = (p: SSOProvider) => {

@@ -7,7 +7,7 @@ import { useFeature } from '../hooks/useFeature'
 export default function Admin() {
   const { t } = useTranslation()
   const me = useStore((s) => s.me)
-  const ssoAdminEnabled = useFeature('sso.admin')
+  const { enabled: ssoAdminEnabled } = useFeature('sso.admin')
 
   if (!me) return null
   if (!hasPerm(me.groups, 'users:manage')) return <Navigate to="/" replace />
