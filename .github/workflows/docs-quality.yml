@@ -33,7 +33,6 @@ jobs:
             !frontend/node_modules
             !frontend/playwright-report
             !frontend/test-results
-            !design_handoff_otel_magnify
             !.git
 
   lychee:
