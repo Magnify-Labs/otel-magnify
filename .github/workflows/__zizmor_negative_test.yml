@@ -1,0 +1,21 @@
+name: __zizmor_negative_test
+# Throwaway workflow used only to verify that zizmor's `--format=github`
+# pass actually fails the actions-security job when a finding exists.
+# Delete this file before merging.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # zizmor `excessive-permissions`: write at workflow level
+
+jobs:
+  bad:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Missing persist-credentials: false → zizmor `artipacked`
+      - name: Inject untrusted input directly into a run block
+        # zizmor `template-injection`: head_commit.message is attacker-controllable
+        run: |
+          echo "got commit message: ${{ github.event.head_commit.message }}"
