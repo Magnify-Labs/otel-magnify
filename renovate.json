@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base",
+    ":semanticCommits",
+    ":dependencyDashboard"
+  ],
+  "labels": ["deps", "deps:renovate"],
+  "schedule": ["before 06:00 on monday"],
+  "timezone": "Europe/Paris",
+
+  "// Disable the default managers — Dependabot handles those": "",
+  "enabledManagers": ["regex"],
+
+  "regexManagers": [
+    {
+      "fileMatch": ["^\\.github/workflows/.+\\.ya?ml$"],
+      "matchStrings": [
+        "uses: golangci/golangci-lint-action@[a-f0-9]+\\s+# v[\\d.]+\\s*\\n\\s*with:\\s*\\n(?:\\s*[^\\n]*\\n)*?\\s*version: (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "golangci/golangci-lint",
+      "versioningTemplate": "semver"
+    },
+    {
+      "fileMatch": ["^\\.github/workflows/.+\\.ya?ml$"],
+      "matchStrings": [
+        "zricethezav/gitleaks:(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "zricethezav/gitleaks",
+      "versioningTemplate": "semver"
+    }
+  ],
+
+  "packageRules": [
+    {
+      "matchManagers": ["regex"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": false,
+      "prCreation": "immediate"
+    }
+  ]
+}
