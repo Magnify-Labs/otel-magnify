@@ -2,7 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Custom regex managers for tool versions hardcoded in workflow YAML. Renovate complements Dependabot here: Dependabot keeps handling gomod/npm/docker/github-actions; this config only enables the custom.regex manager.",
   "extends": [
-    "config:base",
+    "config:recommended",
     ":semanticCommits",
     ":dependencyDashboard"
   ],
@@ -13,7 +13,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/.+\\.ya?ml$"],
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
       "matchStrings": [
         "uses: golangci/golangci-lint-action@[a-f0-9]+\\s+# v[\\d.]+\\s*\\n\\s*with:\\s*\\n(?:\\s*[^\\n]*\\n)*?\\s*version: (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
       ],
@@ -23,7 +23,7 @@
     },
     {
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/.+\\.ya?ml$"],
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
       "matchStrings": [
         "zricethezav/gitleaks:(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
       ],
