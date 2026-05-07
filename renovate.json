@@ -1,5 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Custom regex managers for tool versions hardcoded in workflow YAML. Renovate complements Dependabot here: Dependabot keeps handling gomod/npm/docker/github-actions; this config only enables the custom.regex manager.",
   "extends": [
     "config:base",
     ":semanticCommits",
@@ -8,12 +9,10 @@
   "labels": ["deps", "deps:renovate"],
   "schedule": ["before 06:00 on monday"],
   "timezone": "Europe/Paris",
-
-  "// Disable the default managers — Dependabot handles those": "",
-  "enabledManagers": ["regex"],
-
-  "regexManagers": [
+  "enabledManagers": ["custom.regex"],
+  "customManagers": [
     {
+      "customType": "regex",
       "fileMatch": ["^\\.github/workflows/.+\\.ya?ml$"],
       "matchStrings": [
         "uses: golangci/golangci-lint-action@[a-f0-9]+\\s+# v[\\d.]+\\s*\\n\\s*with:\\s*\\n(?:\\s*[^\\n]*\\n)*?\\s*version: (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
@@ -23,6 +22,7 @@
       "versioningTemplate": "semver"
     },
     {
+      "customType": "regex",
       "fileMatch": ["^\\.github/workflows/.+\\.ya?ml$"],
       "matchStrings": [
         "zricethezav/gitleaks:(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
@@ -32,10 +32,9 @@
       "versioningTemplate": "semver"
     }
   ],
-
   "packageRules": [
     {
-      "matchManagers": ["regex"],
+      "matchManagers": ["custom.regex"],
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": false,
       "prCreation": "immediate"
