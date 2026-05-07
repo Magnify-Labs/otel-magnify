@@ -77,7 +77,13 @@ test.beforeAll(async () => {
       SEED_ADMIN_EMAIL: 'admin@e2e-sso.local',
       SEED_ADMIN_PASSWORD: 'admin12345',
       DB_DRIVER: 'sqlite',
-      DB_DSN: ':memory:',
+      // Each `:memory:` open gets its own isolated DB — connections from the
+      // sql.DB pool then see divergent state, randomly 500-ing on reads that
+      // raced a write (mappings list/POST after provider create).
+      // `file:…?mode=memory&cache=shared` keeps a single in-memory DB shared
+      // across all connections within the process. Mirrors the EE integration
+      // test pattern (internal/sso/integration_auth_test.go).
+      DB_DSN: 'file:e2e_sso?mode=memory&cache=shared',
       LISTEN_ADDR: `:${PORT}`,
       // SSO_SP_CERT_PATH/SSO_SP_KEY_PATH unset: the registry boots empty.
     },
