@@ -1,0 +1,32 @@
+# Checkov configuration for IaC scanning.
+# https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html
+#
+# Suppressions for the Helm chart (helm/otel-magnify) that cannot be
+# satisfied without code changes outside this chart, or that we have
+# evaluated and consciously declined to enforce.
+skip-check:
+  # Pull policy "Always" only matters for mutable tags. The chart pins to
+  # an immutable semver tag (defaults to .Chart.AppVersion), so
+  # IfNotPresent is safe and avoids re-pulling on every restart.
+  - CKV_K8S_15
+
+  # Operators choose the namespace at install time via `helm install -n <ns>`;
+  # the chart does not ship a Namespace template and rendering without -n in
+  # CI defaults to "default", which is a scanning artifact rather than a real
+  # exposure.
+  - CKV_K8S_21
+
+  # Mounting JWT_SECRET / DB_DSN as files (instead of env vars) requires the
+  # backend to add file-path support in internal/config/config.go. Tracked
+  # separately; revisit once the Go side accepts <ENV>_FILE indirection.
+  - CKV_K8S_35
+
+  # Pinning by digest forces every chart consumer to manage SHA references.
+  # Tag pinning + cosign signature verification (release.yml) is our chosen
+  # equivalent. Revisit if/when we publish digests in chart values.
+  - CKV_K8S_43
+
+  # NetworkPolicy enforcement is a cluster-level concern, handled in the
+  # Kubernetes deployment story (Phase 4: Network Policies / OPA Gatekeeper),
+  # not at the per-chart level.
+  - CKV2_K8S_6

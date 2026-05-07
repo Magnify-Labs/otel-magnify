@@ -158,6 +158,7 @@ jobs:
         with:
           directory: helm/
           framework: helm
+          config_file: .checkov.yml
           output_format: sarif
           output_file_path: checkov.sarif
           soft_fail: true
