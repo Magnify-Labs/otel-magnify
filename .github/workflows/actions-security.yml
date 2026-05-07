@@ -21,7 +21,6 @@ jobs:
   actionlint:
     name: actionlint (workflow lint)
     runs-on: ubuntu-latest
-    continue-on-error: true   # Phase 1 audit — à retirer Phase 2
     permissions:
       contents: read
       checks: write           # reviewdog reporter=github-pr-check pousse via Check Runs API
@@ -38,7 +37,6 @@ jobs:
   zizmor:
     name: zizmor (workflow security audit)
     runs-on: ubuntu-latest
-    continue-on-error: true   # Phase 1 audit — à retirer Phase 2
     permissions:
       contents: read
       security-events: write
@@ -46,17 +44,16 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Run zizmor (SARIF)
+      - name: Run zizmor (SARIF — feeds Security tab, exit code is always 0)
         run: |
           docker run --rm -v "${{ github.workspace }}:/repo:ro" \
             ghcr.io/zizmorcore/zizmor@sha256:128ebbe369a95f9d4427737e794537256095b55f779a247aebc960dc4ea1f7b3 \
             --format=sarif --persona=regular /repo/.github/workflows > zizmor.sarif
-      - name: Run zizmor (plain log)
-        # Tourne aussi côté community pour debug ; côté EE c'est le seul canal de visibilité.
+      - name: Run zizmor (GitHub annotations — propagates exit code, fails the job on findings)
         run: |
           docker run --rm -v "${{ github.workspace }}:/repo:ro" \
             ghcr.io/zizmorcore/zizmor@sha256:128ebbe369a95f9d4427737e794537256095b55f779a247aebc960dc4ea1f7b3 \
-            --format=plain --persona=regular /repo/.github/workflows
+            --format=github --persona=regular /repo/.github/workflows
       - name: Upload SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@65216971a11ded447a6b76263d5a144519e5eee1 # codeql-bundle-v2.25.2
