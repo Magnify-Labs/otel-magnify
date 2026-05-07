@@ -33,7 +33,7 @@ export default function ProviderEdit() {
   const id = isEdit ? (params.id as string) : ''
 
   const me = useStore((s) => s.me)
-  const ssoEnabled = useFeature('sso.admin')
+  const { enabled: ssoEnabled, isLoading: featuresLoading } = useFeature('sso.admin')
 
   const [form, setForm] = useState<SSOProviderInput>(emptyForm)
   const [error, setError] = useState<string | null>(null)
@@ -97,6 +97,7 @@ export default function ProviderEdit() {
 
   if (!me) return null
   if (!hasPerm(me.groups, 'settings:manage')) return <Navigate to="/admin" replace />
+  if (featuresLoading) return null
   if (!ssoEnabled) return <Navigate to="/admin" replace />
 
   if (isEdit && detail.isError) {
