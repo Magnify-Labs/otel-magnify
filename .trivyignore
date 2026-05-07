@@ -1,4 +1,18 @@
 # CVE allowlist for trivy scans.
-# Format: <CVE-ID>  # <Reason — re-evaluate <date>>
+# Format: <CVE-ID-or-AVD-ID>  # <Reason — re-evaluate <date>>
 #
-# Empty for now — entries will be added explicitly via PR with justification.
+# Trivy KSV misconfiguration suppressions for the Helm chart
+# (helm/otel-magnify/templates/deployment.yaml). These rules check that
+# images come from a specific trusted registry; only one can ever be
+# satisfied at a time, so we ignore all four. The chart already pins to
+# ghcr.io/magnify-labs/* by default and users are free to override.
+AVD-KSV-0032  # Reject "must use ECR" — re-evaluate 2026-12-01
+AVD-KSV-0033  # Reject "must use GCR/GAR" — re-evaluate 2026-12-01
+AVD-KSV-0034  # Reject "must use Docker Hub trusted" — re-evaluate 2026-12-01
+AVD-KSV-0035  # Reject "must use ECR" (variant) — re-evaluate 2026-12-01
+AVD-KSV-0125  # Reject "trusted-registry allowlist" — re-evaluate 2026-12-01
+
+# The chart does not hard-code a non-default namespace; operators choose it
+# at install time via `helm install -n <ns>`. Re-evaluate if/when we ship
+# a default Namespace template.
+AVD-KSV-0110  # Namespace decided at install time — re-evaluate 2026-12-01

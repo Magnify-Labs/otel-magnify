@@ -1,8 +1,9 @@
 replicaCount: 1
 
 image:
-  repository: otel-magnify
-  tag: latest
+  repository: ghcr.io/magnify-labs/otel-magnify
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
   pullPolicy: IfNotPresent
 
 service:
@@ -27,8 +28,35 @@ config:
 
 jwtSecret: ""
 
+# UID/GID 10001 matches the non-root user created in the Dockerfile.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# The binary does not call the Kubernetes API.
+automountServiceAccountToken: false
+
+# Storage for the data directory (SQLite DB, runtime state). emptyDir is
+# ephemeral; set persistence.existingClaim to bind a pre-created PVC for
+# durable storage.
+persistence:
+  enabled: false
+  existingClaim: ""
+
 resources:
   limits:
+    cpu: 500m
     memory: 256Mi
   requests:
     cpu: 100m
