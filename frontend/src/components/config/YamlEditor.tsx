@@ -16,7 +16,9 @@ export default function YamlEditor({ value, onChange, readOnly = false }: Props)
   const readOnlyCompartment = useRef(new Compartment())
   const onChangeRef = useRef(onChange)
 
-  onChangeRef.current = onChange
+  useEffect(() => {
+    onChangeRef.current = onChange
+  })
 
   useEffect(() => {
     if (!ref.current) return
