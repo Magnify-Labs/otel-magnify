@@ -274,9 +274,11 @@ func redirectAgentsToWorkloads(w http.ResponseWriter, r *http.Request) {
 	target := strings.Replace(r.URL.RequestURI(), "/api/agents", "/api/workloads", 1)
 	// A request with a protocol-relative path (e.g. `GET //evil.com/api/agents`)
 	// would yield target=`//evil.com/api/workloads`, which browsers resolve as
-	// an absolute URL to evil.com — a textbook open redirect. Require a single
-	// leading slash.
-	if !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
+	// an absolute URL to evil.com — a textbook open redirect. Reject anything
+	// that is not a single-slash absolute path: `//foo` is the obvious bypass,
+	// `/\foo` is normalised by some browsers (Chrome/Edge) to `//foo` so it is
+	// equally dangerous. CodeQL's go/bad-redirect-check expects both checks.
+	if !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") || strings.HasPrefix(target, `/\`) {
 		respondError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
