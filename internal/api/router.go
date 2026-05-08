@@ -32,6 +32,7 @@ type API struct {
 	hub               *Hub
 	opamp             OpAMPPusher
 	audit             ext.AuditLogger
+	configValidator   ConfigValidator
 	authMethods       func() []ext.AuthMethod
 	workloadRetention time.Duration
 	features          map[string]bool
@@ -50,11 +51,11 @@ type API struct {
 // auditLogger may be nil — handlers fall back to ext.NopAuditLogger so the
 // community binary works without an audit sink configured. EE wires its
 // sink via pkg/server.WithAuditLogger.
-func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, protectedHooks []func(chi.Router)) http.Handler {
+func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, configValidator ConfigValidator, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, protectedHooks []func(chi.Router)) http.Handler {
 	if auditLogger == nil {
 		auditLogger = ext.NopAuditLogger{}
 	}
-	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features}
+	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, configValidator: configValidator, authMethods: authMethods, workloadRetention: workloadRetention, features: features}
 	if api.features == nil {
 		api.features = map[string]bool{}
 	}
@@ -132,6 +133,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 
 		r.Get("/api/configs", api.handleListConfigs)
 		r.With(api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs", api.handleCreateConfig)
+		r.With(api.RequirePerm(perm.ValidateConfig)).Post("/api/configs/validate", api.handleValidateConfig)
 		r.Get("/api/configs/{id}", api.handleGetConfig)
 
 		r.Get("/api/alerts", api.handleListAlerts)

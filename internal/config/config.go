@@ -17,6 +17,7 @@ type Config struct {
 	CORSOrigins     string // comma-separated allowed origins
 	MinAgentVersion string // minimum required agent version; empty = disabled
 	WebhookURL      string // HTTP endpoint to notify on alert fire; empty = disabled
+	BinaryOtelcol   string // absolute path to an otelcol binary used for server-side config validation; empty disables the endpoint
 
 	// Workload lifecycle tuning.
 	WorkloadRetention       time.Duration // how long disconnected workloads linger before archival
@@ -36,6 +37,7 @@ func Load() Config {
 		CORSOrigins:             getenv("CORS_ORIGINS", "http://localhost:5173"),
 		MinAgentVersion:         getenv("MIN_AGENT_VERSION", ""),
 		WebhookURL:              getenv("WEBHOOK_URL", ""),
+		BinaryOtelcol:           getenv("BINARY_OTELCOL", "/usr/local/bin/otelcol-contrib"),
 		WorkloadRetention:       days(getenv("WORKLOAD_RETENTION_DAYS", "30")),
 		WorkloadDisconnectGrace: seconds(getenv("WORKLOAD_DISCONNECT_GRACE_SECONDS", "120")),
 		WorkloadJanitorInterval: seconds(getenv("WORKLOAD_JANITOR_INTERVAL_SECONDS", "300")),

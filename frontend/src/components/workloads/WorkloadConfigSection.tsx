@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { configsAPI, workloadsAPI } from '../../api/client'
 import { DOCS_BASE_URL } from '../../constants'
@@ -9,7 +10,7 @@ import ConfigDiffView from './ConfigDiffView'
 import PushHistoryTable from './PushHistoryTable'
 import { useStore } from '../../store'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
-import type { Workload, ValidationResult } from '../../types'
+import type { Workload, ValidationResult, ValidationError } from '../../types'
 
 interface Props {
   workload: Workload
@@ -20,6 +21,7 @@ type Tab = 'edit' | 'diff'
 const PUSH_TIMEOUT_MS = 30_000
 
 export default function WorkloadConfigSection({ workload }: Props) {
+  const { t } = useTranslation()
   const configStatus = useStore((s) => s.configStatus[workload.id])
   const rollback = useStore((s) => s.lastRollback[workload.id])
   const clearRollback = useStore((s) => s.clearAutoRollback)
@@ -32,6 +34,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
   const [selectedConfigId, setSelectedConfigId] = useState('')
+  // Operator escape hatch: when the validator wrongly rejects a known-good
+  // config, the user can flip Override to push anyway. The backend logs a
+  // WARN and emits an audit event with detail=override=true so this can be
+  // attributed post-incident. Reset whenever the draft changes.
+  const [override, setOverride] = useState(false)
 
   const {
     data: config,
@@ -51,7 +58,33 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const activeContent = config?.content ?? ''
 
   const validateMutation = useMutation({
-    mutationFn: () => workloadsAPI.validateConfig(workload.id, draftYaml),
+    // Run both validators in parallel:
+    //   - workload-scoped: structural shape + AvailableComponents check against
+    //     the target agent (knows what's installed there)
+    //   - global: otelcol-binary validate on the server (knows component schemas)
+    // Both must pass for the result to be considered valid; errors from each
+    // are merged so the operator sees the full picture in one panel.
+    mutationFn: async () => {
+      // The deep validator is purely additive: any failure to reach it
+      // (503 unconfigured, network blip, dev environment without the
+      // binary) falls back silently to the workload-scoped result. This
+      // way the panel never regresses when otelcol-contrib isn't wired
+      // in — the user still sees the structural + availability check.
+      const [workloadResult, configResult] = await Promise.all([
+        workloadsAPI.validateConfig(workload.id, draftYaml),
+        configsAPI
+          .validate(draftYaml)
+          .catch(() => ({ valid: true, errors: [] }) as ValidationResult),
+      ])
+      const errors: ValidationError[] = [
+        ...(workloadResult.errors ?? []),
+        ...(configResult.errors ?? []),
+      ]
+      return {
+        valid: workloadResult.valid && configResult.valid && errors.length === 0,
+        errors,
+      } satisfies ValidationResult
+    },
     onSuccess: (result) => {
       setValidation(result)
       setPushError(null)
@@ -65,7 +98,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   })
 
   const pushMutation = useMutation({
-    mutationFn: () => workloadsAPI.pushConfig(workload.id, draftYaml),
+    mutationFn: () => workloadsAPI.pushConfig(workload.id, draftYaml, { override }),
     onSuccess: (res) => {
       setPendingHash(res.config_hash)
       setTimedOut(false)
@@ -113,6 +146,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       setEditMode(false)
       setDraftYaml('')
       setValidation(null)
+      setOverride(false)
     } else if (configStatus.status === 'failed') {
       // keep editMode + draftYaml so the user can fix and retry
       setPendingHash(null)
@@ -132,6 +166,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setTab(targetTab)
     setValidation(null)
     setPushError(null)
+    setOverride(false)
   }
 
   function cancelEdit() {
@@ -139,11 +174,17 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setDraftYaml('')
     setValidation(null)
     setPushError(null)
+    setOverride(false)
   }
 
   function onDraftChange(next: string) {
     setDraftYaml(next)
+    // Any edit invalidates the previous validation pass and any override
+    // the user had set: a re-edit can change which lines the safety net
+    // would catch, so the operator must re-validate (or re-arm override)
+    // before the next push.
     if (validation !== null) setValidation(null)
+    if (override) setOverride(false)
   }
 
   const derivedStatus = pendingHash
@@ -154,12 +195,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
       }
     : configStatus
 
+  const validationPassed = validation !== null && validation.valid === true
   const canPush =
-    !!draftYaml &&
-    !pendingHash &&
-    !pushMutation.isPending &&
-    validation !== null &&
-    validation.valid === true
+    !!draftYaml && !pendingHash && !pushMutation.isPending && (validationPassed || override)
 
   // ── SDK workloads: labels as "configuration" ──────────────────────────────
   if (workload.type === 'sdk') {
@@ -237,19 +275,25 @@ export default function WorkloadConfigSection({ workload }: Props) {
       {validation && (
         <div
           className={`validation-block ${validation.valid ? 'validation-ok' : 'validation-errors'}`}
+          data-testid="validation-block"
         >
           {validation.valid ? (
-            <span>✓ Configuration is valid</span>
+            <span>{t('workloads.config.validation.valid')}</span>
           ) : (
-            <ul className="validation-error-list">
-              {(validation.errors ?? []).map((e, i) => (
-                <li key={i}>
-                  <strong>{e.code}</strong>
-                  {e.path ? <code className="validation-error-path">{e.path}</code> : null}
-                  <span className="validation-error-msg">— {e.message}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <span className="validation-errors-title">
+                {t('workloads.config.validation.invalid')}
+              </span>
+              <ul className="validation-error-list">
+                {(validation.errors ?? []).map((e, i) => (
+                  <li key={`${e.code}:${e.path}:${i}`}>
+                    <strong>{e.code}</strong>
+                    {e.path ? <code className="validation-error-path">{e.path}</code> : null}
+                    <span className="validation-error-msg">— {e.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
       )}
@@ -262,25 +306,53 @@ export default function WorkloadConfigSection({ workload }: Props) {
           onClick={() => validateMutation.mutate()}
           disabled={!draftYaml || validateMutation.isPending || !!pendingHash}
         >
-          {validateMutation.isPending ? 'Validating...' : 'Validate'}
+          {validateMutation.isPending
+            ? t('workloads.config.validation.loading')
+            : t('workloads.config.validation.idle')}
         </button>
         <button
           className="btn btn-primary"
           onClick={() => pushMutation.mutate()}
           disabled={!canPush}
           title={
-            validation === null
-              ? 'Validate the configuration first'
-              : !validation.valid
-                ? 'Fix validation errors before pushing'
-                : ''
+            validation === null && !override
+              ? t('workloads.config.validation.errors.must_validate')
+              : !validationPassed && !override
+                ? t('workloads.config.validation.errors.fix_first')
+                : override
+                  ? t('workloads.config.validation.override_active')
+                  : ''
           }
+          data-testid="push-button"
         >
-          {pendingHash ? 'Applying...' : pushMutation.isPending ? 'Pushing...' : 'Push'}
+          {pendingHash
+            ? t('workloads.config.applying')
+            : pushMutation.isPending
+              ? t('workloads.config.pushing')
+              : override
+                ? t('workloads.config.push_with_override')
+                : t('workloads.config.push')}
         </button>
         <button className="btn" onClick={cancelEdit} disabled={!!pendingHash}>
-          Cancel
+          {t('common.cancel')}
         </button>
+        {/* Operator escape hatch — only surfaced when normal push is blocked
+            (no validation pass yet, or validation failed). Hidden once the
+            user has a green light to avoid muscle-memory misuse. */}
+        {!validationPassed && (
+          <button
+            type="button"
+            className="link-button validation-override"
+            onClick={() => setOverride((v) => !v)}
+            disabled={!!pendingHash}
+            data-testid="override-link"
+            aria-pressed={override}
+          >
+            {override
+              ? t('workloads.config.validation.override_disable')
+              : t('workloads.config.validation.override_enable')}
+          </button>
+        )}
         {timedOut && (
           <span className="error-text error-text-inline">
             No response from workload — still applying?

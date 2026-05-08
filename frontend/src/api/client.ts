@@ -67,10 +67,11 @@ export const workloadsAPI = {
     api
       .get<EventsStats>(`/workloads/${id}/events/stats`, { params: { window } })
       .then((r) => r.data),
-  pushConfig: (id: string, yaml: string) =>
+  pushConfig: (id: string, yaml: string, opts?: { override?: boolean }) =>
     api
       .post<{ status: string; config_hash: string }>(`/workloads/${id}/config`, yaml, {
         headers: { 'Content-Type': 'text/yaml' },
+        params: opts?.override ? { override: 'true' } : undefined,
       })
       .then((r) => r.data),
   validateConfig: (id: string, yaml: string) =>
@@ -99,6 +100,11 @@ export const configsAPI = {
   get: (id: string) => api.get<Config>(`/configs/${id}`).then((r) => r.data),
   create: (name: string, content: string) =>
     api.post<Config>('/configs', { name, content }).then((r) => r.data),
+  // validate runs the deeper otelcol-binary validation on a candidate YAML.
+  // Complements workloadsAPI.validateConfig, which performs structural and
+  // available-component checks scoped to a specific workload.
+  validate: (content: string) =>
+    api.post<ValidationResult>('/configs/validate', { content }).then((r) => r.data),
 }
 
 export const alertsAPI = {

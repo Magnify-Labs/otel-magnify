@@ -25,6 +25,11 @@ config:
   dbDriver: pgx
   dbDSN: ""
   corsOrigins: ""
+  # Path inside the container to the otelcol binary used by
+  # POST /api/configs/validate for schema-aware validation. The default
+  # matches the binary the upstream image bundles. Set to "" to disable
+  # the endpoint (the API responds 503 until a valid path is supplied).
+  validatorBinaryPath: "/usr/local/bin/otelcol-contrib"
 
 jwtSecret: ""
 

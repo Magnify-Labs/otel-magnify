@@ -15,6 +15,7 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       WEBHOOK_URL: ${WEBHOOK_URL:-}
       MIN_AGENT_VERSION: ${MIN_AGENT_VERSION:-}
+      BINARY_OTELCOL: ${BINARY_OTELCOL:-/usr/local/bin/otelcol-contrib}
     volumes:
       - magnify-data:/data
     depends_on:

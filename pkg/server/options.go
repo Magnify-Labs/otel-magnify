@@ -17,6 +17,13 @@ type Config struct {
 	CORSOrigins     string
 	MinAgentVersion string
 
+	// BinaryOtelcol is the absolute path to an otelcol-compatible binary that
+	// supports `validate --config /dev/stdin`. When set, the server mounts a
+	// POST /api/configs/validate endpoint that shells out to this binary for
+	// schema-aware config validation. Zero value disables the endpoint
+	// (returns 503) — useful for dev images that don't bundle a collector.
+	BinaryOtelcol string
+
 	// Workload lifecycle tuning. Zero values let the downstream subsystems
 	// apply their own defaults (2-minute grace, 30-day retention, 5-minute
 	// janitor tick).

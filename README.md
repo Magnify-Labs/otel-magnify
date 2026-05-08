@@ -24,6 +24,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 
 - **Workload inventory** — real-time view of every connected workload (Kubernetes Deployment/DaemonSet/StatefulSet/Job/CronJob, or host+service for non-K8s collectors and SDK agents), with status, version, labels, and live instance count
 - **Remote config push** — edit YAML configs in-browser and push them to workloads via OpAMP; new pods inherit the active config on connect (P.2 auto-push)
+- **Server-side validation before push** — every Validate click runs both a structural check (component references, available-component matching) and `otelcol validate` for schema-aware errors; the Push button stays disabled until both pass, with an audited override path for incidents
 - **Activity log** — append-only record of pod connect/disconnect/version transitions, per workload
 - **Alert engine** — built-in rules for workload downtime, config drift (pushed config not applied), and version-outdated checks; webhook notifier for external delivery
 - **Real-time updates** — WebSocket fan-out keeps the dashboard live without polling
@@ -123,6 +124,7 @@ All configuration via environment variables:
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `SEED_ADMIN_EMAIL` | *(optional)* | Create admin user on startup |
 | `SEED_ADMIN_PASSWORD` | *(optional)* | Password for seed admin user |
+| `BINARY_OTELCOL` | `/usr/local/bin/otelcol-contrib` | Path to the `otelcol` binary used by `POST /api/configs/validate` |
 
 ## Connecting Agents
 

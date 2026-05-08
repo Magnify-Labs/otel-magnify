@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -165,16 +166,31 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 	// Safety net: refuse to push a config that fails light validation.
 	// The frontend should call /validate first for UX feedback; this blocks
 	// API-level bypass.
+	//
+	// Operators can opt out with ?override=true for emergency pushes that
+	// the validator wrongly rejects (a known-good config the local validator
+	// can't yet model). Override is logged at WARN and recorded in the audit
+	// detail so post-incident review can attribute the bypass.
+	override := r.URL.Query().Get("override") == "true"
 	var available *models.AvailableComponents
 	if wl.AvailableComponents != nil {
 		available = wl.AvailableComponents
 	}
-	if result := validator.Validate(body, available); !result.Valid {
-		respondJSON(w, 400, map[string]any{
-			"error":             "configuration failed validation",
-			"validation_errors": result.Errors,
-		})
-		return
+	if !override {
+		if result := validator.Validate(body, available); !result.Valid {
+			respondJSON(w, 400, map[string]any{
+				"error":             "configuration failed validation",
+				"validation_errors": result.Errors,
+			})
+			return
+		}
+	} else {
+		actor := "anonymous"
+		if info := ext.UserInfoFromContext(r.Context()); info != nil {
+			actor = info.Email
+		}
+		//nolint:gosec // workloadID and actor come from the authenticated request context, not arbitrary input
+		log.Printf("WARN: config push override=true workload=%s actor=%s — bypassed light validator", workloadID, actor)
 	}
 
 	sum := sha256.Sum256(body)
@@ -210,6 +226,10 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, "failed", err.Error())
 		respondError(w, 502, err.Error())
 		return
+	}
+
+	if override {
+		a.audit.Log(r.Context(), auditEventFromRequest(r, "config.push", "workload_config", workloadID+"/"+hash, "override=true"))
 	}
 
 	respondJSON(w, 202, map[string]string{

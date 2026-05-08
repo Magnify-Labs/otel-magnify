@@ -48,6 +48,10 @@ spec:
               value: ":4320"
             - name: CORS_ORIGINS
               value: {{ .Values.config.corsOrigins | quote }}
+            {{- with .Values.config.validatorBinaryPath }}
+            - name: BINARY_OTELCOL
+              value: {{ . | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:

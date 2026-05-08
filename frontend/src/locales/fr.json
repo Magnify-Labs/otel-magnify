@@ -53,6 +53,23 @@
   },
   "workloads": {
     "config": {
+      "push": "Envoyer",
+      "pushing": "Envoi...",
+      "applying": "Application...",
+      "push_with_override": "Envoyer (forcer)",
+      "validation": {
+        "idle": "Valider",
+        "loading": "Validation...",
+        "valid": "✓ Configuration valide",
+        "invalid": "Validation échouée :",
+        "override_enable": "Forcer la validation",
+        "override_disable": "Annuler le forçage",
+        "override_active": "Le prochain envoi contournera la validation ; l'action sera tracée dans l'audit.",
+        "errors": {
+          "must_validate": "Valider la configuration d'abord",
+          "fix_first": "Corriger les erreurs avant d'envoyer"
+        }
+      },
       "versioning": {
         "history_title": "Historique des pushes",
         "compare_button": "Comparer des révisions",

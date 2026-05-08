@@ -14,6 +14,7 @@ Exhaustive reference. See [Configuration](../users/configuration.md) for a user-
 | `SEED_ADMIN_PASSWORD` | No | — | Bootstrap | Password for the seeded admin. |
 | `WEBHOOK_URL` | No | — | Alerts | HTTP endpoint called when a new alert fires. |
 | `MIN_AGENT_VERSION` | No | — | Alerts | Minimum `service.version`; workloads reporting a lower version are flagged. |
+| `BINARY_OTELCOL` | No | `/usr/local/bin/otelcol-contrib` | Validation | Absolute path to an `otelcol`-compatible binary used by `POST /api/configs/validate`. Empty value disables the endpoint (returns 503). |
 | `WORKLOAD_DISCONNECT_GRACE_SECONDS` | No | `120` | Workloads | Seconds a workload stays `connected` after its last instance disconnects. |
 | `WORKLOAD_RETENTION_DAYS` | No | `30` | Workloads | Days a `disconnected` workload is kept before the janitor archives it. |
 | `WORKLOAD_EVENT_RETENTION_DAYS` | No | `30` | Workloads | Days the `workload_events` log is kept before the janitor trims it. |

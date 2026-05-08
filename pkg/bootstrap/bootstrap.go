@@ -112,6 +112,7 @@ func Run(ctx context.Context, opts Options) error {
 		OpAMPAddr:               cfg.OpAMPAddr,
 		CORSOrigins:             cfg.CORSOrigins,
 		MinAgentVersion:         cfg.MinAgentVersion,
+		BinaryOtelcol:           cfg.BinaryOtelcol,
 		WorkloadRetention:       cfg.WorkloadRetention,
 		WorkloadDisconnectGrace: cfg.WorkloadDisconnectGrace,
 		WorkloadJanitorInterval: cfg.WorkloadJanitorInterval,

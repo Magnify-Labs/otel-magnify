@@ -13,6 +13,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/alerts"
 	"github.com/magnify-labs/otel-magnify/internal/api"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
+	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/internal/workloads"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 )
@@ -134,7 +135,7 @@ func (s *Server) Run(ctx context.Context) error {
 		s.cfg.WorkloadJanitorInterval, s.cfg.WorkloadEventRetention)
 
 	// REST API router
-	router := api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.features, s.protectedRouterHooks)
+	router := api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.configValidator(), s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.features, s.protectedRouterHooks)
 
 	// Apply router hooks (enterprise can add RBAC middleware, extra routes, etc.)
 	if len(s.routerHooks) > 0 {
@@ -207,5 +208,15 @@ func (s *Server) Handler() http.Handler {
 		DisconnectGrace:   s.cfg.WorkloadDisconnectGrace,
 		RetentionDuration: s.cfg.WorkloadRetention,
 	})
-	return api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.features, s.protectedRouterHooks)
+	return api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.configValidator(), s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.features, s.protectedRouterHooks)
+}
+
+// configValidator builds an api.ConfigValidator from the configured otelcol
+// binary path. Returns nil when no path is set so api.handleValidateConfig
+// reports 503 — the binary may be unavailable in dev or in a stripped image.
+func (s *Server) configValidator() api.ConfigValidator {
+	if s.cfg.BinaryOtelcol == "" {
+		return nil
+	}
+	return &validator.OtelcolValidator{BinaryPath: s.cfg.BinaryOtelcol}
 }

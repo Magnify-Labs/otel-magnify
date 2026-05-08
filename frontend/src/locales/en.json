@@ -53,6 +53,23 @@
   },
   "workloads": {
     "config": {
+      "push": "Push",
+      "pushing": "Pushing...",
+      "applying": "Applying...",
+      "push_with_override": "Push (override)",
+      "validation": {
+        "idle": "Validate",
+        "loading": "Validating...",
+        "valid": "✓ Configuration is valid",
+        "invalid": "Validation failed:",
+        "override_enable": "Override validation",
+        "override_disable": "Cancel override",
+        "override_active": "The next attempt will bypass validation; the action is recorded in the audit log.",
+        "errors": {
+          "must_validate": "Validate the configuration first",
+          "fix_first": "Fix validation errors before pushing"
+        }
+      },
       "versioning": {
         "history_title": "Push history",
         "compare_button": "Compare revisions",

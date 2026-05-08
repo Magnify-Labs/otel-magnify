@@ -22,6 +22,12 @@ RUN apk add --no-cache ca-certificates \
     && mkdir -p /data \
     && chown magnify:magnify /data
 COPY --from=backend-build /otel-magnify /usr/local/bin/otel-magnify
+# Bundle otelcol-contrib so the API can shell out to `otelcol-contrib validate`
+# for schema-aware config validation. Pinned to the same minor as the agent
+# capability set documented in CLAUDE.md (0.150.x); bumping this tag should be
+# coordinated with the agents/ samples and the workload janitor's
+# AvailableComponents handling.
+COPY --from=otel/opentelemetry-collector-contrib:0.150.1 /otelcol-contrib /usr/local/bin/otelcol-contrib
 USER magnify:magnify
 WORKDIR /data
 VOLUME ["/data"]

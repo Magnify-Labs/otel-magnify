@@ -59,7 +59,7 @@ func newVersioningTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPush
 
 	fake := &fakeOpAMPPusher{instances: make(map[string][]opamp.Instance)}
 	audit := &recordingAuditLogger{}
-	router := NewRouter(db, a, hub, fake, audit, "", nil, nil, 30*24*time.Hour, nil, nil)
+	router := NewRouter(db, a, hub, fake, audit, nil, "", nil, nil, 30*24*time.Hour, nil, nil)
 	return db, router, fake, audit
 }
 
