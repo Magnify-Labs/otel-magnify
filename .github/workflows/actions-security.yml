@@ -80,6 +80,11 @@ jobs:
         with:
           go-version: '1.25'
       - name: Install pinact
+        # pinact >=v3.9.2 requires Go >=1.26.2; setup-go@v6 sets GOTOOLCHAIN=local
+        # by default (v5 left it auto), so we override here to let Go fetch the
+        # required toolchain on the fly without bumping the repo-wide go.mod.
+        env:
+          GOTOOLCHAIN: auto
         run: go install github.com/suzuki-shunsuke/pinact/v3/cmd/pinact@v3.9.2
       - name: pinact check (SARIF)
         # `pinact run --check` fail si une action n'est pas pinnée au SHA.
