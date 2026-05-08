@@ -271,15 +271,17 @@ func (a *API) handleDeleteWorkload(w http.ResponseWriter, r *http.Request) {
 // This is a transitional shim for frontends or scripts still on the old URL
 // shape — slated for removal at the next minor release.
 func redirectAgentsToWorkloads(w http.ResponseWriter, r *http.Request) {
-	target := strings.Replace(r.URL.RequestURI(), "/api/agents", "/api/workloads", 1)
-	// A request with a protocol-relative path (e.g. `GET //evil.com/api/agents`)
-	// would yield target=`//evil.com/api/workloads`, which browsers resolve as
-	// an absolute URL to evil.com — a textbook open redirect. Require a single
-	// leading slash.
-	if !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
+	// Validate the *decoded* path so that percent-encoded bypasses (e.g.
+	// `/%5Cevil.com/...` which decodes to `/\evil.com/...`) are caught.
+	// `RequestURI()` keeps the encoded form, which would slip past a literal
+	// HasPrefix check on `\`. Browsers resolve `//foo` and `/\foo` (after
+	// normalisation) as absolute URLs — both must be rejected.
+	p := r.URL.Path
+	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, `/\`) {
 		respondError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
+	target := strings.Replace(r.URL.RequestURI(), "/api/agents", "/api/workloads", 1)
 	// gosec G710 (taint analysis) does not recognise the prefix guard above
 	// as sanitisation, so target is still flagged as user-tainted. The guard
 	// is sufficient — TestLegacyAgentsRedirect_RejectsProtocolRelativePath

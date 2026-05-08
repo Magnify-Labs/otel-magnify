@@ -485,3 +485,21 @@ func TestLegacyAgentsRedirect_RejectsProtocolRelativePath(t *testing.T) {
 		t.Fatalf("expected no Location header on rejection, got %q", loc)
 	}
 }
+
+// Chrome and Edge normalise a leading "/\" to "//", so /\evil.com is
+// equivalent to //evil.com in the browser — the handler must reject it
+// just like the protocol-relative case above. CodeQL's go/bad-redirect-check
+// flags any redirect guard that does not cover this.
+func TestLegacyAgentsRedirect_RejectsBackslashBypass(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/agents", nil)
+	req.URL.Path = `/\evil.com/api/agents`
+	rec := httptest.NewRecorder()
+	redirectAgentsToWorkloads(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; Location = %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Fatalf("expected no Location header on rejection, got %q", loc)
+	}
+}
