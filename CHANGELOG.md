@@ -1,7 +1,41 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## v0.5.0 — 2026-05-08
+
+### Bug Fixes
+- Silence false-positive security warnings in SSO Playwright tests (#51)
+- Make Renovate config valid (#62)
+- Gate SSO admin redirect behind features.isLoading (#72)
+- Move YamlEditor onChange ref assignment into useEffect (#73)
+- Reject backslash bypass in legacy agents redirect (#85)
+
+
+### CI/CD
+- Bump actions-security to Phase 2 (enforce) (#68)
+- Ignore Go minor bumps for sdkagent image (#43)
+
+
+### Documentation
+- Update alert engine description in README
+
+
+### Features
+- Drop root + add HEALTHCHECK (#65)
+- Migrate to react-router-dom v7 (Data API) (#66)
+- Harden chart with pod security context and resource limits (#70)
+- Add explicit config revision labels, comparison, and rollback (#86)
+
+
+### Refactoring
+- Remove setState-in-effect, re-enable rule as error (#50)
+
+
 ## v0.4.0 — 2026-04-30
+
+### Documentation
+- Update changelog for v0.4.0
+
 
 ### Features
 - Expose WithProtectedRouterHook for auth-protected extensions (#49)
@@ -13,10 +47,6 @@ All notable changes to this project are documented here.
 
 ## v0.3.0 — 2026-04-30
 
-### Bug Fixes
-- Add btn base class, role=alert, missing CSS, mutation guard
-
-
 ### CI/CD
 - Foundations — lefthook, golangci, gitleaks, dependabot, security-pr, codeql (#19)
 - Public posture — Scorecard, CODEOWNERS, scheduled scan, badges, markdownlint+lychee (#40)
@@ -26,21 +56,11 @@ All notable changes to this project are documented here.
 
 ### Features
 - Apply a saved config from dropdown in collector detail (#45)
-- Export ErrUserNotFound sentinel for typed lookup errors
-- Add WithFeatures option and GET /api/features handler
-- Add admin SSO API client and query keys
-- Add useFeature hook backed by /api/features
-- Add MetadataInput component for SAML metadata source
-- Add SSO admin UI pages, Admin index, i18n
+- SSO v2 admin UI + capabilities endpoint (#47)
 
 
 ### Refactoring
 - Classify agents by attributes instead of service.name alone (#46)
-
-
-### Testing
-- Drop redundant TestGetUserByEmail_NotFound; tidy imports
-- Playwright mocked coverage for SSO admin UI
 
 
 ## v0.2.1 — 2026-04-24
