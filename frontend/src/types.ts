@@ -87,6 +87,7 @@ export interface WorkloadConfig {
   error_message?: string
   pushed_by?: string
   content?: string
+  label?: string
 }
 
 export interface AutoRollbackEvent {

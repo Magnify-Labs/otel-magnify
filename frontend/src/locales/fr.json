@@ -51,6 +51,38 @@
       "empty": "Aucune alerte active"
     }
   },
+  "workloads": {
+    "config": {
+      "versioning": {
+        "history_title": "Historique des pushes",
+        "compare_button": "Comparer des révisions",
+        "compare_needs_two": "Au moins deux révisions sont nécessaires pour comparer",
+        "compare_dialog_title": "Comparer deux révisions",
+        "compare_left_label": "Gauche (ancienne)",
+        "compare_right_label": "Droite (nouvelle)",
+        "compare_loading": "Chargement des révisions…",
+        "compare_error": "Impossible de charger l'une des révisions.",
+        "col_time": "Date",
+        "col_status": "Statut",
+        "col_user": "Utilisateur",
+        "col_hash": "Empreinte",
+        "col_label": "Étiquette",
+        "col_error": "Erreur",
+        "label_double_click_hint": "Double-clic pour éditer l'étiquette",
+        "label_input_aria": "Éditer l'étiquette de la révision",
+        "view_button": "Voir",
+        "view_title": "Config {{hash}}",
+        "close_button": "Fermer",
+        "rollback_button": "Restaurer",
+        "rollback_confirm_title": "Restaurer une ancienne révision ?",
+        "rollback_confirm_body": "La révision {{hash}} sera ré-envoyée à ce workload. L'agent la recevra comme un nouveau push.",
+        "rollback_confirm_yes": "Restaurer",
+        "rollback_in_flight": "Restauration…",
+        "rollback_error": "Échec de la restauration.",
+        "cancel_button": "Annuler"
+      }
+    }
+  },
   "inventory": {
     "title": "Inventaire",
     "filter": {

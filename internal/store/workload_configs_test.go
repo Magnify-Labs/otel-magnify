@@ -126,3 +126,84 @@ func TestGetLastAppliedWorkloadConfig_None(t *testing.T) {
 		t.Fatalf("expected nil, got %+v", wc)
 	}
 }
+
+func TestSetWorkloadConfigLabel_SetAndClear(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "a1")
+	seedConfig(t, db, "h1", "yaml")
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "a1", ConfigID: "h1", Status: "applied"})
+
+	if err := db.SetWorkloadConfigLabel("a1", "h1", "stable-2026-05"); err != nil {
+		t.Fatalf("SetWorkloadConfigLabel: %v", err)
+	}
+
+	wc, err := db.GetWorkloadConfigByHash("a1", "h1")
+	if err != nil || wc == nil {
+		t.Fatalf("GetWorkloadConfigByHash: %v / %+v", err, wc)
+	}
+	if wc.Label == nil || *wc.Label != "stable-2026-05" {
+		t.Fatalf("Label = %v, want stable-2026-05", wc.Label)
+	}
+
+	// Clear the label by passing the empty string.
+	if err := db.SetWorkloadConfigLabel("a1", "h1", ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	wc, _ = db.GetWorkloadConfigByHash("a1", "h1")
+	if wc.Label != nil {
+		t.Fatalf("Label after clear = %v, want nil", wc.Label)
+	}
+}
+
+func TestSetWorkloadConfigLabel_AppliesToAllRowsForHash(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "a1")
+	seedConfig(t, db, "h1", "yaml")
+	// Same hash pushed twice — both rows should pick up the label since it
+	// describes the revision content, not a specific push instance.
+	t0 := time.Now().UTC()
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "a1", ConfigID: "h1", AppliedAt: t0, Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "a1", ConfigID: "h1", AppliedAt: t0.Add(time.Second), Status: "applied"})
+
+	if err := db.SetWorkloadConfigLabel("a1", "h1", "blessed"); err != nil {
+		t.Fatal(err)
+	}
+
+	hist, _ := db.GetWorkloadConfigHistory("a1")
+	if len(hist) != 2 {
+		t.Fatalf("len = %d, want 2", len(hist))
+	}
+	for i, row := range hist {
+		if row.Label == nil || *row.Label != "blessed" {
+			t.Errorf("row %d Label = %v, want blessed", i, row.Label)
+		}
+	}
+}
+
+func TestSetWorkloadConfigLabel_UnknownHashReturnsErrNoRows(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "a1")
+
+	err := db.SetWorkloadConfigLabel("a1", "ghost", "x")
+	if err == nil {
+		t.Fatal("expected error for unknown hash")
+	}
+	// We deliberately surface sql.ErrNoRows so the API can map it to 404
+	// without needing custom error sentinels in the store package.
+	if err.Error() != "sql: no rows in result set" {
+		t.Fatalf("err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestGetWorkloadConfigByHash_None(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "a1")
+
+	wc, err := db.GetWorkloadConfigByHash("a1", "ghost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wc != nil {
+		t.Fatalf("expected nil, got %+v", wc)
+	}
+}

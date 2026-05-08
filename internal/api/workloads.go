@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -255,6 +256,175 @@ func (a *API) handleGetWorkloadConfigHistory(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	respondJSON(w, 200, history)
+}
+
+// handleGetWorkloadConfigByHash returns a single past push of a config to the
+// workload, joined with the YAML content. Used by ConfigCompareDialog to
+// fetch arbitrary revisions for diffing.
+func (a *API) handleGetWorkloadConfigByHash(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	hash := chi.URLParam(r, "hash")
+
+	wc, err := a.db.GetWorkloadConfigByHash(id, hash)
+	if err != nil {
+		respondError(w, 500, "failed to get config")
+		return
+	}
+	if wc == nil {
+		respondError(w, 404, "config not found in this workload's history")
+		return
+	}
+	respondJSON(w, 200, wc)
+}
+
+type setLabelRequest struct {
+	Label string `json:"label"`
+}
+
+// handleSetWorkloadConfigLabel attaches (or clears, when label == "") a
+// human-readable label to a past revision. Operators use this from the push
+// history table to mark specific hashes as "stable", "before audit", etc.
+// Emits a config.label audit event regardless of community vs EE — the sink
+// is NopAuditLogger by default; EE wires a real one via WithAuditLogger.
+func (a *API) handleSetWorkloadConfigLabel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	hash := chi.URLParam(r, "hash")
+
+	var req setLabelRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil {
+		respondError(w, 400, "invalid JSON body")
+		return
+	}
+	// Trim user input but keep "" as the explicit clear signal — the store
+	// turns it into SQL NULL.
+	label := strings.TrimSpace(req.Label)
+	if len(label) > 128 {
+		respondError(w, 400, "label too long (max 128 chars)")
+		return
+	}
+
+	if err := a.db.SetWorkloadConfigLabel(id, hash, label); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, 404, "config not found in this workload's history")
+			return
+		}
+		respondError(w, 500, "failed to set label")
+		return
+	}
+
+	a.audit.Log(r.Context(), auditEventFromRequest(r, "config.label", "workload_config", id+"/"+hash, "label="+label))
+	respondJSON(w, 200, map[string]string{"label": label})
+}
+
+// handleRollbackWorkloadConfig re-pushes the YAML of the given hash through
+// the same pipeline as a fresh push (validation, RecordWorkloadConfig with
+// status=pending, opamp.PushConfig). The new history row carries a fresh
+// timestamp and pushed_by — rollback is observable as a normal push, just
+// re-using past content.
+func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Request) {
+	workloadID := chi.URLParam(r, "id")
+	hash := chi.URLParam(r, "hash")
+
+	if a.opamp == nil {
+		respondError(w, 503, "OpAMP server not available")
+		return
+	}
+
+	wc, err := a.db.GetWorkloadConfigByHash(workloadID, hash)
+	if err != nil {
+		respondError(w, 500, "failed to load past config")
+		return
+	}
+	if wc == nil {
+		respondError(w, 404, "config not found in this workload's history")
+		return
+	}
+	if wc.Content == "" {
+		// History rows JOIN configs.content; an empty string means the
+		// underlying configs row is missing. Refuse to rollback to a
+		// body we cannot reconstruct.
+		respondError(w, 410, "config content is no longer available")
+		return
+	}
+
+	wl, err := a.db.GetWorkload(workloadID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		respondError(w, 500, "failed to load workload")
+		return
+	}
+	if err == nil && !wl.AcceptsRemoteConfig {
+		respondJSON(w, http.StatusConflict, map[string]string{
+			"error": "workload does not accept remote config",
+			"code":  "remote_config_unsupported",
+		})
+		return
+	}
+
+	body := []byte(wc.Content)
+
+	var available *models.AvailableComponents
+	if wl.AvailableComponents != nil {
+		available = wl.AvailableComponents
+	}
+	// Re-validate against the workload's *current* AvailableComponents
+	// rather than trusting that the past hash is still semantically valid.
+	// A rollback to a config that referenced a now-uninstalled exporter
+	// must fail loudly, not silently break the agent.
+	if result := validator.Validate(body, available); !result.Valid {
+		respondJSON(w, 400, map[string]any{
+			"error":             "configuration failed validation",
+			"validation_errors": result.Errors,
+		})
+		return
+	}
+
+	pushedBy := ""
+	if info := ext.UserInfoFromContext(r.Context()); info != nil {
+		pushedBy = info.Email
+	}
+
+	if err := a.db.RecordWorkloadConfig(models.WorkloadConfig{
+		WorkloadID: workloadID,
+		ConfigID:   hash,
+		Status:     "pending",
+		PushedBy:   pushedBy,
+	}); err != nil {
+		respondError(w, 500, "failed to record push")
+		return
+	}
+
+	if err := a.opamp.PushConfig(r.Context(), workloadID, body, ""); err != nil {
+		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, "failed", err.Error())
+		respondError(w, 502, err.Error())
+		return
+	}
+
+	shortHash := hash
+	if len(shortHash) > 12 {
+		shortHash = shortHash[:12]
+	}
+	a.audit.Log(r.Context(), auditEventFromRequest(r, "config.rollback", "workload_config", workloadID+"/"+hash, "rollback to "+shortHash))
+	respondJSON(w, 202, map[string]string{
+		"status":      "rollback initiated",
+		"config_hash": hash,
+	})
+}
+
+// auditEventFromRequest builds an AuditEvent populated from the authenticated
+// principal in context. UserInfo is always present here because all three
+// label/rollback endpoints sit behind the Bearer-token middleware.
+func auditEventFromRequest(r *http.Request, action, resource, resourceID, detail string) ext.AuditEvent {
+	ev := ext.AuditEvent{
+		Action:     action,
+		Resource:   resource,
+		ResourceID: resourceID,
+		Detail:     detail,
+	}
+	if info := ext.UserInfoFromContext(r.Context()); info != nil {
+		ev.UserID = info.UserID
+		ev.Email = info.Email
+	}
+	return ev
 }
 
 func (a *API) handleDeleteWorkload(w http.ResponseWriter, r *http.Request) {

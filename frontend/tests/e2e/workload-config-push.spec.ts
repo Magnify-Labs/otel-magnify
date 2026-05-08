@@ -289,7 +289,9 @@ test('history table renders with rollback action', async ({ loggedInPage: page }
   await expect(page.locator('.history-table tbody tr')).toHaveCount(2)
   await expect(page.locator('.history-error').first()).toHaveText('')
   await expect(page.locator('.history-error').nth(1)).toContainText('boom')
-  await expect(page.getByRole('button', { name: 'Rollback to this' })).toBeVisible()
+  // Rollback affordance was renamed (config-versioning v0.5.0): each row with
+  // recoverable content shows a "Rollback" button that opens a confirm dialog.
+  await expect(page.getByRole('button', { name: 'Rollback' }).first()).toBeVisible()
 })
 
 test('YAML keys are colored via Signal Deck theme', async ({ loggedInPage: page }) => {

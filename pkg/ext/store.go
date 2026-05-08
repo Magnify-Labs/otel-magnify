@@ -45,6 +45,17 @@ type Store interface {
 	GetLatestPendingWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 	GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfig, error)
 	GetLastAppliedWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
+
+	// SetWorkloadConfigLabel attaches (or clears, when label == "") an
+	// operator-facing label to every workload_configs row matching
+	// (workloadID, configID == hash). Multiple rows may match when the same
+	// content has been pushed several times; they all carry the same label
+	// because the label describes the *revision content*, not a single push.
+	SetWorkloadConfigLabel(workloadID, hash, label string) error
+	// GetWorkloadConfigByHash returns the most recent push of the given
+	// hash to the workload, joined with the config content. Returns
+	// (nil, nil) when no row matches.
+	GetWorkloadConfigByHash(workloadID, hash string) (*models.WorkloadConfig, error)
 	GetPushActivity(days int) ([]models.PushActivityPoint, error)
 
 	CreateAlert(a models.Alert) error
