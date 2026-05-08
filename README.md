@@ -25,7 +25,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 - **Workload inventory** — real-time view of every connected workload (Kubernetes Deployment/DaemonSet/StatefulSet/Job/CronJob, or host+service for non-K8s collectors and SDK agents), with status, version, labels, and live instance count
 - **Remote config push** — edit YAML configs in-browser and push them to workloads via OpAMP; new pods inherit the active config on connect (P.2 auto-push)
 - **Activity log** — append-only record of pod connect/disconnect/version transitions, per workload
-- **Alert engine** — automatic detection of workload downtime (config drift and version checks planned)
+- **Alert engine** — built-in rules for workload downtime, config drift (pushed config not applied), and version-outdated checks; webhook notifier for external delivery
 - **Real-time updates** — WebSocket fan-out keeps the dashboard live without polling
 - **Multi-deployment** — runs locally, in Docker Compose, or on Kubernetes via Helm
 
