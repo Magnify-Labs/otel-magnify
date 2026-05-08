@@ -272,5 +272,13 @@ func (a *API) handleDeleteWorkload(w http.ResponseWriter, r *http.Request) {
 // shape — slated for removal at the next minor release.
 func redirectAgentsToWorkloads(w http.ResponseWriter, r *http.Request) {
 	target := strings.Replace(r.URL.RequestURI(), "/api/agents", "/api/workloads", 1)
+	// A request with a protocol-relative path (e.g. `GET //evil.com/api/agents`)
+	// would yield target=`//evil.com/api/workloads`, which browsers resolve as
+	// an absolute URL to evil.com — a textbook open redirect. Require a single
+	// leading slash.
+	if !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
+		respondError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
 	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }
