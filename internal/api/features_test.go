@@ -25,7 +25,7 @@ func newFeaturesTestRouter(t *testing.T, features map[string]bool) http.Handler 
 		t.Fatalf("Migrate: %v", err)
 	}
 	a := auth.New("0123456789abcdef0123456789abcdef")
-	return NewRouter(db, a, nil, nil, "", nil, nil, 30*24*time.Hour, features, nil)
+	return NewRouter(db, a, nil, nil, nil, "", nil, nil, 30*24*time.Hour, features, nil)
 }
 
 func TestListFeatures_Public_NoAuth(t *testing.T) {

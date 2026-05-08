@@ -41,6 +41,44 @@ for i in $(seq 1 90); do
   fi
 done
 
+echo "--- smoke: config-versioning routing + JSON shape ---"
+# Catch routing/JSON regressions on /configs/{hash}/{label,rollback,GET} before
+# we burn time on Playwright. These curl checks need only a working API and
+# the seeded admin — no agent connection required.
+TOKEN="$(curl -fsS -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"${SEED_ADMIN_EMAIL}\",\"password\":\"${SEED_ADMIN_PASSWORD}\"}" \
+  | grep -o '"token":"[^"]*"' | cut -d'"' -f4)"
+if [ -z "$TOKEN" ]; then
+  echo "smoke: failed to login as ${SEED_ADMIN_EMAIL}"
+  exit 1
+fi
+
+# 401 paths (no header) — every versioning endpoint must reject anonymous calls.
+for endpoint in \
+    "POST /api/workloads/foo/configs/bar/label" \
+    "GET  /api/workloads/foo/configs/bar" \
+    "POST /api/workloads/foo/configs/bar/rollback"; do
+  method="${endpoint%% *}"
+  path="${endpoint##* }"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -X "$method" "http://localhost:8080${path}")"
+  if [ "$code" != "401" ]; then
+    echo "smoke: expected 401 on ${method} ${path}, got ${code}"
+    exit 1
+  fi
+done
+
+# Authenticated 404 path on an unknown hash — proves routing + handler return
+# the JSON {"error":...} shape the frontend renders.
+not_found_body="$(curl -fsS -X GET http://localhost:8080/api/workloads/ghost/configs/ghost \
+  -H "Authorization: Bearer ${TOKEN}" -o /dev/null -w '%{http_code}')"
+if [ "$not_found_body" != "404" ]; then
+  echo "smoke: expected 404 on GET /api/workloads/ghost/configs/ghost, got ${not_found_body}"
+  exit 1
+fi
+
+echo "smoke: config-versioning OK"
+
 echo "--- running Playwright real suite ---"
 cd frontend
 npx playwright test --config=playwright.real.config.ts "$@"

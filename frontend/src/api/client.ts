@@ -81,6 +81,16 @@ export const workloadsAPI = {
       .then((r) => r.data),
   getConfigHistory: (id: string) =>
     api.get<WorkloadConfig[]>(`/workloads/${id}/configs`).then((r) => r.data ?? []),
+  getConfigByHash: (id: string, hash: string) =>
+    api.get<WorkloadConfig>(`/workloads/${id}/configs/${hash}`).then((r) => r.data),
+  setConfigLabel: (id: string, hash: string, label: string) =>
+    api
+      .post<{ label: string }>(`/workloads/${id}/configs/${hash}/label`, { label })
+      .then((r) => r.data),
+  rollbackConfig: (id: string, hash: string) =>
+    api
+      .post<{ status: string; config_hash: string }>(`/workloads/${id}/configs/${hash}/rollback`)
+      .then((r) => r.data),
   delete: (id: string) => api.delete(`/workloads/${id}`),
 }
 

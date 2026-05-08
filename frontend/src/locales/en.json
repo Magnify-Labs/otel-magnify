@@ -51,6 +51,38 @@
       "empty": "No active alerts"
     }
   },
+  "workloads": {
+    "config": {
+      "versioning": {
+        "history_title": "Push history",
+        "compare_button": "Compare revisions",
+        "compare_needs_two": "Need at least two revisions to compare",
+        "compare_dialog_title": "Compare two revisions",
+        "compare_left_label": "Left (old)",
+        "compare_right_label": "Right (new)",
+        "compare_loading": "Loading revisions…",
+        "compare_error": "Failed to load one of the revisions.",
+        "col_time": "Time",
+        "col_status": "Status",
+        "col_user": "User",
+        "col_hash": "Hash",
+        "col_label": "Label",
+        "col_error": "Error",
+        "label_double_click_hint": "Double-click to edit label",
+        "label_input_aria": "Edit revision label",
+        "view_button": "View",
+        "view_title": "Config {{hash}}",
+        "close_button": "Close",
+        "rollback_button": "Rollback",
+        "rollback_confirm_title": "Rollback to past revision?",
+        "rollback_confirm_body": "Re-push revision {{hash}} to this workload. The agent will receive it as a new push.",
+        "rollback_confirm_yes": "Rollback",
+        "rollback_in_flight": "Rolling back…",
+        "rollback_error": "Rollback failed.",
+        "cancel_button": "Cancel"
+      }
+    }
+  },
   "inventory": {
     "title": "Inventory",
     "filter": {

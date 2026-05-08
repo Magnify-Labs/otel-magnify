@@ -31,6 +31,7 @@ type API struct {
 	auth              ext.AuthProvider
 	hub               *Hub
 	opamp             OpAMPPusher
+	audit             ext.AuditLogger
 	authMethods       func() []ext.AuthMethod
 	workloadRetention time.Duration
 	features          map[string]bool
@@ -45,8 +46,15 @@ type API struct {
 // each hook receives a chi.Router whose requests have already been
 // authenticated and decorated with ext.UserInfoFromContext. Pass nil
 // when no extra protected routes are needed (the standard community case).
-func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, protectedHooks []func(chi.Router)) http.Handler {
-	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, authMethods: authMethods, workloadRetention: workloadRetention, features: features}
+//
+// auditLogger may be nil — handlers fall back to ext.NopAuditLogger so the
+// community binary works without an audit sink configured. EE wires its
+// sink via pkg/server.WithAuditLogger.
+func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, protectedHooks []func(chi.Router)) http.Handler {
+	if auditLogger == nil {
+		auditLogger = ext.NopAuditLogger{}
+	}
+	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features}
 	if api.features == nil {
 		api.features = map[string]bool{}
 	}
@@ -109,6 +117,9 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config", api.handlePushWorkloadConfig)
 		r.With(api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/validate", api.handleValidateWorkloadConfig)
 		r.Get("/api/workloads/{id}/configs", api.handleGetWorkloadConfigHistory)
+		r.Get("/api/workloads/{id}/configs/{hash}", api.handleGetWorkloadConfigByHash)
+		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/label", api.handleSetWorkloadConfigLabel)
+		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/rollback", api.handleRollbackWorkloadConfig)
 		r.With(api.RequirePerm(perm.ArchiveWorkload)).Post("/api/workloads/{id}/archive", api.handleArchiveWorkload)
 		r.With(api.RequirePerm(perm.DeleteWorkload)).Delete("/api/workloads/{id}", api.handleDeleteWorkload)
 

@@ -119,6 +119,10 @@ type WorkloadConfig struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 	PushedBy     string    `json:"pushed_by,omitempty"`
 	Content      string    `json:"content,omitempty"` // filled by JOIN in history queries
+	// Label is a free-form, user-supplied marker for this revision (e.g.
+	// "stable-2026-05", "before audit"). Nil pointer = unset; "" = explicitly
+	// cleared. Operators set it from the push history table.
+	Label *string `json:"label,omitempty"`
 }
 
 // PushActivityPoint is one bucket in the dashboard push-activity chart.

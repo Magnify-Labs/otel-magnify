@@ -36,18 +36,25 @@ func (d *DB) UpdateWorkloadConfigStatus(workloadID, configID, status, errorMessa
 
 // GetLatestPendingWorkloadConfig returns the most recent still-pending push for the workload, or (nil, nil) if there is none.
 func (d *DB) GetLatestPendingWorkloadConfig(workloadID string) (*models.WorkloadConfig, error) {
-	var wc models.WorkloadConfig
+	var (
+		wc    models.WorkloadConfig
+		label sql.NullString
+	)
 	err := d.QueryRow(`
 		SELECT workload_id, config_id, applied_at, status,
-		       COALESCE(error_message, ''), COALESCE(pushed_by, '')
+		       COALESCE(error_message, ''), COALESCE(pushed_by, ''), label
 		FROM workload_configs WHERE workload_id = ? AND status = 'pending'
 		ORDER BY applied_at DESC LIMIT 1`, workloadID,
-	).Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status, &wc.ErrorMessage, &wc.PushedBy)
+	).Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status, &wc.ErrorMessage, &wc.PushedBy, &label)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if label.Valid {
+		v := label.String
+		wc.Label = &v
 	}
 	return &wc, nil
 }
@@ -57,7 +64,7 @@ func (d *DB) GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfi
 	rows, err := d.Query(`
 		SELECT wc.workload_id, wc.config_id, wc.applied_at, wc.status,
 		       COALESCE(wc.error_message, ''), COALESCE(wc.pushed_by, ''),
-		       COALESCE(c.content, '')
+		       COALESCE(c.content, ''), wc.label
 		FROM workload_configs wc
 		LEFT JOIN configs c ON c.id = wc.config_id
 		WHERE wc.workload_id = ?
@@ -70,10 +77,17 @@ func (d *DB) GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfi
 
 	var history []models.WorkloadConfig
 	for rows.Next() {
-		var wc models.WorkloadConfig
+		var (
+			wc    models.WorkloadConfig
+			label sql.NullString
+		)
 		if err := rows.Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status,
-			&wc.ErrorMessage, &wc.PushedBy, &wc.Content); err != nil {
+			&wc.ErrorMessage, &wc.PushedBy, &wc.Content, &label); err != nil {
 			return nil, err
+		}
+		if label.Valid {
+			v := label.String
+			wc.Label = &v
 		}
 		history = append(history, wc)
 	}
@@ -120,22 +134,82 @@ func (d *DB) GetPushActivity(days int) ([]models.PushActivityPoint, error) {
 
 // GetLastAppliedWorkloadConfig returns the most recent successfully-applied config for a workload, or (nil, nil) if none has applied yet.
 func (d *DB) GetLastAppliedWorkloadConfig(workloadID string) (*models.WorkloadConfig, error) {
-	var wc models.WorkloadConfig
+	var (
+		wc    models.WorkloadConfig
+		label sql.NullString
+	)
 	err := d.QueryRow(`
 		SELECT wc.workload_id, wc.config_id, wc.applied_at, wc.status,
 		       COALESCE(wc.error_message, ''), COALESCE(wc.pushed_by, ''),
-		       COALESCE(c.content, '')
+		       COALESCE(c.content, ''), wc.label
 		FROM workload_configs wc
 		LEFT JOIN configs c ON c.id = wc.config_id
 		WHERE wc.workload_id = ? AND wc.status = 'applied'
 		ORDER BY wc.applied_at DESC LIMIT 1`, workloadID,
 	).Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status,
-		&wc.ErrorMessage, &wc.PushedBy, &wc.Content)
+		&wc.ErrorMessage, &wc.PushedBy, &wc.Content, &label)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if label.Valid {
+		v := label.String
+		wc.Label = &v
+	}
+	return &wc, nil
+}
+
+// SetWorkloadConfigLabel attaches a user-facing label to every history row
+// matching (workloadID, hash). Passing an empty label clears any existing
+// value (stored as SQL NULL). Returns sql.ErrNoRows when no row matches —
+// the caller can surface a 404 to the user.
+func (d *DB) SetWorkloadConfigLabel(workloadID, hash, label string) error {
+	res, err := d.Exec(
+		`UPDATE workload_configs SET label = ? WHERE workload_id = ? AND config_id = ?`,
+		nullIfEmpty(label), workloadID, hash,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// GetWorkloadConfigByHash returns the most recent push of the given hash to
+// the workload, joined with the config content. Returns (nil, nil) when no
+// row matches so the handler can surface a clean 404.
+func (d *DB) GetWorkloadConfigByHash(workloadID, hash string) (*models.WorkloadConfig, error) {
+	var (
+		wc    models.WorkloadConfig
+		label sql.NullString
+	)
+	err := d.QueryRow(`
+		SELECT wc.workload_id, wc.config_id, wc.applied_at, wc.status,
+		       COALESCE(wc.error_message, ''), COALESCE(wc.pushed_by, ''),
+		       COALESCE(c.content, ''), wc.label
+		FROM workload_configs wc
+		LEFT JOIN configs c ON c.id = wc.config_id
+		WHERE wc.workload_id = ? AND wc.config_id = ?
+		ORDER BY wc.applied_at DESC LIMIT 1`, workloadID, hash,
+	).Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status,
+		&wc.ErrorMessage, &wc.PushedBy, &wc.Content, &label)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if label.Valid {
+		v := label.String
+		wc.Label = &v
 	}
 	return &wc, nil
 }
