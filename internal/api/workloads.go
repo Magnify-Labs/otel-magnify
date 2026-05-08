@@ -280,5 +280,9 @@ func redirectAgentsToWorkloads(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
-	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+	// gosec G710 (taint analysis) does not recognise the prefix guard above
+	// as sanitisation, so target is still flagged as user-tainted. The guard
+	// is sufficient — TestLegacyAgentsRedirect_RejectsProtocolRelativePath
+	// covers the bypass attempt.
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect) //nolint:gosec // G710 false positive
 }
