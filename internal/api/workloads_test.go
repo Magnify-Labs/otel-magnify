@@ -466,3 +466,22 @@ func TestLegacyAgentsRedirect_KeepsSubpath(t *testing.T) {
 		t.Fatalf("Location = %q", loc)
 	}
 }
+
+// Defense against an open redirect: a crafted request whose URL.Path starts
+// with "//" produces a RequestURI() like "//evil.com/api/agents". After the
+// strings.Replace the target is "//evil.com/api/workloads", which browsers
+// resolve as an absolute URL to evil.com — gosec G710 flags this. The handler
+// must reject it with 400.
+func TestLegacyAgentsRedirect_RejectsProtocolRelativePath(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/agents", nil)
+	req.URL.Path = "//evil.com/api/agents"
+	rec := httptest.NewRecorder()
+	redirectAgentsToWorkloads(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; Location = %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Fatalf("expected no Location header on rejection, got %q", loc)
+	}
+}
