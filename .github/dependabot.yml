@@ -32,6 +32,14 @@ updates:
       interval: weekly
       day: monday
     labels: ["deps", "deps:docker"]
+    # Stack-wide Go bumps are coordinated manually (go.mod + all Dockerfiles +
+    # CI workflows). Ignore Go minor/major bumps here so they don't slip in via
+    # the SDK agent image alone.
+    ignore:
+      - dependency-name: "golang"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   # GitHub Actions
   - package-ecosystem: github-actions
