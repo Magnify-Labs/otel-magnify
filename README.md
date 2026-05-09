@@ -27,7 +27,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 - **Activity log** — append-only record of pod connect/disconnect/version transitions, per workload
 - **Alert engine** — built-in rules for workload downtime, config drift (pushed config not applied), and version-outdated checks; webhook notifier for external delivery
 - **Real-time updates** — WebSocket fan-out keeps the dashboard live without polling
-- **Audit log** — security-relevant actions (login success/failure, password change, config create/push/rollback/label, workload archive/delete) are emitted through a pluggable `AuditLogger` interface; community defaults to a no-op sink, a persistent backend ships with the Enterprise edition
+- **Audit log** — security-relevant actions (login success/failure, password change, config create/push/rollback/label, workload archive/delete) are emitted through a pluggable `AuditLogger` interface; community defaults to a no-op sink, a persistent backend ships with the Enterprise edition. When the audit sink fails, handlers respond 503 with a `side_effect_status` body field (`applied` / `none`) so callers can reconcile.
 - **Multi-deployment** — runs locally, in Docker Compose, or on Kubernetes via Helm
 
 ## Architecture
