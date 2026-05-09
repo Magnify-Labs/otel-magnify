@@ -60,7 +60,10 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to create config")
 		return
 	}
-	audit.Emit(r.Context(), a.audit, "config.create", "config", cfg.ID, "")
+	if err := audit.Emit(r.Context(), a.audit, "config.create", "config", cfg.ID, ""); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
 	respondJSON(w, 201, cfg)
 }
 

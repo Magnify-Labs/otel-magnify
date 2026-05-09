@@ -19,10 +19,11 @@ import (
 // identifier in detail.
 //
 // A nil logger is treated as a no-op so call sites don't have to guard
-// against the community NopAuditLogger default.
-func Emit(ctx context.Context, logger ext.AuditLogger, action, resource, resourceID, detail string) {
+// against the community NopAuditLogger default. Returns the underlying
+// logger's error so handlers can fail-loud.
+func Emit(ctx context.Context, logger ext.AuditLogger, action, resource, resourceID, detail string) error {
 	if logger == nil {
-		return
+		return nil
 	}
 	ev := ext.AuditEvent{
 		Action:     action,
@@ -34,5 +35,5 @@ func Emit(ctx context.Context, logger ext.AuditLogger, action, resource, resourc
 		ev.UserID = info.UserID
 		ev.Email = info.Email
 	}
-	logger.Log(ctx, ev)
+	return logger.Log(ctx, ev)
 }
