@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
@@ -212,6 +213,7 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	audit.Emit(r.Context(), a.audit, "config.push", "workload", workloadID, hash)
 	respondJSON(w, 202, map[string]string{
 		"status":      "config push initiated",
 		"config_hash": hash,
@@ -312,7 +314,7 @@ func (a *API) handleSetWorkloadConfigLabel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	a.audit.Log(r.Context(), auditEventFromRequest(r, "config.label", "workload_config", id+"/"+hash, "label="+label))
+	audit.Emit(r.Context(), a.audit, "config.label", "workload", id, label)
 	respondJSON(w, 200, map[string]string{"label": label})
 }
 
@@ -399,32 +401,11 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	shortHash := hash
-	if len(shortHash) > 12 {
-		shortHash = shortHash[:12]
-	}
-	a.audit.Log(r.Context(), auditEventFromRequest(r, "config.rollback", "workload_config", workloadID+"/"+hash, "rollback to "+shortHash))
+	audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, hash)
 	respondJSON(w, 202, map[string]string{
 		"status":      "rollback initiated",
 		"config_hash": hash,
 	})
-}
-
-// auditEventFromRequest builds an AuditEvent populated from the authenticated
-// principal in context. UserInfo is always present here because all three
-// label/rollback endpoints sit behind the Bearer-token middleware.
-func auditEventFromRequest(r *http.Request, action, resource, resourceID, detail string) ext.AuditEvent {
-	ev := ext.AuditEvent{
-		Action:     action,
-		Resource:   resource,
-		ResourceID: resourceID,
-		Detail:     detail,
-	}
-	if info := ext.UserInfoFromContext(r.Context()); info != nil {
-		ev.UserID = info.UserID
-		ev.Email = info.Email
-	}
-	return ev
 }
 
 func (a *API) handleDeleteWorkload(w http.ResponseWriter, r *http.Request) {
@@ -433,6 +414,7 @@ func (a *API) handleDeleteWorkload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to delete workload")
 		return
 	}
+	audit.Emit(r.Context(), a.audit, "workload.delete", "workload", id, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
