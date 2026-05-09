@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/magnify-labs/otel-magnify/internal/audit"
 )
 
 // handleArchiveWorkload marks a workload as archived immediately. An
@@ -26,5 +28,6 @@ func (a *API) handleArchiveWorkload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to archive workload")
 		return
 	}
+	audit.Emit(r.Context(), a.audit, "workload.archive", "workload", id, "")
 	w.WriteHeader(http.StatusNoContent)
 }

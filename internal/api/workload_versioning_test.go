@@ -1,67 +1,17 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/magnify-labs/otel-magnify/internal/auth"
-	"github.com/magnify-labs/otel-magnify/internal/opamp"
-	"github.com/magnify-labs/otel-magnify/internal/store"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
-
-// recordingAuditLogger captures every event emitted by the API so tests can
-// assert that label/rollback actions are properly logged regardless of the
-// edition (community NopAuditLogger swap-in).
-type recordingAuditLogger struct {
-	mu     sync.Mutex
-	events []ext.AuditEvent
-}
-
-func (r *recordingAuditLogger) Log(_ context.Context, e ext.AuditEvent) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.events = append(r.events, e)
-}
-
-func (r *recordingAuditLogger) snapshot() []ext.AuditEvent {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := make([]ext.AuditEvent, len(r.events))
-	copy(out, r.events)
-	return out
-}
-
-// newVersioningTestAPI mirrors newTestAPI but threads in a recording audit
-// logger so we can assert audit emissions on label/rollback.
-func newVersioningTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPusher, *recordingAuditLogger) {
-	t.Helper()
-	db, err := store.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Migrate(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-
-	a := auth.New("test-secret-key-at-least-32-bytes!")
-	hub := NewHub()
-	go hub.Run()
-	t.Cleanup(hub.Stop)
-
-	fake := &fakeOpAMPPusher{instances: make(map[string][]opamp.Instance)}
-	audit := &recordingAuditLogger{}
-	router := NewRouter(db, a, hub, fake, audit, "", nil, nil, 30*24*time.Hour, nil, nil)
-	return db, router, fake, audit
-}
 
 // authedJSONRequest builds a request with the admin Bearer token and a JSON body.
 func authedJSONRequest(t *testing.T, method, url, body string, groups []string) *http.Request {
@@ -114,7 +64,7 @@ service:
 `
 
 func TestSetWorkloadConfigLabel_HappyPath(t *testing.T) {
-	db, router, _, audit := newVersioningTestAPI(t)
+	db, router, _, audit := newAuditTestAPI(t)
 	seedHistory(t, db, "w1", "hash-a", "yaml-a")
 
 	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/label",
@@ -138,13 +88,16 @@ func TestSetWorkloadConfigLabel_HappyPath(t *testing.T) {
 	if len(events) != 1 || events[0].Action != "config.label" || events[0].Email != "admin@test.com" {
 		t.Fatalf("audit = %+v", events)
 	}
-	if events[0].ResourceID != "w1/hash-a" {
-		t.Errorf("ResourceID = %q", events[0].ResourceID)
+	if events[0].Resource != "workload" || events[0].ResourceID != "w1" {
+		t.Errorf("Resource/ResourceID = (%q, %q), want (workload, w1)", events[0].Resource, events[0].ResourceID)
+	}
+	if events[0].Detail != "stable-2026-05" {
+		t.Errorf("Detail = %q, want stable-2026-05", events[0].Detail)
 	}
 }
 
 func TestSetWorkloadConfigLabel_EmptyClearsExisting(t *testing.T) {
-	db, router, _, _ := newVersioningTestAPI(t)
+	db, router, _, _ := newAuditTestAPI(t)
 	seedHistory(t, db, "w1", "hash-a", "yaml-a")
 	_ = db.SetWorkloadConfigLabel("w1", "hash-a", "stale")
 
@@ -162,7 +115,7 @@ func TestSetWorkloadConfigLabel_EmptyClearsExisting(t *testing.T) {
 }
 
 func TestSetWorkloadConfigLabel_404OnUnknownHash(t *testing.T) {
-	db, router, _, _ := newVersioningTestAPI(t)
+	db, router, _, _ := newAuditTestAPI(t)
 	seedHistory(t, db, "w1", "hash-a", "yaml-a")
 
 	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/ghost/label", `{"label":"x"}`, nil)
@@ -175,7 +128,7 @@ func TestSetWorkloadConfigLabel_404OnUnknownHash(t *testing.T) {
 }
 
 func TestSetWorkloadConfigLabel_403ForViewer(t *testing.T) {
-	db, router, _, _ := newVersioningTestAPI(t)
+	db, router, _, _ := newAuditTestAPI(t)
 	seedHistory(t, db, "w1", "hash-a", "yaml-a")
 
 	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/label",
@@ -189,7 +142,7 @@ func TestSetWorkloadConfigLabel_403ForViewer(t *testing.T) {
 }
 
 func TestSetWorkloadConfigLabel_RejectsLabelOver128Chars(t *testing.T) {
-	db, router, _, _ := newVersioningTestAPI(t)
+	db, router, _, _ := newAuditTestAPI(t)
 	seedHistory(t, db, "w1", "hash-a", "yaml-a")
 
 	long := strings.Repeat("x", 129)
@@ -204,7 +157,7 @@ func TestSetWorkloadConfigLabel_RejectsLabelOver128Chars(t *testing.T) {
 }
 
 func TestGetWorkloadConfigByHash_HappyPath(t *testing.T) {
-	db, router, _, _ := newVersioningTestAPI(t)
+	db, router, _, _ := newAuditTestAPI(t)
 	seedHistory(t, db, "w1", "hash-a", "yaml-content")
 	_ = db.SetWorkloadConfigLabel("w1", "hash-a", "blessed")
 
@@ -226,7 +179,7 @@ func TestGetWorkloadConfigByHash_HappyPath(t *testing.T) {
 }
 
 func TestGetWorkloadConfigByHash_404(t *testing.T) {
-	_, router, _, _ := newVersioningTestAPI(t)
+	_, router, _, _ := newAuditTestAPI(t)
 
 	req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/configs/ghost", "", nil)
 	rec := httptest.NewRecorder()
@@ -238,7 +191,7 @@ func TestGetWorkloadConfigByHash_404(t *testing.T) {
 }
 
 func TestRollbackWorkloadConfig_RecordsPendingPushAndPushesContent(t *testing.T) {
-	db, router, fake, audit := newVersioningTestAPI(t)
+	db, router, fake, audit := newAuditTestAPI(t)
 	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
 
 	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/rollback", "", nil)
@@ -268,7 +221,7 @@ func TestRollbackWorkloadConfig_RecordsPendingPushAndPushesContent(t *testing.T)
 }
 
 func TestRollbackWorkloadConfig_404OnUnknownHash(t *testing.T) {
-	db, router, _, _ := newVersioningTestAPI(t)
+	db, router, _, _ := newAuditTestAPI(t)
 	if err := db.UpsertWorkload(models.Workload{
 		ID: "w1", Type: "collector", Status: "connected",
 		LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true,
@@ -286,7 +239,7 @@ func TestRollbackWorkloadConfig_404OnUnknownHash(t *testing.T) {
 }
 
 func TestRollbackWorkloadConfig_409WhenWorkloadRefusesRemoteConfig(t *testing.T) {
-	db, router, fake, _ := newVersioningTestAPI(t)
+	db, router, fake, _ := newAuditTestAPI(t)
 	if err := db.UpsertWorkload(models.Workload{
 		ID: "w1", Type: "collector", Status: "connected",
 		LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: false,
@@ -309,7 +262,7 @@ func TestRollbackWorkloadConfig_409WhenWorkloadRefusesRemoteConfig(t *testing.T)
 }
 
 func TestRollbackWorkloadConfig_403ForViewer(t *testing.T) {
-	db, router, _, _ := newVersioningTestAPI(t)
+	db, router, _, _ := newAuditTestAPI(t)
 	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
 
 	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/rollback",
@@ -323,7 +276,7 @@ func TestRollbackWorkloadConfig_403ForViewer(t *testing.T) {
 }
 
 func TestSetWorkloadConfigLabel_401WithoutToken(t *testing.T) {
-	_, router, _, _ := newVersioningTestAPI(t)
+	_, router, _, _ := newAuditTestAPI(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/workloads/w1/configs/h1/label", strings.NewReader(`{"label":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
