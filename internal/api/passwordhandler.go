@@ -6,6 +6,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 )
 
@@ -61,5 +62,6 @@ func (a *API) handlePutPassword(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to update password")
 		return
 	}
+	audit.Emit(r.Context(), a.audit, "auth.password.change", "user", info.UserID, "")
 	w.WriteHeader(http.StatusNoContent)
 }
