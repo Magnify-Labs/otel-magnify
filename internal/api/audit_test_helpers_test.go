@@ -15,16 +15,23 @@ import (
 
 // recordingAuditLogger captures every event emitted by the API so tests can
 // assert that the right surfaces are wired through audit.Emit. The mutex
-// covers Log so concurrent emissions in tests don't race.
+// covers Log so concurrent emissions in tests don't race. Setting errToReturn
+// makes every subsequent Log call fail with that error, used by fail-loud
+// tests.
 type recordingAuditLogger struct {
-	mu     sync.Mutex
-	events []ext.AuditEvent
+	mu          sync.Mutex
+	events      []ext.AuditEvent
+	errToReturn error
 }
 
-func (r *recordingAuditLogger) Log(_ context.Context, e ext.AuditEvent) {
+func (r *recordingAuditLogger) Log(_ context.Context, e ext.AuditEvent) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.errToReturn != nil {
+		return r.errToReturn
+	}
 	r.events = append(r.events, e)
+	return nil
 }
 
 func (r *recordingAuditLogger) snapshot() []ext.AuditEvent {
@@ -33,6 +40,12 @@ func (r *recordingAuditLogger) snapshot() []ext.AuditEvent {
 	out := make([]ext.AuditEvent, len(r.events))
 	copy(out, r.events)
 	return out
+}
+
+func (r *recordingAuditLogger) failWith(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.errToReturn = err
 }
 
 // newAuditTestAPI mirrors newTestAPI but threads in a recording audit logger

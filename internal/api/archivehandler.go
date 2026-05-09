@@ -28,6 +28,9 @@ func (a *API) handleArchiveWorkload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to archive workload")
 		return
 	}
-	audit.Emit(r.Context(), a.audit, "workload.archive", "workload", id, "")
+	if err := audit.Emit(r.Context(), a.audit, "workload.archive", "workload", id, ""); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

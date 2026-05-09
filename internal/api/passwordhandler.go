@@ -62,6 +62,12 @@ func (a *API) handlePutPassword(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to update password")
 		return
 	}
-	audit.Emit(r.Context(), a.audit, "auth.password.change", "user", info.UserID, "")
+	// Password row is already updated. If audit fails we 503 with
+	// side_effect_status=applied so the caller knows the new password is
+	// active despite the error.
+	if err := audit.Emit(r.Context(), a.audit, "auth.password.change", "user", info.UserID, ""); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

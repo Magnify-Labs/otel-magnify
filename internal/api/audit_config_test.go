@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,5 +34,24 @@ func TestAudit_ConfigCreate_Emits(t *testing.T) {
 	}
 	if got.Email != "admin@test.com" {
 		t.Errorf("Email = %q", got.Email)
+	}
+}
+
+func TestAudit_ConfigCreate_503AppliedWhenAuditFails(t *testing.T) {
+	_, router, _, audit := newAuditTestAPI(t)
+	audit.failWith(errors.New("audit DB down"))
+
+	body := `{"name":"collector-base","content":"receivers:\n  otlp:"}`
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs", body, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["side_effect_status"] != "applied" {
+		t.Errorf("side_effect_status = %q, want applied", resp["side_effect_status"])
 	}
 }

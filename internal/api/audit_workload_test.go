@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -102,5 +103,67 @@ func TestAudit_WorkloadDelete_Emits(t *testing.T) {
 	}
 	if got.Resource != "workload" || got.ResourceID != "w-del" {
 		t.Errorf("Resource/ResourceID = (%q, %q)", got.Resource, got.ResourceID)
+	}
+}
+
+func TestAudit_WorkloadPush_503AppliedWhenAuditFails(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "w-push-fail", Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	audit.failWith(errors.New("audit DB down"))
+
+	req := authedPost(t, "/api/workloads/w-push-fail/config", validRollbackYAML)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["side_effect_status"] != "applied" {
+		t.Errorf("side_effect_status = %q, want applied (OpAMP push already issued)", resp["side_effect_status"])
+	}
+}
+
+func TestAudit_WorkloadArchive_503AppliedWhenAuditFails(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "w-arch-fail", Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	audit.failWith(errors.New("audit DB down"))
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w-arch-fail/archive", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestAudit_WorkloadDelete_503AppliedWhenAuditFails(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "w-del-fail", Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	audit.failWith(errors.New("audit DB down"))
+
+	req := authedJSONRequest(t, http.MethodDelete, "/api/workloads/w-del-fail", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", rec.Code)
 	}
 }

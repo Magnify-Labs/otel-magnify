@@ -3,15 +3,19 @@
 All notable changes to this project are documented here.
 ## Unreleased
 
-### Documentation
-- Document audit log emission surface
-
-
 ### Features
-- Add Emit helper for community handlers
-- Wire emission for workload lifecycle
-- Wire emission for auth (login + password change)
-- Wire emission for config templates
+- Wire AuditLogger emission across community handlers (#88)
+- Add 503 response helper with side-effect status
+
+
+### Refactoring
+- Make AuditLogger.Log return error and propagate fail-loud
+
+
+### Testing
+- Cover fail-loud 503 path for auth surface
+- Cover fail-loud 503 for config template create
+- Cover fail-loud 503 for workload lifecycle
 
 
 ## v0.5.0 — 2026-05-08

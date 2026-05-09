@@ -33,12 +33,18 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := a.db.GetUserByEmail(req.Email)
 	if err != nil {
-		audit.Emit(r.Context(), a.audit, "auth.login.failure", "user", "", req.Email)
+		if auditErr := audit.Emit(r.Context(), a.audit, "auth.login.failure", "user", "", req.Email); auditErr != nil {
+			respondAuditUnavailable(w, sideEffectNone)
+			return
+		}
 		respondError(w, 401, "invalid credentials")
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
-		audit.Emit(r.Context(), a.audit, "auth.login.failure", "user", "", req.Email)
+		if auditErr := audit.Emit(r.Context(), a.audit, "auth.login.failure", "user", "", req.Email); auditErr != nil {
+			respondAuditUnavailable(w, sideEffectNone)
+			return
+		}
 		respondError(w, 401, "invalid credentials")
 		return
 	}
@@ -59,10 +65,13 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Inject the freshly authenticated principal into ctx so audit.Emit can
-	// pull UserID/Email — the public login endpoint runs before the auth
-	// middleware, so r.Context() has no UserInfo yet.
+	// Login success: token is minted but not yet returned. If audit fails we
+	// 503 with side_effect_status=none — the user retries, gets a fresh
+	// token, and the audit is re-emitted. JWT is stateless so nothing leaks.
 	authedCtx := ext.ContextWithUserInfo(r.Context(), &ext.UserInfo{UserID: user.ID, Email: user.Email})
-	audit.Emit(authedCtx, a.audit, "auth.login.success", "user", user.ID, "")
+	if err := audit.Emit(authedCtx, a.audit, "auth.login.success", "user", user.ID, ""); err != nil {
+		respondAuditUnavailable(w, sideEffectNone)
+		return
+	}
 	respondJSON(w, 200, map[string]string{"token": token})
 }

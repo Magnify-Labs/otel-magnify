@@ -213,7 +213,10 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	audit.Emit(r.Context(), a.audit, "config.push", "workload", workloadID, hash)
+	if err := audit.Emit(r.Context(), a.audit, "config.push", "workload", workloadID, hash); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
 	respondJSON(w, 202, map[string]string{
 		"status":      "config push initiated",
 		"config_hash": hash,
@@ -314,7 +317,10 @@ func (a *API) handleSetWorkloadConfigLabel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	audit.Emit(r.Context(), a.audit, "config.label", "workload", id, label)
+	if err := audit.Emit(r.Context(), a.audit, "config.label", "workload", id, label); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
 	respondJSON(w, 200, map[string]string{"label": label})
 }
 
@@ -401,7 +407,10 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, hash)
+	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, hash); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
 	respondJSON(w, 202, map[string]string{
 		"status":      "rollback initiated",
 		"config_hash": hash,
@@ -414,7 +423,10 @@ func (a *API) handleDeleteWorkload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to delete workload")
 		return
 	}
-	audit.Emit(r.Context(), a.audit, "workload.delete", "workload", id, "")
+	if err := audit.Emit(r.Context(), a.audit, "workload.delete", "workload", id, ""); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
