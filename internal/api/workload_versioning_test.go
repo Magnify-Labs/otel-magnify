@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -285,5 +286,39 @@ func TestSetWorkloadConfigLabel_401WithoutToken(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestSetWorkloadConfigLabel_503WhenAuditFails(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", "yaml-a")
+	audit.failWith(errors.New("audit DB down"))
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/label",
+		`{"label":"stable"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	// Label DID persist — audit failed after SetWorkloadConfigLabel succeeded.
+	wc, _ := db.GetWorkloadConfigByHash("w1", "hash-a")
+	if wc.Label == nil || *wc.Label != "stable" {
+		t.Errorf("Label = %v, want stable", wc.Label)
+	}
+}
+
+func TestRollbackWorkloadConfig_503WhenAuditFails(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+	audit.failWith(errors.New("audit DB down"))
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/rollback", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", rec.Code)
 	}
 }
