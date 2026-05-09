@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -158,5 +159,83 @@ func TestAudit_PasswordChange_Emits(t *testing.T) {
 	// Detail must stay empty — passwords (old or new) never enter the audit log.
 	if got.Detail != "" {
 		t.Errorf("Detail = %q, expected empty (must not leak password material)", got.Detail)
+	}
+}
+
+func TestAudit_LoginSuccess_503WhenAuditFails(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedAuditUser(t, db, "u-loud", "loud@example.com", "correct-horse-battery", "viewer")
+	audit.failWith(errors.New("audit DB down"))
+
+	body := `{"email":"loud@example.com","password":"correct-horse-battery"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["error"] != "audit unavailable" {
+		t.Errorf("error = %q", resp["error"])
+	}
+	if resp["side_effect_status"] != "none" {
+		t.Errorf("side_effect_status = %q, want none (token minted but never returned)", resp["side_effect_status"])
+	}
+}
+
+func TestAudit_LoginFailure_503WhenAuditFails(t *testing.T) {
+	_, router, _, audit := newAuditTestAPI(t)
+	audit.failWith(errors.New("audit DB down"))
+
+	body := `{"email":"ghost@example.com","password":"whatever"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["side_effect_status"] != "none" {
+		t.Errorf("side_effect_status = %q, want none", resp["side_effect_status"])
+	}
+}
+
+func TestAudit_PasswordChange_503AppliedWhenAuditFails(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedAuditUser(t, db, "u-pw-fail", "dave@example.com", "old-password-xx", "viewer")
+
+	a := auth.New("test-secret-key-at-least-32-bytes!")
+	tok, _ := a.GenerateToken("u-pw-fail", "dave@example.com", []string{"viewer"})
+	body, _ := json.Marshal(map[string]string{
+		"current_password": "old-password-xx",
+		"new_password":     "new-password-xxxx",
+	})
+
+	audit.failWith(errors.New("audit DB down"))
+
+	req := httptest.NewRequest(http.MethodPut, "/api/me/password", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["side_effect_status"] != "applied" {
+		t.Errorf("side_effect_status = %q, want applied (password row already changed)", resp["side_effect_status"])
+	}
+	// Password DID change — audit failed AFTER the UPDATE.
+	u, _ := db.GetUserByEmail("dave@example.com")
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("new-password-xxxx")) != nil {
+		t.Error("password should have changed despite the 503")
 	}
 }
