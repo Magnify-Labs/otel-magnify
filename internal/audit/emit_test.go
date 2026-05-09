@@ -87,7 +87,7 @@ func TestEmit_NilLoggerNoOps(t *testing.T) {
 
 // NopAuditLogger is the default community sink — events go nowhere but
 // must not panic and must accept any context.
-func TestEmit_NopLoggerAcceptsCalls(t *testing.T) {
+func TestEmit_NopLoggerAcceptsCalls(_ *testing.T) {
 	audit.Emit(context.Background(), ext.NopAuditLogger{}, "noop", "noop", "", "")
 }
 
