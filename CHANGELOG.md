@@ -1,6 +1,19 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## Unreleased
+
+### Documentation
+- Document audit log emission surface
+
+
+### Features
+- Add Emit helper for community handlers
+- Wire emission for workload lifecycle
+- Wire emission for auth (login + password change)
+- Wire emission for config templates
+
+
 ## v0.5.0 — 2026-05-08
 
 ### Bug Fixes
