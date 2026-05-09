@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -59,6 +60,7 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to create config")
 		return
 	}
+	audit.Emit(r.Context(), a.audit, "config.create", "config", cfg.ID, "")
 	respondJSON(w, 201, cfg)
 }
 
