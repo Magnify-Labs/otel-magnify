@@ -43,7 +43,8 @@ Make sure the tests pass:
 
 ```bash
 # Backend
-cd backend && go test ./...
+# Run from the repository root; go.mod lives at the top level.
+go test ./...
 
 # Frontend types
 cd frontend && npx tsc --noEmit
