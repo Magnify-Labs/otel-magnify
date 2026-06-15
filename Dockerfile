@@ -15,7 +15,7 @@ COPY pkg/ ./pkg/
 COPY --from=frontend-build /app/frontend/dist ./pkg/frontend/dist
 RUN CGO_ENABLED=0 go build -o /otel-magnify ./cmd/server/
 
-FROM alpine:3.23
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates \
     && addgroup -g 10001 -S magnify \
     && adduser -u 10001 -S magnify -G magnify \
