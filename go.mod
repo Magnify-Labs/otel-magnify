@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/open-telemetry/opamp-go v0.23.0
 	github.com/pressly/goose/v3 v3.27.1
 	golang.org/x/crypto v0.53.0
