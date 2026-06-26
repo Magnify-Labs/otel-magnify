@@ -243,14 +243,20 @@ func (a *API) handleValidateWorkloadConfig(w http.ResponseWriter, r *http.Reques
 	}
 
 	var available *models.AvailableComponents
+	targetVersion := strings.TrimSpace(r.URL.Query().Get("target_collector_version"))
 	if wl, err := a.db.GetWorkload(id); err == nil {
 		available = wl.AvailableComponents
+		if targetVersion == "" {
+			targetVersion = wl.Version
+		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		respondError(w, 500, "failed to load workload")
 		return
 	}
 
-	respondJSON(w, 200, validator.Validate(body, available))
+	runtimeOpts := validator.RuntimeOptionsFromEnv()
+	runtimeOpts.TargetVersion = targetVersion
+	respondJSON(w, 200, validator.ValidateWithRuntime(r.Context(), body, available, runtimeOpts))
 }
 
 func (a *API) handleGetWorkloadConfigHistory(w http.ResponseWriter, r *http.Request) {

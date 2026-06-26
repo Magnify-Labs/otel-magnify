@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -390,6 +393,80 @@ func TestValidateWorkloadConfig_ReturnsErrorsForBadYAML(t *testing.T) {
 	if result.Valid || len(result.Errors) == 0 {
 		t.Fatalf("expected validation errors, got %+v", result)
 	}
+}
+
+func TestValidateWorkloadConfig_IncludesRuntimeCheckWhenEnabled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake uses POSIX sh")
+	}
+	bin := writeAPIShim(t, `
+case "$1" in
+  --version) echo "otelcol version 0.150.1"; exit 0 ;;
+  validate) exit 0 ;;
+esac
+exit 9
+`)
+	t.Setenv("OTELCOL_RUNTIME_VALIDATION_ENABLED", "true")
+	t.Setenv("OTELCOL_BINARY_PATH", bin)
+
+	db, router, _ := newTestAPI(t)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Version: "0.150.1", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}})
+
+	req := authedPost(t, "/api/workloads/w1/config/validate?target_collector_version=0.150.1", validWorkloadConfig)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Valid  bool             `json:"valid"`
+		Checks []apiResultCheck `json:"checks"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	check := findAPIResultCheck(t, result.Checks, "otelcol_runtime")
+	if !result.Valid || check.Status != "passed" || check.Metadata["binary_version"] != "0.150.1" || check.Metadata["target_version"] != "0.150.1" {
+		t.Fatalf("runtime check not integrated: result=%+v check=%+v", result, check)
+	}
+}
+
+const validWorkloadConfig = `
+receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+
+type apiResultCheck struct {
+	ID       string         `json:"id"`
+	Status   string         `json:"status"`
+	Metadata map[string]any `json:"metadata"`
+}
+
+func writeAPIShim(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "otelcol")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatalf("write fake otelcol: %v", err)
+	}
+	return path
+}
+
+func findAPIResultCheck(t *testing.T, checks []apiResultCheck, id string) apiResultCheck {
+	t.Helper()
+	for _, check := range checks {
+		if check.ID == id {
+			return check
+		}
+	}
+	t.Fatalf("check %q not found in %+v", id, checks)
+	return apiResultCheck{}
 }
 
 // --- Config history ---
