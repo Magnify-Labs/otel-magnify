@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { configsAPI } from '../api/client'
 import YamlEditor from '../components/config/YamlEditor'
 
 export default function Configs() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { data: configs, isLoading } = useQuery({ queryKey: ['configs'], queryFn: configsAPI.list })
 
@@ -24,30 +26,30 @@ export default function Configs() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Configs</h1>
+        <h1 className="page-title">{t('configs.title')}</h1>
         <button
           className={`btn ${showForm ? '' : 'btn-primary'}`}
           onClick={() => setShowForm(!showForm)}
         >
-          {showForm ? 'Cancel' : '+ New Config'}
+          {showForm ? t('common.cancel') : t('configs.new_button')}
         </button>
       </div>
 
       {showForm && (
         <div className="configs-form">
-          <div className="configs-form-header">New configuration</div>
+          <div className="configs-form-header">{t('configs.form.header')}</div>
           <div className="configs-form-body">
             <div className="field">
-              <label className="field-label">Name</label>
+              <label className="field-label">{t('configs.form.name')}</label>
               <input
                 className="field-input"
-                placeholder="e.g. collector-prod-v2"
+                placeholder={t('configs.form.name_placeholder')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
             <div className="field" style={{ marginBottom: 0 }}>
-              <label className="field-label">Content (YAML)</label>
+              <label className="field-label">{t('configs.form.content')}</label>
               <YamlEditor value={content} onChange={setContent} />
             </div>
           </div>
@@ -57,24 +59,24 @@ export default function Configs() {
               onClick={() => createMutation.mutate()}
               disabled={!name || !content || createMutation.isPending}
             >
-              {createMutation.isPending ? 'Creating...' : 'Create'}
+              {createMutation.isPending ? t('configs.form.saving') : t('configs.form.submit')}
             </button>
           </div>
         </div>
       )}
 
       {isLoading ? (
-        <div className="loading">Loading configs...</div>
+        <div className="loading">{t('configs.loading')}</div>
       ) : (configs ?? []).length === 0 ? (
-        <div className="empty-state">No configurations yet</div>
+        <div className="empty-state">{t('configs.empty')}</div>
       ) : (
         <table className="data-table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Created by</th>
-              <th>Created at</th>
-              <th>ID</th>
+              <th>{t('configs.table.name')}</th>
+              <th>{t('configs.table.created_by')}</th>
+              <th>{t('configs.table.created_at')}</th>
+              <th>{t('configs.table.id')}</th>
             </tr>
           </thead>
           <tbody>

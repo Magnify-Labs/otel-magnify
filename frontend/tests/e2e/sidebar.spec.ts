@@ -31,6 +31,17 @@ test.describe('Sidebar', () => {
     await expect(page.locator('.sidebar-nav-item a.active')).toContainText(/Inventory|Inventaire/)
   })
 
+
+  test('configs item is renamed to Config Library and remains active on /configs', async ({ loggedInPage: page }) => {
+    await page.route('**/api/configs', (route) => route.fulfill({
+      status: 200, contentType: 'application/json', body: '[]',
+    }))
+    await page.goto('/configs')
+    await expect(page.locator('.sidebar-nav-item a.active')).toContainText(/Config Library|Bibliothèque de configs/)
+    await expect(page.getByRole('heading', { name: /Config Library|Bibliothèque de configs/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /\+ New config|\+ Nouvelle config/ })).toBeVisible()
+  })
+
   test('alert badge appears when alerts > 0', async ({ loggedInPage: page }) => {
     await page.route('**/api/alerts*', (route) => route.fulfill({
       status: 200, contentType: 'application/json',
