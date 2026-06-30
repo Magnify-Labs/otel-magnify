@@ -1768,3 +1768,71 @@ code {
   padding-top: 0.8rem;
   border-top: 1px solid var(--border);
 }
+
+/* Mobile shell + workload detail responsiveness */
+.cm-editor {
+  max-width: 100%;
+}
+
+.cm-scroller {
+  overflow: auto;
+}
+
+.config-safety-card {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .app-layout {
+    display: block;
+  }
+
+  .main-content {
+    width: 100%;
+    max-width: 100vw;
+    padding: 1rem;
+    overflow-x: clip;
+  }
+
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .config-safety-card {
+    padding: 0.9rem;
+  }
+
+  .config-safety-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .config-safety-flow {
+    justify-content: flex-start;
+  }
+
+  .config-safety-step-topline {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .config-safety-readonly-note,
+  .config-safety-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

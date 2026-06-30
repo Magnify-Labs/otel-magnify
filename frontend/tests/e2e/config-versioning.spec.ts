@@ -68,6 +68,24 @@ function mockHistory(page: Page, rows: unknown[]) {
   )
 }
 
+function mockConfigsList(page: Page) {
+  return page.route(`**/api/configs`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: ACTIVE_CONFIG_ID,
+          name: 'current',
+          content: YAML_NEW,
+          created_at: new Date().toISOString(),
+          created_by: 'test',
+        },
+      ]),
+    }),
+  )
+}
+
 const BASE_HISTORY = [
   {
     workload_id: WORKLOAD_ID,
@@ -92,6 +110,7 @@ test('label can be set inline via double-click', async ({ loggedInPage: page }) 
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, BASE_HISTORY)
+  await mockConfigsList(page)
 
   let labelPosted: { hash: string; body: unknown } | null = null
   await page.route(
@@ -110,7 +129,7 @@ test('label can be set inline via double-click', async ({ loggedInPage: page }) 
   )
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await expect(page.getByText('Push history')).toBeVisible()
+  await expect(page.getByText('Push history', { exact: true })).toBeVisible()
 
   // The newest row has no label yet — double-click its label cell to edit.
   const newestRow = page.locator('.history-table tbody tr').first()
@@ -128,6 +147,7 @@ test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, BASE_HISTORY)
+  await mockConfigsList(page)
 
   // The dialog fetches each revision by hash on demand.
   await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/${HASH_OLD}`, (route) =>
@@ -163,6 +183,7 @@ test('rollback opens confirm dialog and posts to /rollback', async ({ loggedInPa
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, BASE_HISTORY)
+  await mockConfigsList(page)
 
   let rollbackHash: string | null = null
   await page.route(
