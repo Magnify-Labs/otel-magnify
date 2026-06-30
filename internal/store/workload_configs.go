@@ -165,6 +165,33 @@ func (d *DB) GetLatestWorkloadConfigByHash(workloadID, configID string) (*models
 	return wc, err
 }
 
+// GetLatestPendingOrApplyingWorkloadConfig returns the most recent non-terminal
+// push for the workload, or (nil, nil) if there is none. Rollback prepare uses
+// this as a conservative concurrency guard.
+func (d *DB) GetLatestPendingOrApplyingWorkloadConfig(workloadID string) (*models.WorkloadConfig, error) {
+	var (
+		wc    models.WorkloadConfig
+		label sql.NullString
+	)
+	err := d.QueryRow(`
+		SELECT workload_id, config_id, applied_at, status,
+		       COALESCE(error_message, ''), COALESCE(pushed_by, ''), label
+		FROM workload_configs WHERE workload_id = ? AND status IN ('pending', 'applying')
+		ORDER BY applied_at DESC LIMIT 1`, workloadID,
+	).Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status, &wc.ErrorMessage, &wc.PushedBy, &label)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if label.Valid {
+		v := label.String
+		wc.Label = &v
+	}
+	return &wc, nil
+}
+
 // GetWorkloadConfigHistory returns the full push history for a workload, joined with the config content, ordered newest first.
 func (d *DB) GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfig, error) {
 	rows, err := d.Query(`
@@ -190,7 +217,73 @@ func (d *DB) GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfi
 		}
 		history = append(history, wc)
 	}
-	return history, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := d.decorateWorkloadConfigHistory(workloadID, history); err != nil {
+		return nil, err
+	}
+	return history, nil
+}
+
+func (d *DB) decorateWorkloadConfigHistory(workloadID string, history []models.WorkloadConfig) error {
+	if len(history) == 0 {
+		return nil
+	}
+	for i := range history {
+		history[i].ContentAvailable = history[i].Content != ""
+		history[i].IsFailedCandidate = history[i].Status == "failed"
+	}
+
+	if wl, err := d.GetWorkload(workloadID); err == nil && wl.ActiveConfigHash != "" {
+		for i := range history {
+			if history[i].ConfigID == wl.ActiveConfigHash {
+				history[i].IsCurrent = true
+			}
+		}
+	}
+	if !anyCurrent(history) {
+		for i := range history {
+			if history[i].Status == "applied" {
+				history[i].IsCurrent = true
+				break
+			}
+		}
+	}
+	currentHash := ""
+	for _, row := range history {
+		if row.IsCurrent {
+			currentHash = row.ConfigID
+			break
+		}
+	}
+	for i := range history {
+		if history[i].Status == "applied" && history[i].ConfigID != currentHash {
+			history[i].IsPrevious = true
+			break
+		}
+	}
+	kg, err := d.GetWorkloadKnownGood(workloadID)
+	if err != nil {
+		return err
+	}
+	if kg != nil {
+		for i := range history {
+			if history[i].ConfigID == kg.ConfigID {
+				history[i].IsLastKnownGood = true
+			}
+		}
+	}
+	return nil
+}
+
+func anyCurrent(history []models.WorkloadConfig) bool {
+	for _, row := range history {
+		if row.IsCurrent {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *DB) getOneWorkloadConfig(query string, args ...any) (*models.WorkloadConfig, error) {
@@ -364,4 +457,211 @@ func (d *DB) SetWorkloadConfigLabel(workloadID, hash, label string) error {
 // row matches so the handler can surface a clean 404.
 func (d *DB) GetWorkloadConfigByHash(workloadID, hash string) (*models.WorkloadConfig, error) {
 	return d.GetLatestWorkloadConfigByHash(workloadID, hash)
+}
+
+// GetLatestKnownGoodWorkloadConfig returns the config content for the active known-good pointer.
+func (d *DB) GetLatestKnownGoodWorkloadConfig(workloadID string) (*models.WorkloadConfig, error) {
+	kg, err := d.GetWorkloadKnownGood(workloadID)
+	if err != nil || kg == nil {
+		return nil, err
+	}
+	return d.GetWorkloadConfigByHash(workloadID, kg.ConfigID)
+}
+
+// GetWorkloadKnownGood returns the active known-good pointer for a workload, or nil when absent.
+func (d *DB) GetWorkloadKnownGood(workloadID string) (*models.WorkloadKnownGoodConfig, error) {
+	var (
+		kg              models.WorkloadKnownGoodConfig
+		markedBy        sql.NullString
+		sourceAppliedAt sql.NullTime
+		replaced        sql.NullString
+		reason          sql.NullString
+		content         sql.NullString
+	)
+	err := d.QueryRow(`
+		SELECT kg.workload_id, kg.config_id, kg.marked_at, kg.marked_by,
+		       kg.source_applied_at, kg.replaced_config_id, kg.replace_reason,
+		       c.content
+		FROM workload_known_good_configs kg
+		LEFT JOIN configs c ON c.id = kg.config_id
+		WHERE kg.workload_id = ?`, workloadID,
+	).Scan(&kg.WorkloadID, &kg.ConfigID, &kg.MarkedAt, &markedBy, &sourceAppliedAt, &replaced, &reason, &content)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if markedBy.Valid {
+		kg.MarkedBy = markedBy.String
+	}
+	if sourceAppliedAt.Valid {
+		t := sourceAppliedAt.Time
+		kg.SourceAppliedAt = &t
+	}
+	if replaced.Valid {
+		kg.ReplacedConfigID = replaced.String
+	}
+	if reason.Valid {
+		kg.ReplaceReason = reason.String
+	}
+	kg.ContentAvailable = content.Valid && content.String != ""
+	return &kg, nil
+}
+
+// SetWorkloadKnownGood atomically marks an applied config hash as the workload's explicit rollback baseline.
+func (d *DB) SetWorkloadKnownGood(workloadID, configID, markedBy, replaceReason string) (*models.WorkloadKnownGoodConfig, models.SetKnownGoodResult, error) {
+	var result models.SetKnownGoodResult
+	tx, err := d.Begin()
+	if err != nil {
+		return nil, result, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var archivedAt sql.NullTime
+	if err := tx.QueryRow(`SELECT archived_at FROM workloads WHERE id = ?`, workloadID).Scan(&archivedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, result, err
+		}
+		return nil, result, err
+	}
+	if archivedAt.Valid {
+		return nil, result, fmt.Errorf("workload archived")
+	}
+
+	var sourceAppliedAt time.Time
+	var content string
+	err = tx.QueryRow(`
+		SELECT wc.applied_at, COALESCE(c.content, '')
+		FROM workload_configs wc
+		JOIN configs c ON c.id = wc.config_id
+		WHERE wc.workload_id = ? AND wc.config_id = ? AND wc.status = 'applied'
+		ORDER BY wc.applied_at DESC LIMIT 1`, workloadID, configID,
+	).Scan(&sourceAppliedAt, &content)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, result, fmt.Errorf("known-good config must exist in applied history: %w", err)
+		}
+		return nil, result, err
+	}
+	if content == "" {
+		return nil, result, fmt.Errorf("config content unavailable")
+	}
+
+	var existing models.WorkloadKnownGoodConfig
+	var existingBy, existingReason, existingReplaced sql.NullString
+	var existingSource sql.NullTime
+	err = tx.QueryRow(`SELECT workload_id, config_id, marked_at, marked_by, source_applied_at, replaced_config_id, replace_reason FROM workload_known_good_configs WHERE workload_id = ?`, workloadID).
+		Scan(&existing.WorkloadID, &existing.ConfigID, &existing.MarkedAt, &existingBy, &existingSource, &existingReplaced, &existingReason)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, result, err
+	}
+	if err == nil && existing.ConfigID == configID {
+		if existingBy.Valid {
+			existing.MarkedBy = existingBy.String
+		}
+		if existingSource.Valid {
+			t := existingSource.Time
+			existing.SourceAppliedAt = &t
+		}
+		if existingReplaced.Valid {
+			existing.ReplacedConfigID = existingReplaced.String
+		}
+		if existingReason.Valid {
+			existing.ReplaceReason = existingReason.String
+		}
+		existing.ContentAvailable = true
+		return &existing, result, tx.Commit()
+	}
+	if err == nil {
+		result.ReplacedConfigID = existing.ConfigID
+	}
+	result.Changed = true
+
+	_, err = tx.Exec(`
+		INSERT INTO workload_known_good_configs (workload_id, config_id, marked_at, marked_by, source_applied_at, replaced_config_id, replace_reason)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(workload_id) DO UPDATE SET
+		  config_id = excluded.config_id,
+		  marked_at = excluded.marked_at,
+		  marked_by = excluded.marked_by,
+		  source_applied_at = excluded.source_applied_at,
+		  replaced_config_id = excluded.replaced_config_id,
+		  replace_reason = excluded.replace_reason`,
+		workloadID, configID, time.Now().UTC(), nullIfEmpty(markedBy), sourceAppliedAt, nullIfEmpty(result.ReplacedConfigID), nullIfEmpty(replaceReason),
+	)
+	if err != nil {
+		return nil, result, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, result, err
+	}
+	kg, err := d.GetWorkloadKnownGood(workloadID)
+	return kg, result, err
+}
+
+// ClearWorkloadKnownGood removes the pointer without deleting config content.
+func (d *DB) ClearWorkloadKnownGood(workloadID string) (*models.WorkloadKnownGoodConfig, error) {
+	old, err := d.GetWorkloadKnownGood(workloadID)
+	if err != nil {
+		return nil, err
+	}
+	_, err = d.Exec(`DELETE FROM workload_known_good_configs WHERE workload_id = ?`, workloadID)
+	return old, err
+}
+
+// GetPreviousAppliedWorkloadConfig returns the most recent applied config distinct from excludeHash.
+func (d *DB) GetPreviousAppliedWorkloadConfig(workloadID, excludeHash string) (*models.WorkloadConfig, error) {
+	var (
+		wc    models.WorkloadConfig
+		label sql.NullString
+	)
+	err := d.QueryRow(`
+		SELECT wc.workload_id, wc.config_id, wc.applied_at, wc.status,
+		       COALESCE(wc.error_message, ''), COALESCE(wc.pushed_by, ''),
+		       COALESCE(c.content, ''), wc.label
+		FROM workload_configs wc
+		LEFT JOIN configs c ON c.id = wc.config_id
+		WHERE wc.workload_id = ? AND wc.status = 'applied' AND wc.config_id <> ?
+		ORDER BY wc.applied_at DESC LIMIT 1`, workloadID, excludeHash,
+	).Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status, &wc.ErrorMessage, &wc.PushedBy, &wc.Content, &label)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if label.Valid {
+		v := label.String
+		wc.Label = &v
+	}
+	wc.ContentAvailable = wc.Content != ""
+	return &wc, nil
+}
+
+// GetRollbackTarget resolves Last known-good first, then Previous.
+func (d *DB) GetRollbackTarget(workloadID, excludeHash string) (*models.RollbackTarget, error) {
+	if kg, err := d.GetLatestKnownGoodWorkloadConfig(workloadID); err != nil {
+		return nil, err
+	} else if kg != nil {
+		if kg.ConfigID == excludeHash {
+			return nil, nil
+		}
+		kg.ContentAvailable = kg.Content != ""
+		return &models.RollbackTarget{Kind: "last_known_good", Config: *kg}, nil
+	}
+	prev, err := d.GetPreviousAppliedWorkloadConfig(workloadID, excludeHash)
+	if err != nil || prev == nil {
+		return nil, err
+	}
+	return &models.RollbackTarget{Kind: "previous", Config: *prev}, nil
+}
+
+// IsConfigKnownGoodProtected reports whether any workload keeps configID as its known-good baseline.
+func (d *DB) IsConfigKnownGoodProtected(configID string) (bool, error) {
+	var n int
+	if err := d.QueryRow(`SELECT COUNT(1) FROM workload_known_good_configs WHERE config_id = ?`, configID).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }

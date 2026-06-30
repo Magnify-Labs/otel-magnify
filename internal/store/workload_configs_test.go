@@ -244,3 +244,147 @@ func TestWorkloadConfigPushStatusPersistsTimelineAndInstances(t *testing.T) {
 		t.Fatalf("hydrated status incomplete: %+v", wc)
 	}
 }
+
+func TestSetWorkloadKnownGood_HappyPathReplaceAndIdempotent(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "w1")
+	seedConfig(t, db, "good-a", "receivers:\n  otlp: {}")
+	seedConfig(t, db, "good-b", "receivers:\n  otlp: {}\nprocessors: {}")
+	t0 := time.Now().UTC().Add(-2 * time.Hour)
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "good-a", AppliedAt: t0, Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "good-b", AppliedAt: t0.Add(time.Hour), Status: "applied"})
+
+	kg, res, err := db.SetWorkloadKnownGood("w1", "good-a", "admin@magnify.dev", "initial baseline")
+	if err != nil {
+		t.Fatalf("SetWorkloadKnownGood first: %v", err)
+	}
+	if !res.Changed || res.ReplacedConfigID != "" || kg.ConfigID != "good-a" || kg.MarkedBy != "admin@magnify.dev" {
+		t.Fatalf("first mark result = %+v / %+v", res, kg)
+	}
+	markedAt := kg.MarkedAt
+
+	again, res, err := db.SetWorkloadKnownGood("w1", "good-a", "admin@magnify.dev", "retry")
+	if err != nil {
+		t.Fatalf("SetWorkloadKnownGood retry: %v", err)
+	}
+	if res.Changed || again.MarkedAt != markedAt {
+		t.Fatalf("retry should be unchanged and preserve marked_at: %+v / %+v", res, again)
+	}
+
+	repl, res, err := db.SetWorkloadKnownGood("w1", "good-b", "admin@magnify.dev", "new baseline")
+	if err != nil {
+		t.Fatalf("SetWorkloadKnownGood replace: %v", err)
+	}
+	if !res.Changed || res.ReplacedConfigID != "good-a" || repl.ConfigID != "good-b" || repl.ReplaceReason != "new baseline" {
+		t.Fatalf("replace result = %+v / %+v", res, repl)
+	}
+}
+
+func TestSetWorkloadKnownGood_RejectsMissingNonAppliedAndEmptyContent(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "w1")
+	seedConfig(t, db, "pending", "receivers: {}")
+	seedConfig(t, db, "empty", "")
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "pending", Status: "pending"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "empty", Status: "applied"})
+
+	if _, _, err := db.SetWorkloadKnownGood("w1", "missing", "u", ""); err == nil {
+		t.Fatal("expected error for missing history hash")
+	}
+	if _, _, err := db.SetWorkloadKnownGood("w1", "pending", "u", ""); err == nil {
+		t.Fatal("expected error for non-applied hash")
+	}
+	if _, _, err := db.SetWorkloadKnownGood("w1", "empty", "u", ""); err == nil {
+		t.Fatal("expected error for empty content")
+	}
+}
+
+func TestKnownGoodDoesNotMigrateFromLegacyLabelsAndProtectsContent(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "w1")
+	seedConfig(t, db, "legacy", "yaml")
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "legacy", Status: "applied"})
+	_ = db.SetWorkloadConfigLabel("w1", "legacy", "known-good")
+
+	kg, err := db.GetWorkloadKnownGood("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kg != nil {
+		t.Fatalf("legacy label must not become known-good: %+v", kg)
+	}
+
+	if _, _, err := db.SetWorkloadKnownGood("w1", "legacy", "u", "explicit"); err != nil {
+		t.Fatal(err)
+	}
+	protected, err := db.IsConfigKnownGoodProtected("legacy")
+	if err != nil || !protected {
+		t.Fatalf("protected = %v, err=%v", protected, err)
+	}
+	if _, err := db.Exec(`DELETE FROM configs WHERE id = ?`, "legacy"); err == nil {
+		t.Fatal("expected FK to protect known-good config content")
+	}
+}
+
+func TestGetRollbackTargetPrefersKnownGoodThenPrevious(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "w1")
+	seedConfig(t, db, "old", "old-yaml")
+	seedConfig(t, db, "current", "current-yaml")
+	t0 := time.Now().UTC().Add(-2 * time.Hour)
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "old", AppliedAt: t0, Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "current", AppliedAt: t0.Add(time.Hour), Status: "applied"})
+
+	target, err := db.GetRollbackTarget("w1", "current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target == nil || target.Kind != "previous" || target.Config.ConfigID != "old" {
+		t.Fatalf("fallback target = %+v", target)
+	}
+	if _, _, err := db.SetWorkloadKnownGood("w1", "old", "u", ""); err != nil {
+		t.Fatal(err)
+	}
+	target, err = db.GetRollbackTarget("w1", "current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target == nil || target.Kind != "last_known_good" || target.Config.ConfigID != "old" {
+		t.Fatalf("known-good target = %+v", target)
+	}
+}
+
+func TestGetWorkloadConfigHistoryExposesStateLabels(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "w1")
+	active := "current"
+	wl, _ := db.GetWorkload("w1")
+	wl.ActiveConfigHash = active
+	_ = db.UpsertWorkload(wl)
+	seedConfig(t, db, "known", "known-yaml")
+	seedConfig(t, db, active, "current-yaml")
+	seedConfig(t, db, "failed", "failed-yaml")
+	t0 := time.Now().UTC().Add(-3 * time.Hour)
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "known", AppliedAt: t0, Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: active, AppliedAt: t0.Add(time.Hour), Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "failed", AppliedAt: t0.Add(2 * time.Hour), Status: "failed", ErrorMessage: "boom"})
+	_, _, _ = db.SetWorkloadKnownGood("w1", "known", "u", "")
+
+	history, err := db.GetWorkloadConfigHistory("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]models.WorkloadConfig{}
+	for _, row := range history {
+		byID[row.ConfigID] = row
+	}
+	if !byID[active].IsCurrent {
+		t.Fatalf("current row not labeled: %+v", byID[active])
+	}
+	if !byID["known"].IsLastKnownGood || !byID["known"].IsPrevious {
+		t.Fatalf("known row labels = %+v", byID["known"])
+	}
+	if !byID["failed"].IsFailedCandidate || !byID["failed"].ContentAvailable {
+		t.Fatalf("failed row labels = %+v", byID["failed"])
+	}
+}

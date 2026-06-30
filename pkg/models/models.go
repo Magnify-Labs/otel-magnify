@@ -141,6 +141,40 @@ type WorkloadConfig struct {
 	FailedCount                   int                            `json:"failed_count"`
 	PendingCount                  int                            `json:"pending_count"`
 	ErrorGroups                   []WorkloadConfigErrorGroup     `json:"error_groups,omitempty"`
+
+	// Derived state labels for config history UX and rollback semantics.
+	IsCurrent         bool `json:"is_current"`
+	IsPrevious        bool `json:"is_previous"`
+	IsLastKnownGood   bool `json:"is_last_known_good"`
+	IsFailedCandidate bool `json:"is_failed_candidate"`
+	ContentAvailable  bool `json:"content_available"`
+}
+
+// WorkloadKnownGoodConfig is the active workload-scoped pointer to the
+// revision operators have explicitly selected as the recovery baseline.
+type WorkloadKnownGoodConfig struct {
+	WorkloadID       string     `json:"workload_id"`
+	ConfigID         string     `json:"config_id"`
+	MarkedAt         time.Time  `json:"marked_at"`
+	MarkedBy         string     `json:"marked_by,omitempty"`
+	SourceAppliedAt  *time.Time `json:"source_applied_at,omitempty"`
+	ReplacedConfigID string     `json:"replaced_config_id,omitempty"`
+	ReplaceReason    string     `json:"replace_reason,omitempty"`
+	ContentAvailable bool       `json:"content_available"`
+}
+
+// SetKnownGoodResult describes whether a mark-known-good call changed the
+// active pointer and which config, if any, it replaced.
+type SetKnownGoodResult struct {
+	Changed          bool   `json:"changed"`
+	ReplacedConfigID string `json:"replaced_config_id,omitempty"`
+}
+
+// RollbackTarget is the resolved config selected by default rollback:
+// Last known-good first, then Previous.
+type RollbackTarget struct {
+	Kind   string         `json:"target_kind"`
+	Config WorkloadConfig `json:"config"`
 }
 
 // PushActivityPoint is one bucket in the dashboard push-activity chart.

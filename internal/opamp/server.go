@@ -45,6 +45,7 @@ type Store interface {
 	UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUID, status, errorMessage string, updatedAt time.Time) error
 	GetLatestWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 	GetLastAppliedWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
+	GetRollbackTarget(workloadID, excludeHash string) (*models.RollbackTarget, error)
 
 	InsertWorkloadEvent(e models.WorkloadEvent) (int64, error)
 }
@@ -55,7 +56,7 @@ type Notifier interface {
 	BroadcastWorkloadUpdate(workload models.Workload, connectedInstances, driftedInstances int)
 	BroadcastWorkloadEvent(event models.WorkloadEvent)
 	BroadcastConfigStatus(workloadID string, status models.RemoteConfigStatus)
-	BroadcastAutoRollback(workloadID, fromHash, toHash, reason string)
+	BroadcastAutoRollback(workloadID, fromHash, toHash, reason, targetKind string)
 }
 
 // Options controls time-based server behavior. Zero values fall back to

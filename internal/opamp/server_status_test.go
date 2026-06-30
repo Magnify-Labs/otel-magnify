@@ -33,7 +33,7 @@ type configStatusBroadcast struct {
 }
 
 type rollbackBroadcast struct {
-	workloadID, fromHash, toHash, reason string
+	workloadID, fromHash, toHash, reason, targetKind string
 }
 
 func (f *fakeNotifier) BroadcastWorkloadUpdate(w models.Workload, connected, drifted int) {
@@ -48,8 +48,8 @@ func (f *fakeNotifier) BroadcastConfigStatus(workloadID string, s models.RemoteC
 	f.statuses = append(f.statuses, configStatusBroadcast{workloadID, s})
 }
 
-func (f *fakeNotifier) BroadcastAutoRollback(workloadID, fromHash, toHash, reason string) {
-	f.rollbacks = append(f.rollbacks, rollbackBroadcast{workloadID, fromHash, toHash, reason})
+func (f *fakeNotifier) BroadcastAutoRollback(workloadID, fromHash, toHash, reason, targetKind string) {
+	f.rollbacks = append(f.rollbacks, rollbackBroadcast{workloadID, fromHash, toHash, reason, targetKind})
 }
 
 func newTestServer(t *testing.T) (*Server, *store.DB, *fakeNotifier) {

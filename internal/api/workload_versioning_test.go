@@ -322,3 +322,142 @@ func TestRollbackWorkloadConfig_503WhenAuditFails(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 }
+
+func TestMarkWorkloadConfigKnownGood(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/known-good", `{"replace_reason":"validated"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Changed   bool `json:"changed"`
+		KnownGood struct {
+			ConfigID string `json:"config_id"`
+		} `json:"known_good"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if !body.Changed || body.KnownGood.ConfigID != "hash-a" {
+		t.Fatalf("body = %+v", body)
+	}
+	if events := audit.snapshot(); len(events) != 1 || events[0].Action != "config.known_good.mark" {
+		t.Fatalf("audit = %+v", events)
+	}
+}
+
+func TestMarkWorkloadConfigKnownGood_RepeatedMarkUnchanged(t *testing.T) {
+	db, router, _, _ := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+
+	for i, want := range []int{http.StatusCreated, http.StatusOK} {
+		req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/known-good", `{}`, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Fatalf("attempt %d status = %d, want %d, body=%s", i, rec.Code, want, rec.Body.String())
+		}
+		if i == 1 {
+			var body struct {
+				Changed bool `json:"changed"`
+			}
+			_ = json.Unmarshal(rec.Body.Bytes(), &body)
+			if body.Changed {
+				t.Fatal("repeat mark should return changed=false")
+			}
+		}
+	}
+}
+
+func TestMarkWorkloadConfigKnownGood_403ForViewer(t *testing.T) {
+	db, router, _, _ := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/known-good", `{}`, []string{"viewer"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestDefaultRollbackUsesKnownGoodBeforePrevious(t *testing.T) {
+	db, router, fake, _ := newAuditTestAPI(t)
+	if err := db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true}); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.CreateConfig(models.Config{ID: "known", Name: "known", Content: validRollbackYAML, CreatedAt: time.Now().UTC().Add(-2 * time.Hour)})
+	_ = db.CreateConfig(models.Config{ID: "current", Name: "current", Content: strings.Replace(validRollbackYAML, "logging", "debug", 1), CreatedAt: time.Now().UTC().Add(-time.Hour)})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "known", AppliedAt: time.Now().UTC().Add(-2 * time.Hour), Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "current", AppliedAt: time.Now().UTC().Add(-time.Hour), Status: "applied"})
+	_, _, _ = db.SetWorkloadKnownGood("w1", "known", "u", "")
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/rollback", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["config_hash"] != "known" || body["target_kind"] != "last_known_good" {
+		t.Fatalf("body = %+v", body)
+	}
+	if len(fake.pushed) != 1 || string(fake.pushed[0].Body) != validRollbackYAML {
+		t.Fatalf("pushes = %+v", fake.pushed)
+	}
+}
+
+func TestDefaultRollbackFallsBackToPreviousWhenMissingKnownGood(t *testing.T) {
+	db, router, _, _ := newAuditTestAPI(t)
+	if err := db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true}); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.CreateConfig(models.Config{ID: "prev", Name: "prev", Content: validRollbackYAML, CreatedAt: time.Now().UTC().Add(-2 * time.Hour)})
+	_ = db.CreateConfig(models.Config{ID: "current", Name: "current", Content: strings.Replace(validRollbackYAML, "logging", "debug", 1), CreatedAt: time.Now().UTC().Add(-time.Hour)})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "prev", AppliedAt: time.Now().UTC().Add(-2 * time.Hour), Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "current", AppliedAt: time.Now().UTC().Add(-time.Hour), Status: "applied"})
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/rollback", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["config_hash"] != "prev" || body["target_kind"] != "previous" {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestGetWorkloadKnownGood(t *testing.T) {
+	db, router, _, _ := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+	_, _, _ = db.SetWorkloadKnownGood("w1", "hash-a", "u", "")
+
+	req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/known-good", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var kg models.WorkloadKnownGoodConfig
+	_ = json.Unmarshal(rec.Body.Bytes(), &kg)
+	if kg.ConfigID != "hash-a" || !kg.ContentAvailable {
+		t.Fatalf("known-good = %+v", kg)
+	}
+}
+
+func TestGetWorkloadKnownGood_404WhenMissing(t *testing.T) {
+	_, router, _, _ := newAuditTestAPI(t)
+	req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/known-good", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}

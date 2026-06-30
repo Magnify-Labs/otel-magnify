@@ -51,36 +51,40 @@ func (s *Server) handleRemoteConfigStatus(workloadID, instanceUID string, rcs *p
 }
 
 func (s *Server) attemptAutoRollback(workloadID, failedHash, reason string) {
-	prev, err := s.store.GetLastAppliedWorkloadConfig(workloadID)
+	target, err := s.store.GetRollbackTarget(workloadID, failedHash)
 	if err != nil {
 		log.Printf("rollback lookup %s: %v", shortID(workloadID), err)
 		return
 	}
-	if prev == nil {
+	if target == nil {
 		return
 	}
-	if prev.ConfigID == failedHash {
+	if target.Config.ConfigID == failedHash {
 		log.Printf("rollback target equals failed hash %s/%s, aborting", shortID(workloadID), shortID(failedHash))
 		return
 	}
+	if target.Config.Content == "" {
+		log.Printf("rollback target content unavailable %s/%s", shortID(workloadID), shortID(target.Config.ConfigID))
+		return
+	}
 	// Auto-rollback is workload-wide: no specific instance target.
-	if err := s.pushFn(workloadID, []byte(prev.Content), ""); err != nil {
-		log.Printf("rollback push %s->%s: %v", shortID(workloadID), shortID(prev.ConfigID), err)
+	if err := s.pushFn(workloadID, []byte(target.Config.Content), ""); err != nil {
+		log.Printf("rollback push %s->%s: %v", shortID(workloadID), shortID(target.Config.ConfigID), err)
 		return
 	}
 	now := time.Now().UTC()
 	instances := make([]models.WorkloadConfigInstanceStatus, 0, len(s.registry.Instances(workloadID)))
 	for _, inst := range s.registry.Instances(workloadID) {
-		instances = append(instances, models.WorkloadConfigInstanceStatus{InstanceUID: inst.InstanceUID, PodName: inst.PodName, Required: true, Status: models.InstanceStatusSent, ConfigHash: prev.ConfigID, UpdatedAt: now})
+		instances = append(instances, models.WorkloadConfigInstanceStatus{InstanceUID: inst.InstanceUID, PodName: inst.PodName, Required: true, Status: models.InstanceStatusSent, ConfigHash: target.Config.ConfigID, UpdatedAt: now})
 	}
 	if err := s.store.RecordWorkloadConfig(models.WorkloadConfig{
-		WorkloadID: workloadID, ConfigID: prev.ConfigID, AppliedAt: now, SubmittedAt: now, Status: models.PushStatusRollbackStarted, PushedBy: "auto-rollback", RollbackOfPushID: failedHash, InstanceStatuses: instances,
+		WorkloadID: workloadID, ConfigID: target.Config.ConfigID, AppliedAt: now, SubmittedAt: now, Status: models.PushStatusRollbackStarted, PushedBy: "auto-rollback", RollbackOfPushID: failedHash, InstanceStatuses: instances,
 	}); err != nil {
 		log.Printf("rollback record %s: %v", shortID(workloadID), err)
 	}
-	_ = s.store.MarkWorkloadConfigSent(workloadID, prev.ConfigID, time.Now().UTC())
+	_ = s.store.MarkWorkloadConfigSent(workloadID, target.Config.ConfigID, time.Now().UTC())
 	if s.notifier != nil {
-		s.notifier.BroadcastAutoRollback(workloadID, failedHash, prev.ConfigID, reason)
+		s.notifier.BroadcastAutoRollback(workloadID, failedHash, target.Config.ConfigID, reason, target.Kind)
 	}
 }
 

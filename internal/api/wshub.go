@@ -96,13 +96,14 @@ func (h *Hub) BroadcastConfigStatus(workloadID string, status models.RemoteConfi
 }
 
 // BroadcastAutoRollback fans out an automatic rollback notification.
-func (h *Hub) BroadcastAutoRollback(workloadID, fromHash, toHash, reason string) {
+func (h *Hub) BroadcastAutoRollback(workloadID, fromHash, toHash, reason, targetKind string) {
 	event := map[string]any{
 		"type":        "auto_rollback_applied",
 		"workload_id": workloadID,
 		"from_hash":   fromHash,
 		"to_hash":     toHash,
 		"reason":      reason,
+		"target_kind": targetKind,
 	}
 	data, err := json.Marshal(event)
 	if err != nil {

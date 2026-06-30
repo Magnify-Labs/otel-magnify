@@ -374,6 +374,196 @@ func (a *API) handleSetWorkloadConfigLabel(w http.ResponseWriter, r *http.Reques
 	respondJSON(w, 200, map[string]string{"label": label})
 }
 
+func (a *API) handleGetWorkloadKnownGood(w http.ResponseWriter, r *http.Request) {
+	workloadID := chi.URLParam(r, "id")
+	kg, err := a.db.GetWorkloadKnownGood(workloadID)
+	if err != nil {
+		respondError(w, 500, "failed to get known-good config")
+		return
+	}
+	if kg == nil {
+		respondError(w, 404, "known-good config not found")
+		return
+	}
+	respondJSON(w, 200, kg)
+}
+
+type markKnownGoodRequest struct {
+	ReplaceReason string `json:"replace_reason"`
+}
+
+func (a *API) handleMarkWorkloadConfigKnownGood(w http.ResponseWriter, r *http.Request) {
+	workloadID := chi.URLParam(r, "id")
+	hash := chi.URLParam(r, "hash")
+
+	var req markKnownGoodRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			respondError(w, 400, "invalid JSON body")
+			return
+		}
+	}
+	reason := strings.TrimSpace(req.ReplaceReason)
+	if len(reason) > 256 {
+		respondError(w, 400, "replace_reason too long (max 256 chars)")
+		return
+	}
+
+	wl, err := a.db.GetWorkload(workloadID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, 404, "workload not found")
+			return
+		}
+		respondError(w, 500, "failed to load workload")
+		return
+	}
+	if wl.ArchivedAt != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "workload is archived", "code": "workload_archived"})
+		return
+	}
+	wc, err := a.db.GetWorkloadConfigByHash(workloadID, hash)
+	if err != nil {
+		respondError(w, 500, "failed to load config")
+		return
+	}
+	if wc == nil {
+		respondError(w, 404, "config not found in this workload's history")
+		return
+	}
+	if wc.Status != "applied" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "config is not applied", "code": "not_applied"})
+		return
+	}
+	if wc.Content == "" {
+		respondJSON(w, http.StatusGone, map[string]string{"error": "config content is no longer available", "code": "config_content_unavailable"})
+		return
+	}
+	if result := validator.Validate([]byte(wc.Content), wl.AvailableComponents); !result.Valid {
+		respondJSON(w, 400, map[string]any{"error": "configuration failed validation", "validation_errors": result.Errors})
+		return
+	}
+	markedBy := ""
+	if info := ext.UserInfoFromContext(r.Context()); info != nil {
+		markedBy = info.Email
+	}
+	kg, setResult, err := a.db.SetWorkloadKnownGood(workloadID, hash, markedBy, reason)
+	if err != nil {
+		respondError(w, 500, "failed to mark known-good")
+		return
+	}
+	if err := audit.Emit(r.Context(), a.audit, "config.known_good.mark", "workload", workloadID, hash); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
+	status := http.StatusOK
+	if setResult.Changed && setResult.ReplacedConfigID == "" {
+		status = http.StatusCreated
+	}
+	respondJSON(w, status, map[string]any{
+		"changed":            setResult.Changed,
+		"replaced_config_id": setResult.ReplacedConfigID,
+		"known_good":         kg,
+	})
+}
+
+func (a *API) handleClearWorkloadKnownGood(w http.ResponseWriter, r *http.Request) {
+	workloadID := chi.URLParam(r, "id")
+	wl, err := a.db.GetWorkload(workloadID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, 404, "workload not found")
+			return
+		}
+		respondError(w, 500, "failed to load workload")
+		return
+	}
+	if wl.ArchivedAt != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "workload is archived", "code": "workload_archived"})
+		return
+	}
+	old, err := a.db.ClearWorkloadKnownGood(workloadID)
+	if err != nil {
+		respondError(w, 500, "failed to clear known-good")
+		return
+	}
+	detail := ""
+	if old != nil {
+		detail = old.ConfigID
+	}
+	if err := audit.Emit(r.Context(), a.audit, "config.known_good.clear", "workload", workloadID, detail); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) handleRollbackWorkloadDefault(w http.ResponseWriter, r *http.Request) {
+	workloadID := chi.URLParam(r, "id")
+	if a.opamp == nil {
+		respondError(w, 503, "OpAMP server not available")
+		return
+	}
+	wl, err := a.db.GetWorkload(workloadID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, 404, "workload not found")
+			return
+		}
+		respondError(w, 500, "failed to load workload")
+		return
+	}
+	if !wl.AcceptsRemoteConfig {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "workload does not accept remote config", "code": "remote_config_unsupported"})
+		return
+	}
+	excludeHash := wl.ActiveConfigHash
+	if excludeHash == "" {
+		if last, err := a.db.GetLastAppliedWorkloadConfig(workloadID); err == nil && last != nil {
+			excludeHash = last.ConfigID
+		} else if err != nil {
+			respondError(w, 500, "failed to resolve current config")
+			return
+		}
+	}
+	target, err := a.db.GetRollbackTarget(workloadID, excludeHash)
+	if err != nil {
+		respondError(w, 500, "failed to resolve rollback target")
+		return
+	}
+	if target == nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "no rollback target", "code": "no_rollback_target"})
+		return
+	}
+	if target.Config.Content == "" {
+		respondJSON(w, http.StatusGone, map[string]string{"error": "config content is no longer available", "code": "config_content_unavailable"})
+		return
+	}
+	body := []byte(target.Config.Content)
+	if result := validator.Validate(body, wl.AvailableComponents); !result.Valid {
+		respondJSON(w, 400, map[string]any{"error": "configuration failed validation", "validation_errors": result.Errors})
+		return
+	}
+	pushedBy := ""
+	if info := ext.UserInfoFromContext(r.Context()); info != nil {
+		pushedBy = info.Email
+	}
+	if err := a.db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: workloadID, ConfigID: target.Config.ConfigID, Status: "pending", PushedBy: pushedBy}); err != nil {
+		respondError(w, 500, "failed to record push")
+		return
+	}
+	if err := a.opamp.PushConfig(r.Context(), workloadID, body, ""); err != nil {
+		_ = a.db.UpdateWorkloadConfigStatus(workloadID, target.Config.ConfigID, "failed", err.Error())
+		respondError(w, 502, err.Error())
+		return
+	}
+	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, target.Config.ConfigID); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
+	respondJSON(w, 202, map[string]string{"status": "rollback initiated", "config_hash": target.Config.ConfigID, "target_kind": target.Kind})
+}
+
 // handleRollbackWorkloadConfig re-pushes the YAML of the given hash through
 // the same pipeline as a fresh push (validation, RecordWorkloadConfig with
 // status=pending, opamp.PushConfig). The new history row carries a fresh
