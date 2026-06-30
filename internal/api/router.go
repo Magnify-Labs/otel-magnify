@@ -117,6 +117,8 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config", api.handlePushWorkloadConfig)
 		r.With(api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/validate", api.handleValidateWorkloadConfig)
 		r.Get("/api/workloads/{id}/configs", api.handleGetWorkloadConfigHistory)
+		r.Get("/api/workloads/{id}/rollback/prepare", api.handlePrepareRollback)
+		r.Get("/api/workloads/{id}/rollback/status", api.handleRollbackStatus)
 		r.Get("/api/workloads/{id}/configs/{hash}", api.handleGetWorkloadConfigByHash)
 		r.Get("/api/workloads/{id}/known-good", api.handleGetWorkloadKnownGood)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/label", api.handleSetWorkloadConfigLabel)

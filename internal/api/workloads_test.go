@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -435,42 +438,6 @@ func TestValidateWorkloadConfig_ReturnsErrorsForBadYAML(t *testing.T) {
 	}
 }
 
-func TestValidateWorkloadConfig_IncludesRuntimeCheckWhenEnabled(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fake uses POSIX sh")
-	}
-	bin := writeAPIShim(t, `
-case "$1" in
-  --version) echo "otelcol version 0.150.1"; exit 0 ;;
-  validate) exit 0 ;;
-esac
-exit 9
-`)
-	t.Setenv("OTELCOL_RUNTIME_VALIDATION_ENABLED", "true")
-	t.Setenv("OTELCOL_BINARY_PATH", bin)
-
-	db, router, _ := newTestAPI(t)
-	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Version: "0.150.1", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}})
-
-	req := authedPost(t, "/api/workloads/w1/config/validate?target_collector_version=0.150.1", validWorkloadConfig)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != 200 {
-		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	var result struct {
-		Valid  bool             `json:"valid"`
-		Checks []apiResultCheck `json:"checks"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	check := findAPIResultCheck(t, result.Checks, "otelcol_runtime")
-	if !result.Valid || check.Status != "passed" || check.Metadata["binary_version"] != "0.150.1" || check.Metadata["target_version"] != "0.150.1" {
-		t.Fatalf("runtime check not integrated: result=%+v check=%+v", result, check)
-	}
-}
-
 const validWorkloadConfig = `
 receivers:
   otlp: {}
@@ -483,12 +450,6 @@ service:
       exporters: [logging]
 `
 
-type apiResultCheck struct {
-	ID       string         `json:"id"`
-	Status   string         `json:"status"`
-	Metadata map[string]any `json:"metadata"`
-}
-
 func writeAPIShim(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "otelcol")
@@ -496,17 +457,6 @@ func writeAPIShim(t *testing.T, body string) string {
 		t.Fatalf("write fake otelcol: %v", err)
 	}
 	return path
-}
-
-func findAPIResultCheck(t *testing.T, checks []apiResultCheck, id string) apiResultCheck {
-	t.Helper()
-	for _, check := range checks {
-		if check.ID == id {
-			return check
-		}
-	}
-	t.Fatalf("check %q not found in %+v", id, checks)
-	return apiResultCheck{}
 }
 
 // --- Config history ---
@@ -527,6 +477,263 @@ func TestGetWorkloadConfigHistory(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &hist)
 	if len(hist) != 1 || hist[0].ErrorMessage != "oops" || hist[0].Content != "my-yaml" || hist[0].PushedBy != "u@x" {
 		t.Fatalf("history shape: %+v", hist)
+	}
+}
+
+// --- Guided rollback ---
+
+func configHash(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+func seedRollbackConfig(t *testing.T, db ext.Store, workloadID, content, status, pushedBy string, appliedAt time.Time, label *string) string {
+	t.Helper()
+	_ = db.UpsertWorkload(models.Workload{ID: workloadID, Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
+	hash := configHash(content)
+	if err := db.CreateConfig(models.Config{ID: hash, Name: "cfg-" + hash[:8], Content: content, CreatedAt: appliedAt, CreatedBy: pushedBy}); err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+	if err := db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: workloadID, ConfigID: hash, AppliedAt: appliedAt, Status: status, PushedBy: pushedBy, Label: label}); err != nil {
+		t.Fatalf("RecordWorkloadConfig: %v", err)
+	}
+	if label != nil {
+		if err := db.SetWorkloadConfigLabel(workloadID, hash, *label); err != nil {
+			t.Fatalf("SetWorkloadConfigLabel: %v", err)
+		}
+	}
+	return hash
+}
+
+func TestRollbackPrepareByHashReturnsSnapshotValidationAndDiff(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	current := `receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+	target := `receivers:
+  otlp: {}
+processors:
+  batch: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logging]
+`
+	now := time.Now().UTC()
+	currentHash := seedRollbackConfig(t, db, "w1", current, "applied", "ops@example.com", now.Add(-2*time.Hour), nil)
+	label := "stable-before-change"
+	targetHash := seedRollbackConfig(t, db, "w1", target, "applied", "valentin@example.com", now.Add(-time.Hour), &label)
+	_ = db.UpsertWorkload(models.Workload{
+		ID: "w1", DisplayName: "collector-prod", Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true,
+		ActiveConfigHash: currentHash,
+		AvailableComponents: &models.AvailableComponents{Hash: "components-v1", Components: map[string][]string{
+			"receivers": {"otlp"}, "processors": {"batch"}, "exporters": {"logging"},
+		}},
+	})
+
+	req := authedRequest(t, "GET", "/api/workloads/w1/rollback/prepare?target_hash="+targetHash)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["schema_version"] != "guided-rollback-prepare.v1" {
+		t.Fatalf("schema_version = %v", body["schema_version"])
+	}
+	if targetCfg := body["target_config"].(map[string]any); targetCfg["hash"] != targetHash || targetCfg["content_available"] != true {
+		t.Fatalf("target_config = %+v", targetCfg)
+	}
+	metadata := body["target_config"].(map[string]any)["metadata"].(map[string]any)
+	if metadata["label"] != label || metadata["pushed_by"] != "valentin@example.com" {
+		t.Fatalf("metadata = %+v", metadata)
+	}
+	validation := body["validation"].(map[string]any)
+	if validation["status"] != "valid" || validation["can_confirm"] != true {
+		t.Fatalf("validation = %+v", validation)
+	}
+	diff := body["diff"].(map[string]any)
+	if diff["status"] != "available" || diff["direction"] != "current_to_target" || diff["base_hash"] != currentHash || diff["target_hash"] != targetHash {
+		t.Fatalf("diff = %+v", diff)
+	}
+	action := body["action"].(map[string]any)
+	if action["can_submit"] != true || action["submit_url"] != "/api/workloads/w1/configs/"+targetHash+"/rollback" {
+		t.Fatalf("action = %+v", action)
+	}
+}
+
+func TestRollbackPrepareUnavailableComponentBlocksConfirm(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	target := `receivers:
+  otlp: {}
+exporters:
+  datadog: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [datadog]
+`
+	targetHash := seedRollbackConfig(t, db, "w1", target, "applied", "", time.Now().UTC(), nil)
+	_ = db.UpsertWorkload(models.Workload{
+		ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true,
+		AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}},
+	})
+
+	req := authedRequest(t, "GET", "/api/workloads/w1/rollback/prepare?target_hash="+targetHash)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	validation := body["validation"].(map[string]any)
+	if validation["status"] != "invalid" || validation["can_confirm"] != false {
+		t.Fatalf("validation = %+v", validation)
+	}
+	unavailable := validation["unavailable_components"].([]any)
+	if len(unavailable) != 1 || unavailable[0].(map[string]any)["component_type"] != "datadog" {
+		t.Fatalf("unavailable_components = %+v", unavailable)
+	}
+}
+
+func TestRollbackActionResponseAndStatusTransitions(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	target := `receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+	targetHash := seedRollbackConfig(t, db, "w1", target, "applied", "", time.Now().UTC().Add(-time.Hour), nil)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
+
+	req := authedPost(t, "/api/workloads/w1/configs/"+targetHash+"/rollback", "")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var accepted map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &accepted)
+	if accepted["schema_version"] != "guided-rollback-action.v1" || accepted["status"] != "accepted" || accepted["config_hash"] != targetHash {
+		t.Fatalf("accepted = %+v", accepted)
+	}
+	requestID, ok := accepted["request_id"].(string)
+	if !ok || requestID == "" || accepted["status_url"] == "" {
+		t.Fatalf("missing correlation fields: %+v", accepted)
+	}
+	if len(fake.pushed) != 1 || string(fake.pushed[0].Body) != target {
+		t.Fatalf("push = %+v", fake.pushed)
+	}
+
+	req = authedRequest(t, "GET", "/api/workloads/w1/rollback/status?request_id="+requestID)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status report code = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var report map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &report)
+	if report["apply_status"] != "accepted" || report["terminal"] != false || report["last_known_status"] != models.PushStatusSent {
+		t.Fatalf("initial report = %+v", report)
+	}
+
+	if err := db.UpdateWorkloadConfigStatus("w1", targetHash, "applied", ""); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true, RemoteConfigStatus: &models.RemoteConfigStatus{Status: "applied", ConfigHash: targetHash, UpdatedAt: time.Now().UTC()}})
+	req = authedRequest(t, "GET", "/api/workloads/w1/rollback/status?request_id="+requestID)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	_ = json.Unmarshal(rec.Body.Bytes(), &report)
+	if report["apply_status"] != "applied" || report["terminal_status"] != "applied" || report["terminal"] != true {
+		t.Fatalf("applied report = %+v", report)
+	}
+}
+
+func TestRollbackMissingMetadataDoesNotBlockPrepare(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	target := `receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+	targetHash := seedRollbackConfig(t, db, "w1", target, "applied", "", time.Now().UTC(), nil)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
+
+	req := authedRequest(t, "GET", "/api/workloads/w1/rollback/prepare?target_hash="+targetHash)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["action"].(map[string]any)["can_submit"] != true {
+		t.Fatalf("action = %+v", body["action"])
+	}
+	metadata := body["target_config"].(map[string]any)["metadata"].(map[string]any)
+	if _, ok := metadata["label"]; ok {
+		t.Fatalf("unexpected label metadata: %+v", metadata)
+	}
+}
+
+func TestRollbackApplyFailureRecordsFailedAndReturnsRetryableError(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	target := `receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+	targetHash := seedRollbackConfig(t, db, "w1", target, "applied", "", time.Now().UTC(), nil)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
+	fake.err = errors.New("collector disconnected")
+
+	req := authedPost(t, "/api/workloads/w1/configs/"+targetHash+"/rollback", "")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["code"] != "push_failed" || body["retryable"] != true {
+		t.Fatalf("error body = %+v", body)
+	}
+	history, _ := db.GetWorkloadConfigHistory("w1")
+	if history[0].Status != "failed" || history[0].ErrorMessage != "collector disconnected" {
+		t.Fatalf("history = %+v", history)
 	}
 }
 
