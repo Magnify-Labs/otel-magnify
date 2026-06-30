@@ -110,12 +110,12 @@ func TestBroadcastAutoRollback_SerializesEvent(t *testing.T) {
 	h.clients[&wsClient{send: ch}] = true
 	h.mu.Unlock()
 
-	h.BroadcastAutoRollback("workload-1", "bbbbbbbb", "aaaaaaaa", "oops")
+	h.BroadcastAutoRollback("workload-1", "bbbbbbbb", "aaaaaaaa", "oops", "last_known_good")
 	select {
 	case b := <-ch:
 		var ev map[string]any
 		_ = json.Unmarshal(b, &ev)
-		if ev["type"] != "auto_rollback_applied" || ev["workload_id"] != "workload-1" || ev["from_hash"] != "bbbbbbbb" || ev["to_hash"] != "aaaaaaaa" {
+		if ev["type"] != "auto_rollback_applied" || ev["workload_id"] != "workload-1" || ev["from_hash"] != "bbbbbbbb" || ev["to_hash"] != "aaaaaaaa" || ev["target_kind"] != "last_known_good" {
 			t.Fatalf("payload: %s", string(b))
 		}
 	case <-time.After(time.Second):

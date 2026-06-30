@@ -46,8 +46,16 @@ type Store interface {
 	UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUID, status, errorMessage string, updatedAt time.Time) error
 	GetLatestWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 	GetLatestPendingWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
+	GetLatestPendingOrApplyingWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 	GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfig, error)
 	GetLastAppliedWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
+	GetLatestKnownGoodWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
+	GetWorkloadKnownGood(workloadID string) (*models.WorkloadKnownGoodConfig, error)
+	SetWorkloadKnownGood(workloadID, configID, markedBy, replaceReason string) (*models.WorkloadKnownGoodConfig, models.SetKnownGoodResult, error)
+	ClearWorkloadKnownGood(workloadID string) (*models.WorkloadKnownGoodConfig, error)
+	GetPreviousAppliedWorkloadConfig(workloadID, excludeHash string) (*models.WorkloadConfig, error)
+	GetRollbackTarget(workloadID, excludeHash string) (*models.RollbackTarget, error)
+	IsConfigKnownGoodProtected(configID string) (bool, error)
 
 	// SetWorkloadConfigLabel attaches (or clears, when label == "") an
 	// operator-facing label to every workload_configs row matching

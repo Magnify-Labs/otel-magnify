@@ -172,6 +172,15 @@ func (f *fakeStore) GetLastAppliedWorkloadConfig(_ string) (*models.WorkloadConf
 	return f.lastApplied, nil
 }
 
+func (f *fakeStore) GetRollbackTarget(_ string, excludeHash string) (*models.RollbackTarget, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.lastApplied == nil || f.lastApplied.ConfigID == excludeHash {
+		return nil, nil
+	}
+	return &models.RollbackTarget{Kind: "previous", Config: *f.lastApplied}, nil
+}
+
 func (f *fakeStore) InsertWorkloadEvent(e models.WorkloadEvent) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
