@@ -7,18 +7,29 @@ import (
 )
 
 const (
-	PushStatusSubmitted       = "submitted"
-	PushStatusSent            = "sent"
-	PushStatusApplying        = "applying"
-	PushStatusApplied         = "applied"
-	PushStatusFailed          = "failed"
+	// PushStatusSubmitted means the server accepted and queued the push.
+	PushStatusSubmitted = "submitted"
+	// PushStatusSent means the config was sent through OpAMP.
+	PushStatusSent = "sent"
+	// PushStatusApplying means at least one target reported applying.
+	PushStatusApplying = "applying"
+	// PushStatusApplied means the push reached an applied terminal state.
+	PushStatusApplied = "applied"
+	// PushStatusFailed means the push failed on at least one required target.
+	PushStatusFailed = "failed"
+	// PushStatusRollbackStarted means rollback was triggered after the push.
 	PushStatusRollbackStarted = "rollback_started"
+	// PushStatusRollbackApplied means rollback completed successfully.
 	PushStatusRollbackApplied = "rollback_applied"
-	PushStatusRollbackFailed  = "rollback_failed"
-	InstanceStatusSent        = "sent"
-	InstanceStatusNoStatus    = "no_status"
+	// PushStatusRollbackFailed means rollback was triggered but failed.
+	PushStatusRollbackFailed = "rollback_failed"
+	// InstanceStatusSent means an instance was targeted but has not reported yet.
+	InstanceStatusSent = "sent"
+	// InstanceStatusNoStatus means no OpAMP status arrived before timeout.
+	InstanceStatusNoStatus = "no_status"
 )
 
+// OpAMPStatusTimeoutMessage is the user-facing timeout message for missing OpAMP status.
 const OpAMPStatusTimeoutMessage = "No OpAMP status after 30s"
 
 // WorkloadConfigTimelineEntry is one observable milestone in a config push.

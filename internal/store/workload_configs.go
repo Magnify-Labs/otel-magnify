@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -124,7 +125,7 @@ func (d *DB) GetLatestPendingWorkloadConfig(workloadID string) (*models.Workload
 		LEFT JOIN configs c ON c.id = wc.config_id
 		WHERE wc.workload_id = ? AND wc.status IN ('pending','submitted','sent','applying','rollback_started')
 		ORDER BY wc.applied_at DESC LIMIT 1`, workloadID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return wc, err
@@ -141,7 +142,7 @@ func (d *DB) GetLatestWorkloadConfig(workloadID string) (*models.WorkloadConfig,
 		LEFT JOIN configs c ON c.id = wc.config_id
 		WHERE wc.workload_id = ?
 		ORDER BY wc.applied_at DESC LIMIT 1`, workloadID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return wc, err
@@ -158,7 +159,7 @@ func (d *DB) GetLatestWorkloadConfigByHash(workloadID, configID string) (*models
 		LEFT JOIN configs c ON c.id = wc.config_id
 		WHERE wc.workload_id = ? AND wc.config_id = ?
 		ORDER BY wc.applied_at DESC LIMIT 1`, workloadID, configID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return wc, err
@@ -330,7 +331,7 @@ func (d *DB) GetLastAppliedWorkloadConfig(workloadID string) (*models.WorkloadCo
 		LEFT JOIN configs c ON c.id = wc.config_id
 		WHERE wc.workload_id = ? AND wc.status = 'applied'
 		ORDER BY wc.applied_at DESC LIMIT 1`, workloadID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return wc, err
