@@ -62,6 +62,8 @@ export const test = base.extend<{ loggedInPage: Page }>({
   loggedInPage: async ({ page }, use) => {
     await page.addInitScript(() => {
       localStorage.setItem('token', 'test.token.stub')
+      const e2eWindow = window as unknown as { __OTEL_MAGNIFY_E2E_DISABLE_WS__?: boolean }
+      e2eWindow.__OTEL_MAGNIFY_E2E_DISABLE_WS__ = true
     })
     const defaultMe = buildMe({})
     await page.route('**/api/me**', (route) =>
