@@ -19,6 +19,126 @@ service:
 `
 const YAML_NEW = `${YAML_OLD}# revision-new\n`
 
+const SECRET_LITERAL = 'Bearer super-secret-token'
+
+const HIGH_OTEL_DIFF = {
+  schema_version: 'otel-config-diff.v1',
+  valid: true,
+  summary: {
+    overall_risk: 'high',
+    headline: 'High risk: memory_limiter removed and exporter auth changed',
+    counts: {
+      components_added: 0,
+      components_removed: 2,
+      components_modified: 1,
+      pipelines_added: 0,
+      pipelines_removed: 0,
+      pipelines_modified: 1,
+      endpoints_added: 0,
+      endpoints_removed: 0,
+      endpoints_modified: 1,
+      high_risk: 4,
+      medium_risk: 1,
+      low_risk: 0,
+    },
+  },
+  components: [
+    {
+      id: 'processors:memory_limiter',
+      kind: 'removed',
+      component: {
+        category: 'processors',
+        id: 'memory_limiter',
+        type: 'memory_limiter',
+        path: 'processors.memory_limiter',
+      },
+      risk: 'high',
+      title: 'Processor memory_limiter removed',
+      changed_fields: [],
+      impacted_pipelines: ['traces'],
+      rules: ['memory_limiter_removed_from_pipeline'],
+    },
+  ],
+  pipelines: [
+    {
+      id: 'pipeline:traces',
+      kind: 'modified',
+      pipeline_key: 'traces',
+      signal: 'traces',
+      risk: 'high',
+      component_ref_changes: [
+        {
+          section: 'processors',
+          component_id: 'memory_limiter',
+          kind: 'removed',
+          from_index: 0,
+          risk: 'high',
+          reason: 'memory limiter removed',
+        },
+      ],
+      rules: ['memory_limiter_removed_from_pipeline'],
+    },
+  ],
+  endpoints: [
+    {
+      id: 'endpoint:exporters.otlp.endpoint',
+      kind: 'modified',
+      component: { category: 'exporters', id: 'otlp', type: 'otlp', path: 'exporters.otlp' },
+      endpoint_kind: 'otlp_grpc',
+      field_path: 'exporters.otlp.endpoint',
+      before: { raw: 'https://otel-old.example:4317', normalized: 'https://otel-old.example:4317' },
+      after: { raw: 'https://otel-new.example:4317', normalized: 'https://otel-new.example:4317' },
+      risk: 'high',
+      rules: ['otlp_endpoint_changed'],
+    },
+  ],
+  security: [
+    {
+      id: 'security:auth-header',
+      kind: 'modified',
+      component: { category: 'exporters', id: 'otlp', type: 'otlp', path: 'exporters.otlp' },
+      path: 'exporters.otlp.headers.Authorization',
+      field: 'headers',
+      before: { redaction_state: 'redacted', display: '••••masked••••', raw: SECRET_LITERAL },
+      after: { redaction_state: 'redacted', display: '••••masked••••' },
+      risk: 'high',
+      rules: ['auth_removed'],
+      message: 'Header authorization modified',
+    },
+  ],
+  risk_items: [
+    {
+      id: 'risk:memory-limiter',
+      risk: 'high',
+      category: 'availability',
+      rule: 'memory_limiter_removed_from_pipeline',
+      title: 'Memory limiter removed',
+      description: 'The traces pipeline no longer has memory protection.',
+      affected_paths: ['processors.memory_limiter', 'service.pipelines.traces.processors'],
+      affected_pipelines: ['traces'],
+    },
+    {
+      id: 'risk:tls',
+      risk: 'high',
+      category: 'security',
+      rule: 'transport_security_weakened',
+      title: 'Transport security weakened',
+      description: 'Exporter transport security changed.',
+      affected_paths: ['exporters.otlp.tls.insecure'],
+      affected_pipelines: ['traces'],
+    },
+  ],
+  diagnostics: [],
+  normalized: {
+    base_hash: 'sha256:old',
+    target_hash: 'sha256:new',
+    base_component_count: 4,
+    target_component_count: 3,
+    base_pipeline_count: 1,
+    target_pipeline_count: 1,
+  },
+}
+
 function mockWorkload(page: Page) {
   return page.route(`**/api/workloads/${WORKLOAD_ID}`, (route) =>
     route.fulfill({
@@ -547,4 +667,51 @@ test('guided rollback blocks invalid targets and reports prepare failures', asyn
     .getByRole('button', { name: 'Rollback' })
     .click()
   await expect(page.getByText('Failed to load rollback preview: OpAMP unavailable')).toBeVisible()
+})
+test('compare dialog renders enriched OTel diff without leaking redacted secrets', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, BASE_HISTORY)
+
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/${HASH_OLD}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...BASE_HISTORY[1], content: YAML_OLD }),
+    }),
+  )
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/${HASH_NEW}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...BASE_HISTORY[0], content: YAML_NEW }),
+    }),
+  )
+  await page.route('**/api/configs/diff', async (route, request) => {
+    expect(request.postDataJSON()).toMatchObject({ base_yaml: YAML_OLD, target_yaml: YAML_NEW })
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(HIGH_OTEL_DIFF),
+    })
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Compare revisions' }).click()
+
+  await expect(page.getByRole('heading', { name: 'OTel impact summary' })).toBeVisible()
+  await expect(page.getByLabel('Risk level: high').first()).toBeVisible()
+  await expect(page.getByText('Dangerous removals')).toBeVisible()
+  await expect(page.getByText('Memory limiter removed')).toBeVisible()
+  await expect(page.getByText('Impacted pipelines')).toBeVisible()
+  await expect(page.getByText('modified · traces')).toBeVisible()
+  await expect(page.getByText('Endpoints changed')).toBeVisible()
+  await expect(page.getByText('https://otel-new.example:4317').first()).toBeVisible()
+  await expect(page.getByText('Auth and headers touched')).toBeVisible()
+  await expect(page.getByText('Header authorization modified')).toBeVisible()
+  await expect(page.getByText('••••masked••••').first()).toBeVisible()
+  await expect(page.getByText('Raw YAML diff may contain sensitive values.')).toBeVisible()
+  await expect(page.getByText(SECRET_LITERAL)).toHaveCount(0)
 })

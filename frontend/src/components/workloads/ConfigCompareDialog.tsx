@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { workloadsAPI } from '../../api/client'
+import { configsAPI, workloadsAPI } from '../../api/client'
 import ConfigDiffView from './ConfigDiffView'
 import type { WorkloadConfig } from '../../types'
 
@@ -59,6 +59,24 @@ export default function ConfigCompareDialog({ workloadId, history, onClose }: Pr
   const rightYaml = rightQuery.data?.content ?? ''
   const isLoading = leftQuery.isLoading || rightQuery.isLoading
   const isError = leftQuery.isError || rightQuery.isError
+  const canCompare = !isLoading && !isError && leftYaml.length > 0 && rightYaml.length > 0
+
+  const otelDiffQuery = useQuery({
+    queryKey: ['otel-config-diff', workloadId, leftRev?.hash, rightRev?.hash],
+    queryFn: () =>
+      configsAPI.diff({
+        base_yaml: leftYaml,
+        target_yaml: rightYaml,
+        context: {
+          workload_id: workloadId,
+          base_label: leftRev ? formatRevision(leftRev) : undefined,
+          target_label: rightRev ? formatRevision(rightRev) : undefined,
+          include_raw_paths: true,
+        },
+      }),
+    enabled: canCompare,
+    retry: false,
+  })
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -118,7 +136,13 @@ export default function ConfigCompareDialog({ workloadId, history, onClose }: Pr
           ) : isError ? (
             <div className="error-text">{t('workloads.config.versioning.compare_error')}</div>
           ) : (
-            <ConfigDiffView oldYaml={leftYaml} newYaml={rightYaml} />
+            <ConfigDiffView
+              oldYaml={leftYaml}
+              newYaml={rightYaml}
+              otelDiff={otelDiffQuery.data}
+              otelDiffLoading={otelDiffQuery.isLoading}
+              otelDiffUnavailable={otelDiffQuery.isError}
+            />
           )}
         </div>
       </div>

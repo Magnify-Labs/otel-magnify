@@ -326,3 +326,174 @@ export interface MeResponse {
   groups: Group[]
   preferences: UserPreferences
 }
+
+export type OTelDiffRisk = 'none' | 'low' | 'medium' | 'high'
+export type OTelDiffChangeKind = 'added' | 'removed' | 'modified' | 'unchanged'
+export type OTelComponentCategory =
+  | 'receivers'
+  | 'processors'
+  | 'exporters'
+  | 'connectors'
+  | 'extensions'
+export type OTelSignal = 'traces' | 'metrics' | 'logs' | 'profiles' | 'unknown'
+
+export interface OTelConfigDiffRequest {
+  base_yaml: string
+  target_yaml: string
+  context?: {
+    workload_id?: string
+    base_label?: string
+    target_label?: string
+    include_raw_paths?: boolean
+  }
+}
+
+export interface OTelConfigDiffResponse {
+  schema_version: 'otel-config-diff.v1'
+  valid: boolean
+  summary: OTelDiffSummary
+  components: OTelComponentDiff[]
+  pipelines: OTelPipelineDiff[]
+  endpoints: OTelEndpointDiff[]
+  security: OTelSecurityDiff[]
+  risk_items: OTelRiskItem[]
+  diagnostics: OTelDiffDiagnostic[]
+  normalized: {
+    base_hash: string
+    target_hash: string
+    base_component_count: number
+    target_component_count: number
+    base_pipeline_count: number
+    target_pipeline_count: number
+  }
+}
+
+export interface OTelDiffSummary {
+  overall_risk: OTelDiffRisk
+  headline: string
+  counts: {
+    components_added: number
+    components_removed: number
+    components_modified: number
+    pipelines_added: number
+    pipelines_removed: number
+    pipelines_modified: number
+    endpoints_added: number
+    endpoints_removed: number
+    endpoints_modified: number
+    high_risk: number
+    medium_risk: number
+    low_risk: number
+  }
+}
+
+export interface OTelComponentRef {
+  category: OTelComponentCategory
+  id: string
+  type: string
+  name?: string
+  path: string
+}
+
+export interface OTelComponentDiff {
+  id: string
+  kind: OTelDiffChangeKind
+  component: OTelComponentRef
+  risk: OTelDiffRisk
+  title: string
+  before?: unknown
+  after?: unknown
+  changed_fields: OTelFieldChange[]
+  impacted_pipelines: string[]
+  rules: string[]
+}
+
+export interface OTelPipelineDiff {
+  id: string
+  kind: OTelDiffChangeKind
+  pipeline_key: string
+  signal: OTelSignal
+  risk: OTelDiffRisk
+  before?: OTelPipelineShape
+  after?: OTelPipelineShape
+  component_ref_changes: OTelPipelineRefChange[]
+  rules: string[]
+}
+
+export interface OTelPipelineShape {
+  receivers: string[]
+  processors: string[]
+  exporters: string[]
+}
+
+export interface OTelPipelineRefChange {
+  section: 'receivers' | 'processors' | 'exporters'
+  component_id: string
+  kind: 'added' | 'removed' | 'moved'
+  from_index?: number
+  to_index?: number
+  risk: OTelDiffRisk
+  reason?: string
+}
+
+export interface OTelEndpointDiff {
+  id: string
+  kind: OTelDiffChangeKind
+  component: OTelComponentRef
+  endpoint_kind: 'otlp_grpc' | 'otlp_http' | 'prometheus' | 'jaeger' | 'zipkin' | 'generic'
+  field_path: string
+  before?: OTelEndpointValue
+  after?: OTelEndpointValue
+  risk: OTelDiffRisk
+  rules: string[]
+}
+
+export interface OTelEndpointValue {
+  raw: string
+  scheme?: string
+  host?: string
+  port?: number
+  path?: string
+  normalized: string
+  insecure?: boolean
+  tls_enabled?: boolean
+}
+
+export interface OTelSecurityDiff {
+  id: string
+  kind: OTelDiffChangeKind | 'weakened' | 'strengthened'
+  component?: OTelComponentRef
+  path: string
+  field: 'tls' | 'insecure' | 'headers' | 'auth' | 'placeholder' | 'secret_like'
+  before?: unknown
+  after?: unknown
+  risk: OTelDiffRisk
+  rules: string[]
+  message: string
+}
+
+export interface OTelRiskItem {
+  id: string
+  risk: OTelDiffRisk
+  category: 'availability' | 'data_loss' | 'security' | 'routing' | 'cost' | 'operability'
+  rule: string
+  title: string
+  description: string
+  affected_paths: string[]
+  affected_pipelines: string[]
+}
+
+export interface OTelFieldChange {
+  path: string
+  before?: unknown
+  after?: unknown
+  risk: OTelDiffRisk
+}
+
+export interface OTelDiffDiagnostic {
+  side: 'base' | 'target' | 'both'
+  code: string
+  message: string
+  path?: string
+  severity: 'info' | 'warning' | 'error'
+}
