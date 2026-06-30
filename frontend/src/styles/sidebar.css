@@ -286,3 +286,15 @@
 .identity-menu-item:hover {
   background: var(--red-dim);
 }
+
+@media (max-width: 720px) {
+  .sidebar {
+    position: relative;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0.9rem 0 0.65rem;
+  }
+}

@@ -119,6 +119,33 @@ test('config safety explains the supervised collector flow before the editor', a
   expect(safetyTop?.y).toBeLessThan(configTop?.y ?? Number.POSITIVE_INFINITY)
 })
 
+test('workload detail stays readable without horizontal overflow on mobile', async ({
+  loggedInPage: page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 900 })
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockConfigsList(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  const viewport = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }))
+  expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+
+  const safety = page.locator('.config-safety-card')
+  await expect(safety).toBeVisible()
+  const safetyBox = await safety.boundingBox()
+  expect(safetyBox?.width).toBeGreaterThan(320)
+
+  const firstStep = await safety.locator('.config-safety-step').nth(0).boundingBox()
+  const secondStep = await safety.locator('.config-safety-step').nth(1).boundingBox()
+  expect(secondStep?.y).toBeGreaterThan((firstStep?.y ?? 0) + 20)
+})
+
 test('config safety shows read-only collector caveat and no enabled push CTA', async ({
   loggedInPage: page,
 }) => {
