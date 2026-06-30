@@ -166,8 +166,10 @@ type WorkloadKnownGoodConfig struct {
 // SetKnownGoodResult describes whether a mark-known-good call changed the
 // active pointer and which config, if any, it replaced.
 type SetKnownGoodResult struct {
-	Changed          bool   `json:"changed"`
-	ReplacedConfigID string `json:"replaced_config_id,omitempty"`
+	Changed            bool   `json:"changed"`
+	ReplacedConfigID   string `json:"replaced_config_id,omitempty"`
+	PreconditionFailed bool   `json:"precondition_failed,omitempty"`
+	CurrentConfigID    string `json:"current_config_id,omitempty"`
 }
 
 // RollbackTarget is the resolved config selected by default rollback:

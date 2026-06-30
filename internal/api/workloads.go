@@ -389,7 +389,43 @@ func (a *API) handleGetWorkloadKnownGood(w http.ResponseWriter, r *http.Request)
 }
 
 type markKnownGoodRequest struct {
-	ReplaceReason string `json:"replace_reason"`
+	ReplaceReason      string  `json:"replace_reason"`
+	IfCurrentKnownGood *string `json:"if_current_known_good"`
+	Force              bool    `json:"force"`
+}
+
+func runtimeOptionsForWorkload(wl models.Workload) validator.RuntimeOptions {
+	runtimeOpts := validator.RuntimeOptionsFromEnv()
+	runtimeOpts.TargetVersion = wl.Version
+	if runtimeOpts.TargetVersion != "" {
+		runtimeOpts.TargetVersionSource = "workload"
+	}
+	return runtimeOpts
+}
+
+func currentKnownGoodID(current *models.WorkloadKnownGoodConfig) string {
+	if current == nil {
+		return ""
+	}
+	return current.ConfigID
+}
+
+func knownGoodMarkResult(result models.SetKnownGoodResult) string {
+	if !result.Changed {
+		return "unchanged"
+	}
+	if result.ReplacedConfigID != "" {
+		return "replaced"
+	}
+	return "created"
+}
+
+func auditDetail(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 func (a *API) handleMarkWorkloadConfigKnownGood(w http.ResponseWriter, r *http.Request) {
@@ -439,20 +475,62 @@ func (a *API) handleMarkWorkloadConfigKnownGood(w http.ResponseWriter, r *http.R
 		respondJSON(w, http.StatusGone, map[string]string{"error": "config content is no longer available", "code": "config_content_unavailable"})
 		return
 	}
-	if result := validator.Validate([]byte(wc.Content), wl.AvailableComponents); !result.Valid {
+	runtimeOpts := runtimeOptionsForWorkload(wl)
+	if result := validator.ValidateWithRuntime(r.Context(), []byte(wc.Content), wl.AvailableComponents, runtimeOpts); !result.Valid {
 		respondJSON(w, 400, map[string]any{"error": "configuration failed validation", "validation_errors": result.Errors})
+		return
+	}
+	current, err := a.db.GetWorkloadKnownGood(workloadID)
+	if err != nil {
+		respondError(w, 500, "failed to load known-good config")
 		return
 	}
 	markedBy := ""
 	if info := ext.UserInfoFromContext(r.Context()); info != nil {
 		markedBy = info.Email
 	}
-	kg, setResult, err := a.db.SetWorkloadKnownGood(workloadID, hash, markedBy, reason)
+	kg, setResult, err := a.db.SetWorkloadKnownGoodWithPrecondition(workloadID, hash, markedBy, reason, req.IfCurrentKnownGood, req.Force)
 	if err != nil {
 		respondError(w, 500, "failed to mark known-good")
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "config.known_good.mark", "workload", workloadID, hash); err != nil {
+	if setResult.PreconditionFailed {
+		detail := auditDetail(map[string]any{
+			"result":                 "conflict",
+			"target_hash":            hash,
+			"current_known_good":     setResult.CurrentConfigID,
+			"if_current_known_good":  req.IfCurrentKnownGood,
+			"force":                  req.Force,
+			"replace_reason":         reason,
+			"required_precondition":  true,
+			"side_effect":            "none",
+			"source_applied_at":      wc.AppliedAt,
+			"source_content_present": wc.Content != "",
+		})
+		if err := audit.Emit(r.Context(), a.audit, "config.known_good.conflict", "workload", workloadID, detail); err != nil {
+			respondAuditUnavailable(w, sideEffectNone)
+			return
+		}
+		respondJSON(w, http.StatusConflict, map[string]string{
+			"error":              "known-good precondition failed",
+			"code":               "known_good_conflict",
+			"current_known_good": setResult.CurrentConfigID,
+		})
+		return
+	}
+	detail := auditDetail(map[string]any{
+		"result":                knownGoodMarkResult(setResult),
+		"changed":               setResult.Changed,
+		"target_hash":           hash,
+		"previous_known_good":   currentKnownGoodID(current),
+		"replaced_config_id":    setResult.ReplacedConfigID,
+		"replace_reason":        reason,
+		"source_applied_at":     kg.SourceAppliedAt,
+		"if_current_known_good": req.IfCurrentKnownGood,
+		"force":                 req.Force,
+		"side_effect":           "known_good_pointer_recorded",
+	})
+	if err := audit.Emit(r.Context(), a.audit, "config.known_good.mark", "workload", workloadID, detail); err != nil {
 		respondAuditUnavailable(w, sideEffectApplied)
 		return
 	}
@@ -487,9 +565,18 @@ func (a *API) handleClearWorkloadKnownGood(w http.ResponseWriter, r *http.Reques
 		respondError(w, 500, "failed to clear known-good")
 		return
 	}
-	detail := ""
+	detail := auditDetail(map[string]any{"result": "unchanged", "changed": false, "side_effect": "none"})
 	if old != nil {
-		detail = old.ConfigID
+		detail = auditDetail(map[string]any{
+			"result":            "cleared",
+			"changed":           true,
+			"cleared_config_id": old.ConfigID,
+			"source_applied_at": old.SourceAppliedAt,
+			"marked_by":         old.MarkedBy,
+			"replace_reason":    old.ReplaceReason,
+			"content_available": old.ContentAvailable,
+			"side_effect":       "known_good_pointer_deleted",
+		})
 	}
 	if err := audit.Emit(r.Context(), a.audit, "config.known_good.clear", "workload", workloadID, detail); err != nil {
 		respondAuditUnavailable(w, sideEffectApplied)
@@ -517,6 +604,10 @@ func (a *API) handleRollbackWorkloadDefault(w http.ResponseWriter, r *http.Reque
 		respondJSON(w, http.StatusConflict, map[string]string{"error": "workload does not accept remote config", "code": "remote_config_unsupported"})
 		return
 	}
+	if wl.ArchivedAt != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "workload is archived", "code": "workload_archived"})
+		return
+	}
 	excludeHash := wl.ActiveConfigHash
 	if excludeHash == "" {
 		if last, err := a.db.GetLastAppliedWorkloadConfig(workloadID); err == nil && last != nil {
@@ -540,7 +631,8 @@ func (a *API) handleRollbackWorkloadDefault(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	body := []byte(target.Config.Content)
-	if result := validator.Validate(body, wl.AvailableComponents); !result.Valid {
+	runtimeOpts := runtimeOptionsForWorkload(wl)
+	if result := validator.ValidateWithRuntime(r.Context(), body, wl.AvailableComponents, runtimeOpts); !result.Valid {
 		respondJSON(w, 400, map[string]any{"error": "configuration failed validation", "validation_errors": result.Errors})
 		return
 	}
@@ -557,7 +649,16 @@ func (a *API) handleRollbackWorkloadDefault(w http.ResponseWriter, r *http.Reque
 		respondError(w, 502, err.Error())
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, target.Config.ConfigID); err != nil {
+	detail := auditDetail(map[string]any{
+		"result":       "initiated",
+		"target_hash":  target.Config.ConfigID,
+		"target_kind":  target.Kind,
+		"source_hash":  excludeHash,
+		"pushed_by":    pushedBy,
+		"side_effect":  "opamp_push_sent",
+		"submitted_at": time.Now().UTC(),
+	})
+	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, detail); err != nil {
 		respondAuditUnavailable(w, sideEffectApplied)
 		return
 	}

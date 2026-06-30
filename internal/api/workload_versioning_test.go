@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -460,4 +462,242 @@ func TestGetWorkloadKnownGood_404WhenMissing(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
+}
+
+func TestDefaultRollback_409WhenWorkloadArchived(t *testing.T) {
+	db, router, fake, _ := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+	archivedAt := time.Now().UTC()
+	if err := db.UpsertWorkload(models.Workload{
+		ID:                  "w1",
+		Type:                "collector",
+		Status:              "connected",
+		LastSeenAt:          time.Now().UTC(),
+		Labels:              models.Labels{},
+		AcceptsRemoteConfig: true,
+		ArchivedAt:          &archivedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/rollback", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["code"] != "workload_archived" {
+		t.Fatalf("code = %q, want workload_archived", body["code"])
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("expected no opamp push, got %d", len(fake.pushed))
+	}
+}
+
+func TestMarkKnownGood_UsesRuntimeValidation(t *testing.T) {
+	db, router, _, _ := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+	enableFailingRuntimeValidation(t)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/known-good", `{}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body=%s", rec.Code, rec.Body.String())
+	}
+	if kg, err := db.GetWorkloadKnownGood("w1"); err != nil || kg != nil {
+		t.Fatalf("known-good = %+v, err=%v; want none", kg, err)
+	}
+}
+
+func TestDefaultRollback_UsesRuntimeValidation(t *testing.T) {
+	db, router, fake, _ := newAuditTestAPI(t)
+	if err := db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true}); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.CreateConfig(models.Config{ID: "prev", Name: "prev", Content: validRollbackYAML, CreatedAt: time.Now().UTC().Add(-2 * time.Hour)})
+	_ = db.CreateConfig(models.Config{ID: "current", Name: "current", Content: strings.Replace(validRollbackYAML, "logging", "debug", 1), CreatedAt: time.Now().UTC().Add(-time.Hour)})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "prev", AppliedAt: time.Now().UTC().Add(-2 * time.Hour), Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "current", AppliedAt: time.Now().UTC().Add(-time.Hour), Status: "applied"})
+	enableFailingRuntimeValidation(t)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/rollback", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("expected no opamp push, got %d", len(fake.pushed))
+	}
+}
+
+func TestMarkKnownGood_ReplacementRequiresPrecondition(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+	seedHistory(t, db, "w1", "hash-b", strings.ReplaceAll(validRollbackYAML, "logging", "debug"))
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/known-good", `{}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("initial status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-b/known-good", `{}`, nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("replacement status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["code"] != "known_good_conflict" || body["current_known_good"] != "hash-a" {
+		t.Fatalf("body = %+v, want known_good_conflict with current hash-a", body)
+	}
+	kg, err := db.GetWorkloadKnownGood("w1")
+	if err != nil || kg == nil || kg.ConfigID != "hash-a" {
+		t.Fatalf("known-good = %+v, err=%v; want hash-a", kg, err)
+	}
+	events := audit.snapshot()
+	if len(events) != 2 || events[1].Action != "config.known_good.conflict" {
+		t.Fatalf("audit = %+v, want second conflict event", events)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(events[1].Detail), &detail); err != nil {
+		t.Fatalf("conflict audit detail is not JSON: %q err=%v", events[1].Detail, err)
+	}
+	if detail["result"] != "conflict" || detail["target_hash"] != "hash-b" || detail["current_known_good"] != "hash-a" || detail["side_effect"] != "none" {
+		t.Fatalf("conflict audit detail = %+v", detail)
+	}
+}
+
+func TestMarkKnownGood_ReplacementAllowsExplicitForceAndAuditsContext(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+	seedHistory(t, db, "w1", "hash-b", strings.ReplaceAll(validRollbackYAML, "logging", "debug"))
+	_, _, _ = db.SetWorkloadKnownGood("w1", "hash-a", "admin@test.com", "initial")
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-b/known-good", `{"force":true,"replace_reason":"operator override"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	events := audit.snapshot()
+	if len(events) != 1 || events[0].Action != "config.known_good.mark" {
+		t.Fatalf("audit = %+v", events)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(events[0].Detail), &detail); err != nil {
+		t.Fatalf("audit detail is not JSON: %q err=%v", events[0].Detail, err)
+	}
+	if detail["force"] != true || detail["previous_known_good"] != "hash-a" || detail["replaced_config_id"] != "hash-a" || detail["replace_reason"] != "operator override" {
+		t.Fatalf("audit detail = %+v", detail)
+	}
+}
+
+func TestMarkKnownGood_ReplacementAllowsMatchingPreconditionAndAuditsContext(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+	seedHistory(t, db, "w1", "hash-b", strings.ReplaceAll(validRollbackYAML, "logging", "debug"))
+	_, _, _ = db.SetWorkloadKnownGood("w1", "hash-a", "admin@test.com", "initial")
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-b/known-good", `{"if_current_known_good":"hash-a","replace_reason":"validated replacement"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var detail map[string]any
+	events := audit.snapshot()
+	if len(events) != 1 || events[0].Action != "config.known_good.mark" {
+		t.Fatalf("audit = %+v", events)
+	}
+	if err := json.Unmarshal([]byte(events[0].Detail), &detail); err != nil {
+		t.Fatalf("audit detail is not JSON: %q err=%v", events[0].Detail, err)
+	}
+	if detail["changed"] != true || detail["target_hash"] != "hash-b" || detail["replaced_config_id"] != "hash-a" || detail["replace_reason"] != "validated replacement" || detail["source_applied_at"] == "" {
+		t.Fatalf("audit detail = %+v", detail)
+	}
+}
+
+func TestClearKnownGood_AuditsStructuredContext(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+	_, _, _ = db.SetWorkloadKnownGood("w1", "hash-a", "admin@test.com", "initial")
+
+	req := authedJSONRequest(t, http.MethodDelete, "/api/workloads/w1/known-good", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var detail map[string]any
+	events := audit.snapshot()
+	if len(events) != 1 || events[0].Action != "config.known_good.clear" {
+		t.Fatalf("audit = %+v", events)
+	}
+	if err := json.Unmarshal([]byte(events[0].Detail), &detail); err != nil {
+		t.Fatalf("audit detail is not JSON: %q err=%v", events[0].Detail, err)
+	}
+	if detail["changed"] != true || detail["cleared_config_id"] != "hash-a" || detail["source_applied_at"] == "" {
+		t.Fatalf("audit detail = %+v", detail)
+	}
+}
+
+func TestDefaultRollback_AuditsStructuredContext(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	if err := db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true, ActiveConfigHash: "current"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.CreateConfig(models.Config{ID: "known", Name: "known", Content: validRollbackYAML, CreatedAt: time.Now().UTC().Add(-2 * time.Hour)})
+	_ = db.CreateConfig(models.Config{ID: "current", Name: "current", Content: strings.Replace(validRollbackYAML, "logging", "debug", 1), CreatedAt: time.Now().UTC().Add(-time.Hour)})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "known", AppliedAt: time.Now().UTC().Add(-2 * time.Hour), Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "current", AppliedAt: time.Now().UTC().Add(-time.Hour), Status: "applied"})
+	_, _, _ = db.SetWorkloadKnownGood("w1", "known", "admin@test.com", "")
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/rollback", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var detail map[string]any
+	events := audit.snapshot()
+	if len(events) != 1 || events[0].Action != "config.rollback" {
+		t.Fatalf("audit = %+v", events)
+	}
+	if err := json.Unmarshal([]byte(events[0].Detail), &detail); err != nil {
+		t.Fatalf("audit detail is not JSON: %q err=%v", events[0].Detail, err)
+	}
+	if detail["target_hash"] != "known" || detail["target_kind"] != "last_known_good" || detail["source_hash"] != "current" || detail["side_effect"] != "opamp_push_sent" {
+		t.Fatalf("audit detail = %+v", detail)
+	}
+}
+
+func enableFailingRuntimeValidation(t *testing.T) {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "otelcol")
+	script := `#!/bin/sh
+case "$1" in
+  --version) echo "otelcol-contrib version 0.150.0"; exit 0 ;;
+  validate) echo "runtime rejected config" >&2; exit 1 ;;
+  *) exit 2 ;;
+esac
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OTELCOL_RUNTIME_VALIDATION_ENABLED", "true")
+	t.Setenv("OTELCOL_BINARY_PATH", bin)
 }
