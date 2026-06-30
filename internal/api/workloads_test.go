@@ -477,7 +477,7 @@ func TestGetWorkloadConfigHistory(t *testing.T) {
 	}
 	var hist []models.WorkloadConfig
 	_ = json.Unmarshal(rec.Body.Bytes(), &hist)
-	if len(hist) != 1 || hist[0].ErrorMessage != "oops" || hist[0].Content != "my-yaml" || hist[0].PushedBy != "u@x" {
+	if len(hist) != 1 || hist[0].ErrorMessage != models.SanitizeRemoteConfigErrorMessage("oops") || hist[0].Content != "my-yaml" || hist[0].PushedBy != "u@x" {
 		t.Fatalf("history shape: %+v", hist)
 	}
 }
@@ -734,7 +734,7 @@ service:
 		t.Fatalf("error body = %+v", body)
 	}
 	history, _ := db.GetWorkloadConfigHistory("w1")
-	if history[0].Status != "failed" || history[0].ErrorMessage != "collector disconnected" {
+	if history[0].Status != "failed" || history[0].ErrorMessage != models.SanitizeRemoteConfigErrorMessage("collector disconnected") {
 		t.Fatalf("history = %+v", history)
 	}
 }

@@ -76,7 +76,7 @@ func TestUpdateWorkloadConfigStatus_SetsFailedWithError(t *testing.T) {
 	}
 
 	hist, _ := db.GetWorkloadConfigHistory("a1")
-	if hist[0].Status != "failed" || hist[0].ErrorMessage != "unknown exporter 'xyz'" {
+	if hist[0].Status != "failed" || hist[0].ErrorMessage != models.SanitizeRemoteConfigErrorMessage("unknown exporter 'xyz'") {
 		t.Fatalf("status/error not updated: %+v", hist[0])
 	}
 }
