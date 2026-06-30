@@ -208,7 +208,7 @@ func TestRollbackWorkloadConfig_RecordsPendingPushAndPushesContent(t *testing.T)
 		t.Fatalf("history len = %d, want 2 (original applied + new pending)", len(hist))
 	}
 	// Newest first.
-	if hist[0].Status != "pending" || hist[0].ConfigID != "hash-a" || hist[0].PushedBy != "admin@test.com" {
+	if hist[0].Status != models.PushStatusSent || hist[0].ConfigID != "hash-a" || hist[0].PushedBy != "admin@test.com" {
 		t.Fatalf("rollback row = %+v", hist[0])
 	}
 	if len(fake.pushed) != 1 || string(fake.pushed[0].Body) != validRollbackYAML {

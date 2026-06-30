@@ -127,6 +127,45 @@ func (f *fakeStore) UpdateWorkloadConfigStatus(workloadID, configID, status, err
 	return nil
 }
 
+func (f *fakeStore) MarkWorkloadConfigSent(workloadID, configID string, sentAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.workloadConfigs) - 1; i >= 0; i-- {
+		if f.workloadConfigs[i].WorkloadID == workloadID && f.workloadConfigs[i].ConfigID == configID {
+			f.workloadConfigs[i].Status = models.PushStatusSent
+			f.workloadConfigs[i].SentAt = &sentAt
+			return nil
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUID, status, errorMessage string, updatedAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.workloadConfigs) - 1; i >= 0; i-- {
+		if f.workloadConfigs[i].WorkloadID == workloadID && f.workloadConfigs[i].ConfigID == configID {
+			f.workloadConfigs[i].InstanceStatuses = append(f.workloadConfigs[i].InstanceStatuses, models.WorkloadConfigInstanceStatus{InstanceUID: instanceUID, Status: status, ErrorMessage: errorMessage, UpdatedAt: updatedAt})
+			f.workloadConfigs[i].HydratePushStatus(updatedAt)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) GetLatestWorkloadConfig(workloadID string) (*models.WorkloadConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.workloadConfigs) - 1; i >= 0; i-- {
+		if f.workloadConfigs[i].WorkloadID == workloadID {
+			wc := f.workloadConfigs[i]
+			wc.HydratePushStatus(time.Now().UTC())
+			return &wc, nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakeStore) GetLastAppliedWorkloadConfig(_ string) (*models.WorkloadConfig, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -42,6 +42,9 @@ type Store interface {
 
 	RecordWorkloadConfig(wc models.WorkloadConfig) error
 	UpdateWorkloadConfigStatus(workloadID, configID, status, errorMessage string) error
+	MarkWorkloadConfigSent(workloadID, configID string, sentAt time.Time) error
+	UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUID, status, errorMessage string, updatedAt time.Time) error
+	GetLatestWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 	GetLatestPendingWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 	GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfig, error)
 	GetLastAppliedWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)

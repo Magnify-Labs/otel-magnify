@@ -41,6 +41,9 @@ type Store interface {
 
 	RecordWorkloadConfig(wc models.WorkloadConfig) error
 	UpdateWorkloadConfigStatus(workloadID, configID, status, errorMessage string) error
+	MarkWorkloadConfigSent(workloadID, configID string, sentAt time.Time) error
+	UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUID, status, errorMessage string, updatedAt time.Time) error
+	GetLatestWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 	GetLastAppliedWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 
 	InsertWorkloadEvent(e models.WorkloadEvent) (int64, error)
@@ -364,7 +367,7 @@ func (s *Server) onMessage(_ context.Context, conn types.Connection, msg *protob
 	// RemoteConfigStatus bookkeeping (keeps the audit trail in workload_configs
 	// + auto-rollback on FAILED).
 	if s.store != nil && msg.RemoteConfigStatus != nil {
-		s.handleRemoteConfigStatus(workloadID, msg.RemoteConfigStatus)
+		s.handleRemoteConfigStatus(workloadID, uid, msg.RemoteConfigStatus)
 	}
 
 	reply := &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}

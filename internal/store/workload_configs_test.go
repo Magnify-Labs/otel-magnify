@@ -31,8 +31,8 @@ func TestRecordWorkloadConfig(t *testing.T) {
 	if len(history) != 1 {
 		t.Fatalf("len = %d, want 1", len(history))
 	}
-	if history[0].Status != "pending" {
-		t.Errorf("Status = %q, want pending", history[0].Status)
+	if history[0].Status != models.PushStatusSubmitted {
+		t.Errorf("Status = %q, want submitted", history[0].Status)
 	}
 	if history[0].WorkloadID != "a1" {
 		t.Errorf("WorkloadID = %q, want a1", history[0].WorkloadID)
@@ -205,5 +205,42 @@ func TestGetWorkloadConfigByHash_None(t *testing.T) {
 	}
 	if wc != nil {
 		t.Fatalf("expected nil, got %+v", wc)
+	}
+}
+
+func TestWorkloadConfigPushStatusPersistsTimelineAndInstances(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "w1")
+	seedConfig(t, db, "feedface", "x")
+	now := time.Date(2026, 6, 30, 10, 12, 0, 0, time.UTC)
+
+	if err := db.RecordWorkloadConfig(models.WorkloadConfig{
+		WorkloadID:       "w1",
+		ConfigID:         "feedface",
+		Status:           "submitted",
+		AppliedAt:        now,
+		SubmittedAt:      now,
+		PushID:           "push-1",
+		InstanceStatuses: []models.WorkloadConfigInstanceStatus{{InstanceUID: "i1", PodName: "pod-a", Status: "sent", UpdatedAt: now}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sentAt := now.Add(time.Second)
+	if err := db.MarkWorkloadConfigSent("w1", "feedface", sentAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpdateWorkloadConfigInstanceStatus("w1", "feedface", "i1", "applied", "", sentAt.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	wc, err := db.GetLatestWorkloadConfig("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wc == nil || wc.PushID != "push-1" || wc.SentAt == nil || wc.Status != "applied" {
+		t.Fatalf("unexpected latest push: %+v", wc)
+	}
+	if wc.TargetCount != 1 || wc.AppliedCount != 1 || len(wc.Timeline) < 3 {
+		t.Fatalf("hydrated status incomplete: %+v", wc)
 	}
 }

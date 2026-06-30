@@ -305,13 +305,13 @@ service:
 	if rec.Code != 202 {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
-	var body map[string]string
+	var body map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if len(body["config_hash"]) != 64 {
+	if hash, _ := body["config_hash"].(string); len(hash) != 64 {
 		t.Fatalf("bad hash: %q", body["config_hash"])
 	}
 	hist, _ := db.GetWorkloadConfigHistory("w1")
-	if len(hist) != 1 || hist[0].Status != "pending" || hist[0].PushedBy != "admin@test.com" {
+	if len(hist) != 1 || hist[0].Status != models.PushStatusSent || hist[0].PushedBy != "admin@test.com" {
 		t.Fatalf("history not recorded: %+v", hist)
 	}
 	if len(fake.pushed) != 1 || fake.pushed[0].WorkloadID != "w1" || fake.pushed[0].Target != "" {
