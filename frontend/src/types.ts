@@ -1,12 +1,59 @@
-export type PushStatus = 'pending' | 'applying' | 'applied' | 'failed'
+export type PushStatus =
+  | 'validated'
+  | 'pending'
+  | 'submitted'
+  | 'sent'
+  | 'applying'
+  | 'applied'
+  | 'failed'
+  | 'rollback_started'
+  | 'rollback_applied'
+  | 'rollback_failed'
+
+export type InstancePushStatus = 'sent' | 'applying' | 'applied' | 'failed' | 'no_status'
 
 export type FingerprintSource = 'k8s' | 'host' | 'uid'
+
+export interface WorkloadConfigTimelineEntry {
+  state: PushStatus
+  at?: string
+  message?: string
+  terminal: boolean
+  timed_out?: boolean
+}
+
+export interface WorkloadConfigInstanceStatus {
+  instance_uid: string
+  pod_name?: string
+  node?: string
+  required: boolean
+  status: InstancePushStatus
+  config_hash?: string
+  updated_at?: string
+  error_cause?: string
+  error_message?: string
+}
+
+export interface WorkloadConfigErrorGroup {
+  cause: string
+  title: string
+  severity: 'high' | 'medium' | 'low' | string
+  count: number
+  affected_instances?: string[]
+  first_seen_at?: string
+  last_seen_at?: string
+  sample_message?: string
+  sample_path?: string
+  config_hash?: string
+  retryable: boolean
+}
 
 export interface RemoteConfigStatus {
   status: PushStatus
   config_hash: string
   error_message?: string
   updated_at: string
+  push_status?: WorkloadConfig
 }
 
 export interface AvailableComponents {
@@ -27,6 +74,7 @@ export interface Workload {
   active_config_id?: string
   active_config_hash?: string
   remote_config_status?: RemoteConfigStatus
+  current_config_push?: WorkloadConfig
   available_components?: AvailableComponents
   accepts_remote_config?: boolean
   retention_until?: string
@@ -82,12 +130,28 @@ export interface Alert {
 export interface WorkloadConfig {
   workload_id: string
   config_id: string
+  config_hash?: string
   applied_at: string
   status: PushStatus
   error_message?: string
   pushed_by?: string
   content?: string
   label?: string
+  push_id?: string
+  submitted_at?: string
+  sent_at?: string
+  updated_at?: string
+  opamp_status_timeout_at?: string
+  timed_out_waiting_for_opamp_status?: boolean
+  timeout_message?: string
+  rollback_of_push_id?: string
+  timeline?: WorkloadConfigTimelineEntry[]
+  instance_statuses?: WorkloadConfigInstanceStatus[]
+  target_count?: number
+  applied_count?: number
+  failed_count?: number
+  pending_count?: number
+  error_groups?: WorkloadConfigErrorGroup[]
 }
 
 export type RollbackValidationStatus = 'valid' | 'valid_with_warnings' | 'invalid' | 'unavailable'

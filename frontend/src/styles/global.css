@@ -1128,55 +1128,95 @@ h4 {
 }
 
 /* ── Push status banner ── */
-.push-status-stack {
+.push-status-stack,
+.push-status-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
   margin-top: 0.75rem;
+}
+.push-status-panel {
+  margin-bottom: 0.75rem;
+}
+.push-empty-state {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.push-empty-title {
+  color: var(--text-hi);
+  font-weight: 700;
+}
+.push-empty-copy,
+.push-banner-time,
+.push-summary-row {
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 .push-banner {
   border: 1px solid var(--border, #2a2822);
-  border-radius: 4px;
-  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
   font-family: var(--mono, monospace);
   font-size: 0.78rem;
-  background: #141310;
+  background: var(--surface);
 }
 .push-banner-row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.push-banner-row-main {
+  margin-bottom: 0.35rem;
 }
 .push-banner-label {
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text-hi);
 }
 .push-banner-hash {
   color: var(--muted, #6b6a63);
   font-size: 0.72rem;
 }
+.push-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.7rem;
+}
 .push-banner-error {
-  margin: 0.4rem 0 0 0;
+  margin: 0.55rem 0 0 0;
   white-space: pre-wrap;
-  color: #e06c75;
+  color: var(--red);
   font-size: 0.72rem;
   line-height: 1.4;
 }
-.push-banner-pending {
-  border-color: #6b6a63;
+.push-banner-pending,
+.push-banner-submitted,
+.push-banner-sent {
+  border-color: var(--border-hi);
 }
-.push-banner-applying {
-  border-color: #6b6a63;
+.push-banner-applying,
+.push-banner-rollback_started {
+  border-color: var(--amber);
 }
-.push-banner-applied {
-  border-color: #6bcf7f;
+.push-banner-applied,
+.push-banner-rollback_applied {
+  border-color: var(--green);
 }
-.push-banner-failed {
-  border-color: #e06c75;
-  background: #1f1313;
+.push-banner-failed,
+.push-banner-rollback_failed {
+  border-color: var(--red);
+  background: var(--red-dim);
 }
 .push-banner-rollback {
-  border-color: #d4a84a;
-  background: #1b1810;
+  border-color: var(--amber);
+  background: var(--amber-dim);
 }
 .push-banner-dismiss {
   margin-left: auto;
@@ -1188,7 +1228,132 @@ h4 {
   padding: 0 0.3rem;
 }
 .push-banner-dismiss:hover {
-  color: var(--fg, #e5e2d7);
+  color: var(--text-hi);
+}
+.push-timeout-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(240, 180, 41, 0.35);
+  border-radius: var(--radius-sm);
+  background: var(--amber-dim);
+  color: var(--amber);
+  margin: 0.65rem 0;
+}
+.push-timeout-banner span {
+  color: var(--text);
+}
+.push-timeline {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.push-timeline-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 4.5rem;
+  padding: 0.55rem 0.65rem 0.55rem 1.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.push-timeline-dot {
+  position: absolute;
+  left: 0.7rem;
+  top: 0.78rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--text-dim);
+}
+.push-timeline-done .push-timeline-dot,
+.push-timeline-active .push-timeline-dot {
+  background: var(--green);
+}
+.push-timeline-active {
+  border-color: var(--accent);
+}
+.push-timeline-failed .push-timeline-dot,
+.push-timeline-failed {
+  border-color: var(--red);
+}
+.push-timeline-failed .push-timeline-dot {
+  background: var(--red);
+}
+.push-timeline-time,
+.push-timeline-message {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.push-detail-heading {
+  color: var(--text-hi);
+  font-weight: 700;
+  margin-bottom: 0.45rem;
+}
+.push-error-groups,
+.push-instance-details {
+  margin-top: 0.75rem;
+}
+.push-error-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem;
+  margin-top: 0.45rem;
+  background: var(--surface-2);
+}
+.push-error-high {
+  border-color: var(--red);
+}
+.push-error-medium {
+  border-color: var(--amber);
+}
+.push-error-group-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.push-error-sample {
+  margin: 0.4rem 0;
+  color: var(--red);
+  white-space: pre-wrap;
+}
+.push-error-path,
+.push-affected-instances code {
+  display: inline-block;
+  margin: 0.25rem 0.35rem 0 0;
+  color: var(--text-muted);
+}
+.push-instance-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.6rem;
+  font-size: 0.73rem;
+}
+.push-instance-table th,
+.push-instance-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+.push-instance-table th {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.push-instance-meta {
+  display: block;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+.status-no_status {
+  color: var(--text-muted);
+  border-color: var(--border-hi);
 }
 
 /* ── Tabstrip (edit/diff) ── */

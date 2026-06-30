@@ -74,7 +74,7 @@ export const workloadsAPI = {
       .then((r) => r.data),
   pushConfig: (id: string, yaml: string) =>
     api
-      .post<{ status: string; config_hash: string }>(`/workloads/${id}/config`, yaml, {
+      .post<WorkloadConfig>(`/workloads/${id}/config`, yaml, {
         headers: { 'Content-Type': 'text/yaml' },
       })
       .then((r) => r.data),
