@@ -1,5 +1,7 @@
 // Package oteldiff computes an OpenTelemetry-aware, redacted semantic diff
 // between two Collector YAML configurations.
+//
+//nolint:revive // This file intentionally exports JSON DTOs for API/frontend contracts.
 package oteldiff
 
 import (
@@ -459,6 +461,8 @@ func (e *engine) finish() {
 			e.diff.Summary.Counts.ComponentsRemoved++
 		case ChangeModified:
 			e.diff.Summary.Counts.ComponentsModified++
+		case ChangeUnchanged:
+			// No summary counter for unchanged components.
 		}
 		e.countRisk(c.Risk)
 	}
@@ -470,6 +474,8 @@ func (e *engine) finish() {
 			e.diff.Summary.Counts.PipelinesRemoved++
 		case ChangeModified:
 			e.diff.Summary.Counts.PipelinesModified++
+		case ChangeUnchanged:
+			// No summary counter for unchanged pipelines.
 		}
 		e.countRisk(p.Risk)
 	}
@@ -481,6 +487,8 @@ func (e *engine) finish() {
 			e.diff.Summary.Counts.EndpointsRemoved++
 		case ChangeModified:
 			e.diff.Summary.Counts.EndpointsModified++
+		case ChangeUnchanged:
+			// No summary counter for unchanged endpoints.
 		}
 		e.countRisk(ep.Risk)
 	}
@@ -505,7 +513,7 @@ func (e *engine) finish() {
 		e.diff.Summary.Headline = "Medium risk: review routing, endpoints, sampling, or auth changes"
 	case RiskLow:
 		e.diff.Summary.Headline = "Low risk: no telemetry path or destination appears to be removed"
-	default:
+	case RiskNone:
 		e.diff.Summary.Headline = "No OTel semantic changes detected"
 	}
 }
@@ -518,6 +526,8 @@ func (e *engine) countRisk(r Risk) {
 		e.diff.Summary.Counts.MediumRisk++
 	case RiskLow:
 		e.diff.Summary.Counts.LowRisk++
+	case RiskNone:
+		// No counter for absent risk.
 	}
 }
 func (e *engine) addRisk(id string, risk Risk, cat, rule, title, desc string, paths, pipelines []string) {
@@ -1089,9 +1099,10 @@ func riskRank(r Risk) int {
 		return 2
 	case RiskLow:
 		return 1
-	default:
+	case RiskNone:
 		return 0
 	}
+	return 0
 }
 func riskCategory(rule string) string {
 	if strings.Contains(rule, "auth") || strings.Contains(rule, "security") || strings.Contains(rule, "tls") || strings.Contains(rule, "insecure") {
