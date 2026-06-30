@@ -29,6 +29,9 @@ func (a *API) handleListWorkloads(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to list workloads")
 		return
 	}
+	for i := range items {
+		a.hydrateCurrentConfigPush(&items[i])
+	}
 	respondJSON(w, 200, items)
 }
 
@@ -43,7 +46,17 @@ func (a *API) handleGetWorkload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to get workload")
 		return
 	}
+	a.hydrateCurrentConfigPush(&wl)
 	respondJSON(w, 200, wl)
+}
+
+func (a *API) hydrateCurrentConfigPush(wl *models.Workload) {
+	if a == nil || a.db == nil || wl == nil {
+		return
+	}
+	if push, err := a.db.GetLatestWorkloadConfig(wl.ID); err == nil && push != nil {
+		wl.CurrentConfigPush = push
+	}
 }
 
 // handleListWorkloadInstances returns the live in-memory instance snapshot
@@ -61,6 +74,21 @@ func (a *API) handleListWorkloadInstances(w http.ResponseWriter, r *http.Request
 		instances = []opamp.Instance{}
 	}
 	respondJSON(w, 200, instances)
+}
+
+func initialPushInstanceStatuses(hash string, at time.Time, instances []opamp.Instance) []models.WorkloadConfigInstanceStatus {
+	out := make([]models.WorkloadConfigInstanceStatus, 0, len(instances))
+	for _, inst := range instances {
+		out = append(out, models.WorkloadConfigInstanceStatus{
+			InstanceUID: inst.InstanceUID,
+			PodName:     inst.PodName,
+			Required:    true,
+			Status:      models.InstanceStatusSent,
+			ConfigHash:  hash,
+			UpdatedAt:   at,
+		})
+	}
+	return out
 }
 
 func (a *API) handleListWorkloadEvents(w http.ResponseWriter, r *http.Request) {
@@ -202,30 +230,33 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 		CreatedBy: pushedBy,
 	})
 
+	submittedAt := time.Now().UTC()
 	if err := a.db.RecordWorkloadConfig(models.WorkloadConfig{
-		WorkloadID: workloadID,
-		ConfigID:   hash,
-		Status:     "pending",
-		PushedBy:   pushedBy,
+		WorkloadID:       workloadID,
+		ConfigID:         hash,
+		AppliedAt:        submittedAt,
+		SubmittedAt:      submittedAt,
+		Status:           models.PushStatusSubmitted,
+		PushedBy:         pushedBy,
+		InstanceStatuses: initialPushInstanceStatuses(hash, submittedAt, a.opamp.Instances(workloadID)),
 	}); err != nil {
 		respondError(w, 500, "failed to record push")
 		return
 	}
 
 	if err := a.opamp.PushConfig(r.Context(), workloadID, body, ""); err != nil {
-		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, "failed", err.Error())
+		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, models.PushStatusFailed, err.Error())
 		respondError(w, 502, err.Error())
 		return
 	}
+	_ = a.db.MarkWorkloadConfigSent(workloadID, hash, time.Now().UTC())
 
 	if err := audit.Emit(r.Context(), a.audit, "config.push", "workload", workloadID, hash); err != nil {
 		respondAuditUnavailable(w, sideEffectApplied)
 		return
 	}
-	respondJSON(w, 202, map[string]string{
-		"status":      "config push initiated",
-		"config_hash": hash,
-	})
+	push, _ := a.db.GetLatestWorkloadConfig(workloadID)
+	respondJSON(w, 202, push)
 }
 
 // handleValidateWorkloadConfig runs the light validator against a candidate
@@ -415,21 +446,26 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 		pushedBy = info.Email
 	}
 
+	submittedAt := time.Now().UTC()
 	if err := a.db.RecordWorkloadConfig(models.WorkloadConfig{
-		WorkloadID: workloadID,
-		ConfigID:   hash,
-		Status:     "pending",
-		PushedBy:   pushedBy,
+		WorkloadID:       workloadID,
+		ConfigID:         hash,
+		AppliedAt:        submittedAt,
+		SubmittedAt:      submittedAt,
+		Status:           models.PushStatusSubmitted,
+		PushedBy:         pushedBy,
+		InstanceStatuses: initialPushInstanceStatuses(hash, submittedAt, a.opamp.Instances(workloadID)),
 	}); err != nil {
 		respondError(w, 500, "failed to record push")
 		return
 	}
 
 	if err := a.opamp.PushConfig(r.Context(), workloadID, body, ""); err != nil {
-		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, "failed", err.Error())
+		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, models.PushStatusFailed, err.Error())
 		respondError(w, 502, err.Error())
 		return
 	}
+	_ = a.db.MarkWorkloadConfigSent(workloadID, hash, time.Now().UTC())
 
 	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, hash); err != nil {
 		respondAuditUnavailable(w, sideEffectApplied)

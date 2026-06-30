@@ -69,10 +69,11 @@ func (a *AvailableComponents) Scan(src any) error {
 
 // RemoteConfigStatus mirrors the agent-reported state of the last config push (applying/applied/failed plus hash).
 type RemoteConfigStatus struct {
-	Status       string    `json:"status"` // "applying" | "applied" | "failed"
-	ConfigHash   string    `json:"config_hash"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	Status       string          `json:"status"` // "applying" | "applied" | "failed"
+	ConfigHash   string          `json:"config_hash"`
+	ErrorMessage string          `json:"error_message,omitempty"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	PushStatus   *WorkloadConfig `json:"push_status,omitempty"`
 }
 
 // Value JSON-encodes the remote config status for storage as TEXT.
@@ -114,8 +115,9 @@ type Config struct {
 type WorkloadConfig struct {
 	WorkloadID   string    `json:"workload_id"`
 	ConfigID     string    `json:"config_id"`
+	ConfigHash   string    `json:"config_hash,omitempty"`
 	AppliedAt    time.Time `json:"applied_at"`
-	Status       string    `json:"status"` // "pending" | "applying" | "applied" | "failed"
+	Status       string    `json:"status"` // canonical: submitted | sent | applying | applied | failed | rollback_*
 	ErrorMessage string    `json:"error_message,omitempty"`
 	PushedBy     string    `json:"pushed_by,omitempty"`
 	Content      string    `json:"content,omitempty"` // filled by JOIN in history queries
@@ -123,6 +125,22 @@ type WorkloadConfig struct {
 	// "stable-2026-05", "before audit"). Nil pointer = unset; "" = explicitly
 	// cleared. Operators set it from the push history table.
 	Label *string `json:"label,omitempty"`
+
+	PushID                        string                         `json:"push_id,omitempty"`
+	SubmittedAt                   time.Time                      `json:"submitted_at,omitempty"`
+	SentAt                        *time.Time                     `json:"sent_at,omitempty"`
+	UpdatedAt                     time.Time                      `json:"updated_at,omitempty"`
+	OpAMPStatusTimeoutAt          *time.Time                     `json:"opamp_status_timeout_at,omitempty"`
+	TimedOutWaitingForOpAMPStatus bool                           `json:"timed_out_waiting_for_opamp_status"`
+	TimeoutMessage                string                         `json:"timeout_message,omitempty"`
+	RollbackOfPushID              string                         `json:"rollback_of_push_id,omitempty"`
+	Timeline                      []WorkloadConfigTimelineEntry  `json:"timeline,omitempty"`
+	InstanceStatuses              []WorkloadConfigInstanceStatus `json:"instance_statuses,omitempty"`
+	TargetCount                   int                            `json:"target_count"`
+	AppliedCount                  int                            `json:"applied_count"`
+	FailedCount                   int                            `json:"failed_count"`
+	PendingCount                  int                            `json:"pending_count"`
+	ErrorGroups                   []WorkloadConfigErrorGroup     `json:"error_groups,omitempty"`
 }
 
 // PushActivityPoint is one bucket in the dashboard push-activity chart.
@@ -228,6 +246,7 @@ type Workload struct {
 	ActiveConfigID      *string              `json:"active_config_id,omitempty"`
 	ActiveConfigHash    string               `json:"active_config_hash,omitempty"`
 	RemoteConfigStatus  *RemoteConfigStatus  `json:"remote_config_status,omitempty"`
+	CurrentConfigPush   *WorkloadConfig      `json:"current_config_push,omitempty"`
 	AvailableComponents *AvailableComponents `json:"available_components,omitempty"`
 	AcceptsRemoteConfig bool                 `json:"accepts_remote_config"`
 	RetentionUntil      *time.Time           `json:"retention_until,omitempty"`

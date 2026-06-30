@@ -39,7 +39,7 @@ func TestAudit_WorkloadConfigPush_Emits(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
-	var resp map[string]string
+	var resp map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 
 	got := findEvent(audit.snapshot(), "config.push")
@@ -49,7 +49,7 @@ func TestAudit_WorkloadConfigPush_Emits(t *testing.T) {
 	if got.Resource != "workload" || got.ResourceID != "w-push" {
 		t.Errorf("Resource/ResourceID = (%q, %q)", got.Resource, got.ResourceID)
 	}
-	if got.Detail != resp["config_hash"] {
+	if got.Detail != resp["config_hash"].(string) {
 		t.Errorf("Detail = %q, want hash %q", got.Detail, resp["config_hash"])
 	}
 }
