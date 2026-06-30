@@ -12,7 +12,7 @@ otel-magnify stores configurations centrally and pushes them to connected worklo
 
 ## Validation
 
-The `POST /api/workloads/{id}/config/validate` endpoint performs a lightweight YAML sanity check against the workload's reported `AvailableComponents`. It does **not** attempt a full Collector-side validation; the agent is the ultimate authority. If an instance rejects the config after push, otel-magnify records the error message returned by the agent.
+The `POST /api/workloads/{id}/config/validate` endpoint returns an enriched validation result with stable `checks[]` for YAML syntax, Collector structure, component availability, target-version compatibility, and optional `otelcol` runtime validation. Runtime validation is enabled only when the server is configured with `OTELCOL_RUNTIME_VALIDATION_ENABLED=true`; if the binary is absent or runtime validation is disabled, the response includes a warning/skipped check but push can continue when no error-severity checks fail. The agent/Collector remains the ultimate authority after push.
 
 ## Auto-rollback
 
