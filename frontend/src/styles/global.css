@@ -1597,266 +1597,185 @@ code {
   font-size: 0.72rem;
 }
 
-/* Config safety card on workload detail */
-.config-safety-card {
-  margin: 1.25rem 0;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+/* ── OTel enriched config diff ── */
+.config-diff-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
 }
 
-.config-safety-card-head {
+.otel-impact-panel {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 1rem;
+}
+
+.otel-impact-panel-high {
+  border-left-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red-dim);
+}
+
+.otel-impact-panel-medium {
+  border-left-color: var(--amber);
+}
+
+.otel-impact-panel-low,
+.otel-impact-panel-none {
+  border-left-color: var(--green);
+}
+
+.otel-impact-panel-unavailable {
+  border-left-color: var(--text-muted);
+}
+
+.otel-impact-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.9rem;
 }
 
-.config-safety-card-subtitle {
-  margin: 0.25rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.84rem;
-}
-
-.config-safety-readonly-badge,
-.config-safety-step-badge {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.18rem 0.5rem;
-  font-family: var(--mono);
-  font-size: 0.66rem;
-  color: var(--accent);
-  background: var(--accent-dim);
-}
-
-.config-safety-steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.config-safety-step {
-  display: flex;
-  gap: 0.65rem;
-  min-width: 0;
-}
-
-.config-safety-step-index {
-  width: 1.35rem;
-  height: 1.35rem;
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  color: var(--text-hi);
-  background: var(--surface-2);
-}
-
-.config-safety-step-title {
+.otel-impact-panel h2,
+.otel-impact-panel h3 {
   margin: 0;
   color: var(--text-hi);
-  font-size: 0.86rem;
 }
 
-.config-safety-step-body,
-.config-safety-step-helper {
+.otel-impact-panel h2 {
+  font-size: 0.98rem;
+}
+
+.otel-impact-panel h3 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.otel-impact-muted,
+.otel-impact-headline,
+.otel-impact-row p,
+.otel-impact-empty {
   margin: 0.35rem 0 0;
   color: var(--text-muted);
   font-size: 0.78rem;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
-.config-safety-step-helper {
-  color: var(--text-dim);
+.otel-impact-headline {
+  color: var(--text);
 }
 
-@media (max-width: 1100px) {
-  .config-safety-steps {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .config-safety-card-head {
-    flex-direction: column;
-  }
-
-  .config-safety-steps {
-    grid-template-columns: 1fr;
-  }
-}
-
-.config-safety-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.9rem;
-}
-
-.config-safety-subtitle {
-  margin: 0.25rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.84rem;
-}
-
-.config-safety-flow {
+.otel-impact-counts,
+.otel-impact-meta,
+.otel-impact-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  justify-content: flex-end;
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  color: var(--text-dim);
+  gap: 0.45rem;
 }
 
-.config-safety-readonly-note,
-.config-safety-footer {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.85rem;
+.otel-impact-counts {
+  margin-top: 0.85rem;
+}
+
+.otel-impact-section {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.otel-impact-list {
+  flex-direction: column;
+  margin-top: 0.55rem;
+}
+
+.otel-impact-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 0.6rem 0.75rem;
-  font-size: 0.8rem;
-  color: var(--text-muted);
   background: var(--surface-2);
 }
 
-.config-safety-step-topline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.config-safety-badge {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.18rem 0.5rem;
-  font-family: var(--mono);
-  font-size: 0.66rem;
-  white-space: nowrap;
-}
-
-.config-safety-badge-success {
-  color: var(--green);
-  background: var(--green-dim);
-}
-.config-safety-badge-warning {
-  color: var(--amber);
-  background: var(--amber-dim);
-}
-.config-safety-badge-danger {
-  color: var(--red);
+.otel-impact-row-high {
+  border-color: rgba(248, 113, 113, 0.32);
   background: var(--red-dim);
 }
-.config-safety-badge-active {
-  color: var(--accent);
-  background: var(--accent-dim);
-}
-.config-safety-badge-neutral {
-  color: var(--text-muted);
-  background: var(--surface-3);
-}
 
-.config-safety-helper {
-  color: var(--text-dim);
-}
-
-/* Config safety state badges + flow affordances */
-.config-safety-subtitle,
-.config-safety-helper,
-.config-safety-footer,
-.config-safety-readonly-note {
-  color: var(--text-muted);
+.otel-impact-row strong {
+  color: var(--text-hi);
   font-size: 0.82rem;
 }
 
-.config-safety-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.9rem;
+.otel-impact-meta {
+  margin-top: 0.45rem;
 }
 
-.config-safety-flow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.35rem;
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 0.72rem;
-}
-
-.config-safety-readonly-note {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
-  padding: 0.7rem 0.8rem;
+.otel-impact-meta code {
+  padding: 2px 6px;
+  border-radius: 999px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
 }
 
-.config-safety-readonly-note strong {
-  color: var(--text-hi);
+.otel-risk-badge,
+.otel-count-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
-.config-safety-step-topline {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem;
+.otel-risk-badge::before {
+  content: '';
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: currentColor;
 }
 
-.config-safety-badge {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  border: 1px solid var(--border);
-}
-
-.config-safety-badge-success {
-  color: var(--green);
-  background: var(--green-dim);
-  border-color: rgba(52, 211, 153, 0.2);
-}
-
-.config-safety-badge-warning,
-.config-safety-badge-active {
-  color: var(--amber);
-  background: var(--amber-dim);
-  border-color: rgba(240, 180, 41, 0.2);
-}
-
-.config-safety-badge-danger {
+.otel-risk-badge-high {
   color: var(--red);
+  border-color: rgba(248, 113, 113, 0.36);
   background: var(--red-dim);
-  border-color: rgba(248, 113, 113, 0.2);
 }
 
-.config-safety-badge-neutral {
-  color: var(--text-muted);
-  background: var(--surface-2);
+.otel-risk-badge-medium {
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.32);
+  background: var(--amber-dim);
 }
 
-.config-safety-footer {
-  margin-top: 0.9rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid var(--border);
+.otel-risk-badge-low,
+.otel-risk-badge-none {
+  color: var(--green);
+  border-color: rgba(52, 211, 153, 0.25);
+  background: var(--green-dim);
+}
+
+.raw-diff-warning {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: var(--radius-sm);
+  background: var(--amber-dim);
+  color: var(--amber);
+  font-size: 0.76rem;
 }
 
 /* Mobile shell + workload detail responsiveness */

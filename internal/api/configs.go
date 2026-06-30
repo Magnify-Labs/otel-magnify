@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/magnify-labs/otel-magnify/internal/audit"
+	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -21,6 +22,11 @@ type createConfigRequest struct {
 	Content string `json:"content"`
 }
 
+type configDiffRequest struct {
+	BaseYAML   string `json:"base_yaml"`
+	TargetYAML string `json:"target_yaml"`
+}
+
 func (a *API) handleListConfigs(w http.ResponseWriter, _ *http.Request) {
 	configs, err := a.db.ListConfigs()
 	if err != nil {
@@ -28,6 +34,19 @@ func (a *API) handleListConfigs(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	respondJSON(w, 200, configs)
+}
+
+func (a *API) handleDiffConfigs(w http.ResponseWriter, r *http.Request) {
+	var req configDiffRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, 400, "invalid JSON")
+		return
+	}
+	if req.BaseYAML == "" || req.TargetYAML == "" {
+		respondError(w, 400, "base_yaml and target_yaml are required")
+		return
+	}
+	respondJSON(w, 200, oteldiff.Compare([]byte(req.BaseYAML), []byte(req.TargetYAML)))
 }
 
 func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {

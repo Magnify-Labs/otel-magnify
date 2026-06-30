@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -40,6 +41,51 @@ func TestCreateAndListConfigs(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&configs)
 	if len(configs) != 1 {
 		t.Errorf("len = %d, want 1", len(configs))
+	}
+}
+
+func TestDiffConfigs_ReturnsRedactedOTelDiff(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+
+	body := `{"base_yaml":"receivers:\n  otlp: {}\nexporters:\n  otlp:\n    endpoint: https://old.example:4317\n    headers:\n      Authorization: Bearer secret-token\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      exporters: [otlp]\n","target_yaml":"receivers:\n  otlp: {}\nexporters:\n  otlp:\n    endpoint: https://new.example:4317\n    headers:\n      Authorization: Bearer changed-token\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      exporters: [otlp]\n"}`
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/diff", body, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("diff status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("secret-token")) || bytes.Contains(rec.Body.Bytes(), []byte("changed-token")) {
+		t.Fatalf("diff response leaked raw secret: %s", rec.Body.String())
+	}
+	var resp struct {
+		SchemaVersion string `json:"schema_version"`
+		Valid         bool   `json:"valid"`
+		Summary       struct {
+			OverallRisk string `json:"overall_risk"`
+		} `json:"summary"`
+		Endpoints []struct {
+			Risk string `json:"risk"`
+		} `json:"endpoints"`
+		Security []struct {
+			Message string `json:"message"`
+		} `json:"security"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.SchemaVersion != "otel-config-diff.v1" || !resp.Valid || resp.Summary.OverallRisk == "none" || len(resp.Endpoints) == 0 || len(resp.Security) == 0 {
+		t.Fatalf("unexpected diff response: %+v", resp)
+	}
+}
+
+func TestDiffConfigs_RejectsInvalidRequest(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/diff", `{"base_yaml":"receivers: {}"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }
 

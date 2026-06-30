@@ -14,6 +14,8 @@ import type {
   RollbackPrepareResponse,
   RollbackActionResponse,
   RollbackStatusReport,
+  OTelConfigDiffRequest,
+  OTelConfigDiffResponse,
 } from '../types'
 
 declare module 'axios' {
@@ -114,6 +116,8 @@ export const configsAPI = {
   get: (id: string) => api.get<Config>(`/configs/${id}`).then((r) => r.data),
   create: (name: string, content: string) =>
     api.post<Config>('/configs', { name, content }).then((r) => r.data),
+  diff: (request: OTelConfigDiffRequest) =>
+    api.post<OTelConfigDiffResponse>('/configs/diff', request).then((r) => r.data),
 }
 
 export const alertsAPI = {
