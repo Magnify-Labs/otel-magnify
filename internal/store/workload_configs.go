@@ -511,6 +511,12 @@ func (d *DB) GetWorkloadKnownGood(workloadID string) (*models.WorkloadKnownGoodC
 
 // SetWorkloadKnownGood atomically marks an applied config hash as the workload's explicit rollback baseline.
 func (d *DB) SetWorkloadKnownGood(workloadID, configID, markedBy, replaceReason string) (*models.WorkloadKnownGoodConfig, models.SetKnownGoodResult, error) {
+	return d.SetWorkloadKnownGoodWithPrecondition(workloadID, configID, markedBy, replaceReason, nil, true)
+}
+
+// SetWorkloadKnownGoodWithPrecondition marks a known-good config only when the
+// caller's replacement precondition still matches at write time.
+func (d *DB) SetWorkloadKnownGoodWithPrecondition(workloadID, configID, markedBy, replaceReason string, ifCurrent *string, force bool) (*models.WorkloadKnownGoodConfig, models.SetKnownGoodResult, error) {
 	var result models.SetKnownGoodResult
 	tx, err := d.Begin()
 	if err != nil {
@@ -556,6 +562,15 @@ func (d *DB) SetWorkloadKnownGood(workloadID, configID, markedBy, replaceReason 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, result, err
 	}
+	currentID := ""
+	if err == nil {
+		currentID = existing.ConfigID
+	}
+	if preconditionConflicts(currentID, configID, ifCurrent, force) {
+		result.PreconditionFailed = true
+		result.CurrentConfigID = currentID
+		return nil, result, nil
+	}
 	if err == nil && existing.ConfigID == configID {
 		if existingBy.Valid {
 			existing.MarkedBy = existingBy.String
@@ -578,7 +593,7 @@ func (d *DB) SetWorkloadKnownGood(workloadID, configID, markedBy, replaceReason 
 	}
 	result.Changed = true
 
-	_, err = tx.Exec(`
+	res, err := tx.Exec(`
 		INSERT INTO workload_known_good_configs (workload_id, config_id, marked_at, marked_by, source_applied_at, replaced_config_id, replace_reason)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(workload_id) DO UPDATE SET
@@ -587,17 +602,85 @@ func (d *DB) SetWorkloadKnownGood(workloadID, configID, markedBy, replaceReason 
 		  marked_by = excluded.marked_by,
 		  source_applied_at = excluded.source_applied_at,
 		  replaced_config_id = excluded.replaced_config_id,
-		  replace_reason = excluded.replace_reason`,
+		  replace_reason = excluded.replace_reason
+		WHERE ? OR workload_known_good_configs.config_id = ? OR workload_known_good_configs.config_id = excluded.config_id`,
 		workloadID, configID, time.Now().UTC(), nullIfEmpty(markedBy), sourceAppliedAt, nullIfEmpty(result.ReplacedConfigID), nullIfEmpty(replaceReason),
+		force, valueOrEmpty(ifCurrent),
 	)
 	if err != nil {
 		return nil, result, err
+	}
+	if rows, err := res.RowsAffected(); err == nil && rows == 0 {
+		result.Changed = false
+		result.ReplacedConfigID = ""
+		result.PreconditionFailed = true
+		if current, err := getWorkloadKnownGoodTx(tx, workloadID); err == nil && current != nil {
+			result.CurrentConfigID = current.ConfigID
+		}
+		return nil, result, tx.Commit()
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, result, err
 	}
 	kg, err := d.GetWorkloadKnownGood(workloadID)
 	return kg, result, err
+}
+
+func preconditionConflicts(currentID, targetID string, ifCurrent *string, force bool) bool {
+	if force {
+		return false
+	}
+	if ifCurrent != nil {
+		return *ifCurrent != currentID
+	}
+	return currentID != "" && currentID != targetID
+}
+
+func valueOrEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func getWorkloadKnownGoodTx(tx *sql.Tx, workloadID string) (*models.WorkloadKnownGoodConfig, error) {
+	var (
+		kg               models.WorkloadKnownGoodConfig
+		markedBy         sql.NullString
+		sourceAppliedAt  sql.NullTime
+		replacedConfigID sql.NullString
+		replaceReason    sql.NullString
+		content          sql.NullString
+	)
+	err := tx.QueryRow(`
+		SELECT kg.workload_id, kg.config_id, kg.marked_at, kg.marked_by,
+		       kg.source_applied_at, kg.replaced_config_id, kg.replace_reason,
+		       c.content
+		FROM workload_known_good_configs kg
+		LEFT JOIN configs c ON c.id = kg.config_id
+		WHERE kg.workload_id = ?`, workloadID,
+	).Scan(&kg.WorkloadID, &kg.ConfigID, &kg.MarkedAt, &markedBy, &sourceAppliedAt, &replacedConfigID, &replaceReason, &content)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if markedBy.Valid {
+		kg.MarkedBy = markedBy.String
+	}
+	if sourceAppliedAt.Valid {
+		t := sourceAppliedAt.Time
+		kg.SourceAppliedAt = &t
+	}
+	if replacedConfigID.Valid {
+		kg.ReplacedConfigID = replacedConfigID.String
+	}
+	if replaceReason.Valid {
+		kg.ReplaceReason = replaceReason.String
+	}
+	kg.ContentAvailable = content.Valid && content.String != ""
+	return &kg, nil
 }
 
 // ClearWorkloadKnownGood removes the pointer without deleting config content.

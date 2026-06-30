@@ -52,6 +52,7 @@ type Store interface {
 	GetLatestKnownGoodWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 	GetWorkloadKnownGood(workloadID string) (*models.WorkloadKnownGoodConfig, error)
 	SetWorkloadKnownGood(workloadID, configID, markedBy, replaceReason string) (*models.WorkloadKnownGoodConfig, models.SetKnownGoodResult, error)
+	SetWorkloadKnownGoodWithPrecondition(workloadID, configID, markedBy, replaceReason string, ifCurrent *string, force bool) (*models.WorkloadKnownGoodConfig, models.SetKnownGoodResult, error)
 	ClearWorkloadKnownGood(workloadID string) (*models.WorkloadKnownGoodConfig, error)
 	GetPreviousAppliedWorkloadConfig(workloadID, excludeHash string) (*models.WorkloadConfig, error)
 	GetRollbackTarget(workloadID, excludeHash string) (*models.RollbackTarget, error)

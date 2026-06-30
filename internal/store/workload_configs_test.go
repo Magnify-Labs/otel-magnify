@@ -280,6 +280,69 @@ func TestSetWorkloadKnownGood_HappyPathReplaceAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestSetWorkloadKnownGoodWithPrecondition_RejectsStaleReplacement(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "w1")
+	seedConfig(t, db, "good-a", "receivers:\n  otlp: {}")
+	seedConfig(t, db, "good-b", "receivers:\n  otlp: {}\nprocessors: {}")
+	t0 := time.Now().UTC().Add(-2 * time.Hour)
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "good-a", AppliedAt: t0, Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "good-b", AppliedAt: t0.Add(time.Hour), Status: "applied"})
+
+	if _, _, err := db.SetWorkloadKnownGood("w1", "good-a", "admin@magnify.dev", "initial"); err != nil {
+		t.Fatal(err)
+	}
+	kg, res, err := db.SetWorkloadKnownGoodWithPrecondition("w1", "good-b", "admin@magnify.dev", "replace", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kg != nil || !res.PreconditionFailed || res.CurrentConfigID != "good-a" || res.Changed {
+		t.Fatalf("stale replacement result = %+v / %+v", res, kg)
+	}
+	current, err := db.GetWorkloadKnownGood("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current == nil || current.ConfigID != "good-a" {
+		t.Fatalf("known-good changed despite failed precondition: %+v", current)
+	}
+
+	expected := "good-a"
+	kg, res, err = db.SetWorkloadKnownGoodWithPrecondition("w1", "good-b", "admin@magnify.dev", "replace", &expected, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kg == nil || kg.ConfigID != "good-b" || !res.Changed || res.ReplacedConfigID != "good-a" || res.PreconditionFailed {
+		t.Fatalf("expected replacement result = %+v / %+v", res, kg)
+	}
+}
+
+func TestSetWorkloadKnownGoodWithPrecondition_RejectsRacedWriterAtUpsert(t *testing.T) {
+	db := newTestDB(t)
+	seedWorkload(t, db, "w1")
+	seedConfig(t, db, "good-a", "receivers:\n  otlp: {}")
+	seedConfig(t, db, "good-b", "receivers:\n  otlp: {}\nprocessors: {}")
+	t0 := time.Now().UTC().Add(-2 * time.Hour)
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "good-a", AppliedAt: t0, Status: "applied"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "good-b", AppliedAt: t0.Add(time.Hour), Status: "applied"})
+
+	expected := "missing"
+	kg, res, err := db.SetWorkloadKnownGoodWithPrecondition("w1", "good-b", "admin@magnify.dev", "replace", &expected, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kg != nil || !res.PreconditionFailed || res.CurrentConfigID != "" || res.Changed {
+		t.Fatalf("unexpected precondition result = %+v / %+v", res, kg)
+	}
+	current, err := db.GetWorkloadKnownGood("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current != nil {
+		t.Fatalf("known-good should remain absent: %+v", current)
+	}
+}
+
 func TestSetWorkloadKnownGood_RejectsMissingNonAppliedAndEmptyContent(t *testing.T) {
 	db := newTestDB(t)
 	seedWorkload(t, db, "w1")
