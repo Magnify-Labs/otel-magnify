@@ -1,0 +1,16 @@
+receivers:
+  otlp: {}
+processors:
+  batch: {}
+exporters:
+  otlp:
+    endpoint: https://otel.example:4317
+    headers:
+      Authorization: Bearer old-token
+      x-tenant: tenant-a
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]

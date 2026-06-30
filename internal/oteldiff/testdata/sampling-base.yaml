@@ -1,0 +1,15 @@
+receivers:
+  otlp: {}
+processors:
+  probabilistic_sampler:
+    sampling_percentage: 100
+  batch: {}
+exporters:
+  otlp:
+    endpoint: https://otel.example:4317
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [probabilistic_sampler, batch]
+      exporters: [otlp]

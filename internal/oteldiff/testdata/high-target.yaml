@@ -1,0 +1,26 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: localhost:4317
+processors:
+  probabilistic_sampler:
+    sampling_percentage: 10
+exporters:
+  otlp:
+    endpoint: https://collector:new-secret@example-new.com:4317/v1/traces?token=query-secret
+    tls:
+      insecure: true
+    headers:
+      Authorization: Bearer new-secret-token
+      x-api-key: literal-api-key
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [probabilistic_sampler]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: []
+      exporters: []
