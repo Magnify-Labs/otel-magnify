@@ -574,37 +574,42 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 	hash := chi.URLParam(r, "hash")
 
 	if a.opamp == nil {
-		respondError(w, 503, "OpAMP server not available")
+		respondRollbackError(w, 503, "OpAMP server not available", "opamp_unavailable", true, "none", nil)
 		return
 	}
 
 	wc, err := a.db.GetWorkloadConfigByHash(workloadID, hash)
 	if err != nil {
-		respondError(w, 500, "failed to load past config")
+		respondRollbackError(w, 500, "failed to load past config", "internal_error", true, "none", nil)
 		return
 	}
 	if wc == nil {
-		respondError(w, 404, "config not found in this workload's history")
+		respondRollbackError(w, 404, "config not found in this workload's history", "target_not_found", false, "none", nil)
 		return
 	}
 	if wc.Content == "" {
 		// History rows JOIN configs.content; an empty string means the
 		// underlying configs row is missing. Refuse to rollback to a
 		// body we cannot reconstruct.
-		respondError(w, 410, "config content is no longer available")
+		respondRollbackError(w, 410, "config content is no longer available", "target_content_unavailable", false, "none", nil)
 		return
 	}
 
 	wl, err := a.db.GetWorkload(workloadID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		respondError(w, 500, "failed to load workload")
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondRollbackError(w, 404, "workload not found", "workload_not_found", false, "none", nil)
+			return
+		}
+		respondRollbackError(w, 500, "failed to load workload", "internal_error", true, "none", nil)
 		return
 	}
-	if err == nil && !wl.AcceptsRemoteConfig {
-		respondJSON(w, http.StatusConflict, map[string]string{
-			"error": "workload does not accept remote config",
-			"code":  "remote_config_unsupported",
-		})
+	if wl.Type != "" && wl.Type != "collector" {
+		respondRollbackError(w, http.StatusConflict, "rollback is supported only for collector workloads", "workload_not_collector", false, "none", nil)
+		return
+	}
+	if !wl.AcceptsRemoteConfig {
+		respondRollbackError(w, http.StatusConflict, "workload does not accept remote config", "remote_config_unsupported", false, "none", nil)
 		return
 	}
 
@@ -624,10 +629,16 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 		runtimeOpts.TargetVersionSource = "workload"
 	}
 	if result := validator.ValidateWithRuntime(r.Context(), body, available, runtimeOpts); !result.Valid {
-		respondJSON(w, 400, map[string]any{
-			"error":             "configuration failed validation",
-			"validation_errors": result.Errors,
-		})
+		validation := a.buildRollbackValidation(wl, wc)
+		code := "validation_failed"
+		status := http.StatusBadRequest
+		if unavailable, ok := validation["unavailable_components"].([]unavailableComponentWarning); ok && len(unavailable) > 0 {
+			code = "component_not_installed"
+			status = http.StatusConflict
+		} else if len(result.Errors) > 0 && result.Errors[0].Code == "yaml_parse" {
+			code = "target_yaml_invalid"
+		}
+		respondRollbackError(w, status, "configuration failed validation", code, false, "none", map[string]any{"validation": validation})
 		return
 	}
 
@@ -636,23 +647,23 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 		pushedBy = info.Email
 	}
 
-	submittedAt := time.Now().UTC()
+	appliedAt := time.Now().UTC()
 	if err := a.db.RecordWorkloadConfig(models.WorkloadConfig{
 		WorkloadID:       workloadID,
 		ConfigID:         hash,
-		AppliedAt:        submittedAt,
-		SubmittedAt:      submittedAt,
+		AppliedAt:        appliedAt,
+		SubmittedAt:      appliedAt,
 		Status:           models.PushStatusSubmitted,
 		PushedBy:         pushedBy,
-		InstanceStatuses: initialPushInstanceStatuses(hash, submittedAt, a.opamp.Instances(workloadID)),
+		InstanceStatuses: initialPushInstanceStatuses(hash, appliedAt, a.opamp.Instances(workloadID)),
 	}); err != nil {
-		respondError(w, 500, "failed to record push")
+		respondRollbackError(w, 500, "failed to record push", "record_push_failed", true, "none", nil)
 		return
 	}
 
 	if err := a.opamp.PushConfig(r.Context(), workloadID, body, ""); err != nil {
 		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, models.PushStatusFailed, err.Error())
-		respondError(w, 502, err.Error())
+		respondRollbackError(w, 502, err.Error(), "push_failed", true, "applied", nil)
 		return
 	}
 	_ = a.db.MarkWorkloadConfigSent(workloadID, hash, time.Now().UTC())
@@ -661,9 +672,25 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 		respondAuditUnavailable(w, sideEffectApplied)
 		return
 	}
-	respondJSON(w, 202, map[string]string{
-		"status":      "rollback initiated",
-		"config_hash": hash,
+	requestID := newRollbackRequestID(workloadID, hash, appliedAt)
+	respondJSON(w, 202, map[string]any{
+		"schema_version": "guided-rollback-action.v1",
+		"request_id":     requestID,
+		"status":         "accepted",
+		"message":        "rollback initiated",
+		"workload_id":    workloadID,
+		"target_hash":    hash,
+		"config_hash":    hash,
+		"history_row": map[string]any{
+			"workload_id": workloadID,
+			"config_id":   hash,
+			"applied_at":  appliedAt,
+			"status":      "pending",
+			"pushed_by":   pushedBy,
+		},
+		"status_url":      fmt.Sprintf("/api/workloads/%s/rollback/status?request_id=%s", workloadID, requestID),
+		"timeout_seconds": rollbackTimeoutSeconds,
+		"audit":           map[string]any{"event": "config.rollback", "emitted": true},
 	})
 }
 
