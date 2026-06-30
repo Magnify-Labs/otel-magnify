@@ -1149,6 +1149,96 @@ h4 {
   max-height: 90vh;
   overflow: auto;
 }
+.rollback-modal {
+  width: min(1120px, 94vw);
+}
+.rollback-subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted, #8f8a7c);
+  font-family: var(--sans, sans-serif);
+  font-size: 0.75rem;
+}
+.rollback-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.rollback-panel,
+.rollback-report {
+  border: 1px solid var(--border, #2a2822);
+  border-radius: var(--radius, 8px);
+  background: var(--surface, #1a1813);
+  padding: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+.rollback-panel h3,
+.rollback-report h3 {
+  margin: 0 0 0.5rem;
+  font-family: var(--sans, sans-serif);
+  font-size: 0.82rem;
+  color: var(--text-hi, #f6eddb);
+}
+.rollback-panel dl {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 0.35rem 0.65rem;
+  margin: 0;
+}
+.rollback-panel dt {
+  color: var(--text-muted, #8f8a7c);
+}
+.rollback-panel dd {
+  margin: 0;
+}
+.rollback-target-panel {
+  border-color: var(--gold, #d4a537);
+}
+.rollback-validation-panel {
+  border-color: #6bcf7f;
+}
+.rollback-warning-panel {
+  border-color: #e0b15a;
+}
+.rollback-finding-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.rollback-finding-list li {
+  margin-bottom: 0.35rem;
+}
+.rollback-finding-list code {
+  margin: 0 0.35rem;
+}
+.rollback-finding-error strong {
+  color: #e06c75;
+}
+.rollback-finding-warning strong {
+  color: #e0b15a;
+}
+.rollback-raw-diff {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid var(--border, #2a2822);
+  border-radius: var(--radius, 8px);
+  background: var(--surface-2, #201d17);
+  padding: 0.75rem;
+  color: var(--text, #d9d0bd);
+}
+.rollback-confirm-check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  color: var(--text-hi, #f6eddb);
+}
+.rollback-actions {
+  padding-bottom: 0.25rem;
+}
+.rollback-alert {
+  margin-bottom: 0.75rem;
+}
 .modal-header {
   display: flex;
   justify-content: space-between;
