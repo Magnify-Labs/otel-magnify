@@ -69,10 +69,15 @@ function mockValidate(page: Page, result: { valid: boolean; errors?: unknown[] }
   )
 }
 
+test.beforeEach(async ({ loggedInPage: page }) => {
+  await mockConfigsList(page, [])
+})
+
 test('edit button enables YAML editing (regression)', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
+  await mockConfigsList(page, [])
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit' }).click()
@@ -83,6 +88,68 @@ test('edit button enables YAML editing (regression)', async ({ loggedInPage: pag
   await editor.click()
   await page.keyboard.type('# edited')
   await expect(editor).toContainText('# edited')
+})
+
+test('config safety explains the supervised collector flow before the editor', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockConfigsList(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  const safety = page.locator('.config-safety-card')
+  await expect(safety).toBeVisible()
+  await expect(safety).toContainText('Know what will change before it reaches this workload.')
+  await expect(safety.locator('.config-safety-step-title')).toHaveText([
+    'Validate before push',
+    'Compare with active config',
+    'Push safely',
+    'Roll back to known-good',
+  ])
+  await expect(safety).toContainText('Validation required')
+  await expect(safety).toContainText('Diff available')
+  await expect(safety).toContainText('Validate the configuration first.')
+  await expect(safety).toContainText('History available')
+
+  const safetyTop = await safety.boundingBox()
+  const configTop = await page.locator('.section-title', { hasText: 'Configuration' }).boundingBox()
+  expect(safetyTop?.y).toBeLessThan(configTop?.y ?? Number.POSITIVE_INFINITY)
+})
+
+test('config safety shows read-only collector caveat and no enabled push CTA', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page, { accepts_remote_config: false })
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockConfigsList(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  const safety = page.locator('.config-safety-card')
+  await expect(safety).toBeVisible()
+  await expect(safety).toContainText('Read-only collector')
+  await expect(safety).toContainText('Push is unavailable because this collector only reports config.')
+  await expect(safety).not.toContainText('Push validated config')
+})
+
+test('config safety is hidden for SDK workload detail pages', async ({ loggedInPage: page }) => {
+  await mockWorkload(page, {
+    type: 'sdk',
+    active_config_id: undefined,
+    accepts_remote_config: false,
+    available_components: undefined,
+    labels: { 'service.name': 'demo-app' },
+  })
+  await mockHistory(page, [])
+  await mockConfigsList(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  await expect(page.locator('.config-safety-card')).toHaveCount(0)
 })
 
 test('validate exposes errors and blocks push', async ({ loggedInPage: page }) => {
@@ -221,6 +288,7 @@ test('diff tab shows two editor panels', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockConfig(page, 'a: 1\n')
   await mockHistory(page, [])
+  await mockConfigsList(page, [])
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit' }).click()
@@ -298,6 +366,7 @@ test('YAML keys are colored via Signal Deck theme', async ({ loggedInPage: page 
   await mockWorkload(page)
   await mockConfig(page, 'key: value\n')
   await mockHistory(page, [])
+  await mockConfigsList(page, [])
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   // Wait for the editor to render

@@ -45,6 +45,43 @@ test.describe('Dashboard', () => {
     await expect(page.locator('.push-chart rect.push-chart-bar-last')).toHaveCount(1)
   })
 
+  test('config safety status summarizes supervised config readiness', async ({ loggedInPage: page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: /Config safety status|Statut de sécurité des configs/ })).toBeVisible()
+    await expect(page.locator('.config-safety-panel')).toContainText(/Supervised collectors|Collecteurs supervisés/)
+    await expect(page.locator('.config-safety-panel')).toContainText('1')
+    await expect(page.locator('.config-safety-panel')).toContainText(/Last 7d pushes|Pushes sur 7j/)
+    await expect(page.locator('.config-safety-panel')).toContainText('11')
+    await expect(page.getByRole('link', { name: /Review supervised workloads|Voir les workloads supervisés/ })).toHaveAttribute('href', '/inventory?control=supervised')
+  })
+
+  test('config safety status panel summarizes supervised collectors and safe flow', async ({
+    loggedInPage: page,
+  }) => {
+    await page.goto('/')
+
+    const panel = page.locator('.config-safety-status-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText('Safe remote config across supervised collectors')
+    await expect(panel).toContainText('Supervised collectors')
+    await expect(panel).toContainText('1')
+    await expect(panel).toContainText('Last 7d pushes')
+    await expect(panel).toContainText('11')
+    await expect(panel).toContainText(
+      'Validation, diff, safe push and rollback are available on workload detail pages.',
+    )
+    await expect(panel.getByRole('link', { name: 'Review supervised workloads' })).toHaveAttribute(
+      'href',
+      '/inventory?control=supervised',
+    )
+
+    const pushPanelTop = await page.locator('.panel', { hasText: 'Push activity' }).boundingBox()
+    const safetyTop = await panel.boundingBox()
+    const alertsTop = await page.locator('.panel', { hasText: 'Recent alerts' }).boundingBox()
+    expect(pushPanelTop?.y).toBeLessThan(safetyTop?.y ?? Number.POSITIVE_INFINITY)
+    expect(safetyTop?.y).toBeLessThan(alertsTop?.y ?? Number.POSITIVE_INFINITY)
+  })
+
   test('deployed versions panel groups by version', async ({ loggedInPage: page }) => {
     await page.goto('/')
     await expect(page.locator('.versions-row')).toHaveCount(2)

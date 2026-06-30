@@ -9,11 +9,12 @@ import PushActivityPanel from '../components/dashboard/PushActivityPanel'
 import RecentAlertsPanel from '../components/dashboard/RecentAlertsPanel'
 import FleetHealthPanel from '../components/dashboard/FleetHealthPanel'
 import DeployedVersionsPanel from '../components/dashboard/DeployedVersionsPanel'
+import ConfigSafetyStatusPanel from '../components/dashboard/ConfigSafetyStatusPanel'
 import '../styles/dashboard.css'
 
 export default function Dashboard() {
   const { t } = useTranslation()
-  const { data: workloads } = useQuery({
+  const workloadsQuery = useQuery({
     queryKey: ['workloads'],
     queryFn: () => workloadsAPI.list(),
   })
@@ -23,13 +24,13 @@ export default function Dashboard() {
   const setAlerts = useStore((s) => s.setAlerts)
 
   useEffect(() => {
-    if (workloads) setWorkloads(workloads)
-  }, [workloads, setWorkloads])
+    if (workloadsQuery.data) setWorkloads(workloadsQuery.data)
+  }, [workloadsQuery.data, setWorkloads])
   useEffect(() => {
     if (alerts) setAlerts(alerts)
   }, [alerts, setAlerts])
 
-  const ws = workloads ?? []
+  const ws = workloadsQuery.data ?? []
   const connected = ws.filter((w) => w.status === 'connected').length
   const degraded = ws.filter((w) => w.status === 'degraded').length
   const collectors = ws.filter((w) => w.type === 'collector').length
@@ -69,6 +70,11 @@ export default function Dashboard() {
       <section className="dashboard-grid">
         <div className="dashboard-col">
           <PushActivityPanel />
+          <ConfigSafetyStatusPanel
+            workloads={ws}
+            isLoading={workloadsQuery.isLoading}
+            isError={workloadsQuery.isError}
+          />
           <RecentAlertsPanel alerts={alerts ?? []} />
         </div>
         <aside className="dashboard-col">

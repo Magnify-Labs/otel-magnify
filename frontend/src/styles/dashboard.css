@@ -268,3 +268,183 @@
   text-align: center;
   padding: 0.5rem 0;
 }
+
+/* ── Config safety status ── */
+.panel-subtitle {
+  margin-top: 0.25rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
+.config-safety-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.config-safety-dot-ready {
+  background: var(--green);
+}
+.config-safety-dot-muted {
+  background: var(--surface-3);
+}
+.config-safety-dot-warning {
+  background: var(--amber);
+}
+.config-safety-dot-danger {
+  background: var(--red);
+}
+
+.config-safety-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.config-safety-metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+}
+
+.config-safety-metric-row span {
+  color: var(--text);
+}
+
+.config-safety-metric-row strong {
+  font-family: var(--mono);
+  color: var(--text-hi);
+}
+
+.config-safety-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.config-safety-check {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.config-safety-check-ready {
+  border-color: rgba(61, 220, 151, 0.35);
+  color: var(--green);
+  background: var(--green-dim);
+}
+.config-safety-check-warning {
+  border-color: rgba(251, 191, 36, 0.35);
+  color: var(--amber);
+}
+.config-safety-check-danger {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: var(--red);
+}
+
+.config-safety-status {
+  margin: 0 0 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.config-safety-status-muted {
+  color: var(--text-muted);
+}
+.config-safety-status-warning {
+  color: var(--amber);
+}
+.config-safety-status-danger {
+  color: var(--red);
+}
+
+.config-safety-cta {
+  width: 100%;
+  justify-content: center;
+}
+
+.config-safety-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* ── Config safety dashboard panel ───────────────────────── */
+.config-safety-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 0.85rem;
+}
+
+.config-safety-metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+}
+
+.config-safety-metric-row span {
+  color: var(--text);
+}
+
+.config-safety-metric-row strong {
+  font-family: var(--mono);
+  color: var(--text-hi);
+}
+
+.config-safety-status-line {
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.config-safety-status-line-success {
+  color: var(--green);
+  background: var(--green-dim);
+  border-color: rgba(52, 211, 153, 0.2);
+}
+
+.config-safety-status-line-danger {
+  color: var(--red);
+  background: var(--red-dim);
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+.config-safety-status-line-active {
+  color: var(--amber);
+  background: var(--amber-dim);
+  border-color: rgba(240, 180, 41, 0.2);
+}
+
+.config-safety-status-line-neutral {
+  color: var(--text-muted);
+}
+
+.config-safety-status-link {
+  display: inline-flex;
+  margin-top: 0.75rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+.config-safety-status-link:hover {
+  text-decoration: underline;
+}

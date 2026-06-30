@@ -7,7 +7,7 @@
     "nav": {
       "dashboard": "Tableau de bord",
       "inventory": "Inventaire",
-      "configs": "Configurations",
+      "configs": "Bibliothèque de configs",
       "alerts": "Alertes",
       "profile": "Profil",
       "administration": "Administration"
@@ -32,7 +32,8 @@
       "push_activity": "Activité des pushes (7j)",
       "fleet_health": "Santé de la flotte",
       "deployed_versions": "Versions déployées",
-      "recent_alerts": "Alertes récentes"
+      "recent_alerts": "Alertes récentes",
+      "config_safety_status": "Statut de sécurité des configs"
     },
     "fleet": {
       "connected": "Connectés",
@@ -49,6 +50,21 @@
     },
     "alerts": {
       "empty": "Aucune alerte active"
+    },
+    "config_safety": {
+      "title": "Statut de sécurité des configs",
+      "hint": "Config distante sécurisée sur les collecteurs supervisés",
+      "supervised_collectors": "Collecteurs supervisés",
+      "last_7d_pushes": "Pushes sur 7j",
+      "loading": "Chargement du statut de sécurité…",
+      "error": "Impossible de charger le statut de sécurité.",
+      "cta": "Voir les workloads supervisés",
+      "status": {
+        "empty": "Aucun collecteur supervisé — connectez-en un via OpAMP Supervisor pour activer le push sécurisé.",
+        "ready": "Validation, diff, push sécurisé et rollback sont disponibles sur les pages workload.",
+        "applying": "Push config en cours — attente de confirmation du workload.",
+        "failed": "Un push config a échoué — ouvrez le workload pour corriger ou restaurer."
+      }
     }
   },
   "workloads": {
@@ -80,6 +96,87 @@
         "rollback_in_flight": "Restauration…",
         "rollback_error": "Échec de la restauration.",
         "cancel_button": "Annuler"
+      },
+      "safety": {
+        "title": "Sécurité des configs",
+        "subtitle": "Comprendre ce qui va changer avant que le workload le reçoive.",
+        "flow_aria": "Flux de sécurité des configs",
+        "flow": {
+          "validate": "Valider",
+          "compare": "Comparer",
+          "push": "Pousser",
+          "rollback": "Restaurer"
+        },
+        "readonly": {
+          "title": "Collecteur en lecture seule",
+          "body": "Push est indisponible car ce collecteur reporte uniquement sa config."
+        },
+        "footer": "Chemin sécurisé : valider le brouillon, vérifier le diff, pousser uniquement si valide, puis restaurer depuis l’historique si nécessaire.",
+        "validate": {
+          "title": "Valider avant push",
+          "body": "Le YAML et les règles collector sont vérifiés avant d’activer Push.",
+          "badge": {
+            "initial": "Validation requise",
+            "loading": "Validation…",
+            "success": "Valide",
+            "error": "Correction requise"
+          },
+          "helper": {
+            "initial": "Lancez la validation pour débloquer Push.",
+            "success": "Push est maintenant disponible.",
+            "error": "Corrigez les erreurs avant de pousser."
+          }
+        },
+        "compare": {
+          "title": "Comparer à la config active",
+          "body": "Vérifiez le diff avec la config actuellement reportée par ce workload.",
+          "badge": {
+            "available": "Diff disponible",
+            "first": "Première config",
+            "loading": "Chargement de la config active…",
+            "error": "Config active indisponible"
+          },
+          "helper": {
+            "available": "Utilisez l’onglet Diff avant de pousser.",
+            "first": "Aucune config active ; ce push deviendra la référence.",
+            "error": "Le diff est indisponible. Réessayez le chargement avant de pousser."
+          }
+        },
+        "push": {
+          "title": "Pousser en sécurité",
+          "body": "Push envoie uniquement une config validée et suit son application par le workload.",
+          "cta": "Pousser la config validée",
+          "badge": {
+            "locked": "Push verrouillé",
+            "ready": "Prêt à pousser",
+            "applying": "Application…",
+            "applied": "Appliquée",
+            "failed": "Échec",
+            "unavailable": "Indisponible"
+          },
+          "helper": {
+            "locked": "Validez d’abord la configuration.",
+            "readonly": "Push est indisponible car ce collecteur reporte uniquement sa config.",
+            "applying": "En attente de confirmation du workload.",
+            "applied": "Config appliquée avec succès.",
+            "failed": "Le brouillon est conservé pour correction et nouvel essai.",
+            "timeout": "Pas encore de réponse du workload. Gardez cette page ouverte ou consultez l’activité."
+          }
+        },
+        "rollback": {
+          "title": "Restaurer une version connue bonne",
+          "body": "Chaque révision appliquée est gardée dans l’historique et peut être ré-envoyée en rollback.",
+          "badge": {
+            "history": "Historique disponible",
+            "empty": "Aucune version connue bonne",
+            "auto": "Restauration automatique vers une version connue bonne"
+          },
+          "helper": {
+            "history": "Ouvrez l’historique des pushes pour restaurer une révision précédente.",
+            "empty": "Un push réussi créera le premier point de restauration.",
+            "auto": "La config en échec a été remplacée par la révision {{hash}}."
+          }
+        }
       }
     }
   },
@@ -215,6 +312,26 @@
   "nav": {
     "admin": {
       "sso": "Fournisseurs SSO"
+    }
+  },
+  "configs": {
+    "title": "Bibliothèque de configs",
+    "new_button": "+ Nouvelle config",
+    "loading": "Chargement des configs…",
+    "empty": "Aucune config sauvegardée. Enregistrez une config réutilisable, puis appliquez-la depuis un workload supervisé.",
+    "form": {
+      "header": "Nouvelle config sauvegardée",
+      "name": "Nom",
+      "name_placeholder": "ex. collector-prod-v2",
+      "content": "Contenu (YAML)",
+      "submit": "Enregistrer la config",
+      "saving": "Enregistrement…"
+    },
+    "table": {
+      "name": "Nom",
+      "created_by": "Créée par",
+      "created_at": "Créée le",
+      "id": "ID"
     }
   }
 }

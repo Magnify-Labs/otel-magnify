@@ -7,6 +7,7 @@ import YamlEditor from '../config/YamlEditor'
 import PushStatusBanner from './PushStatusBanner'
 import ConfigDiffView from './ConfigDiffView'
 import PushHistoryTable from './PushHistoryTable'
+import ConfigSafetySection from './ConfigSafetySection'
 import { useStore } from '../../store'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
 import type { Workload, ValidationResult } from '../../types'
@@ -161,12 +162,28 @@ export default function WorkloadConfigSection({ workload }: Props) {
     validation !== null &&
     validation.valid === true
 
+  const safetySection = (
+    <ConfigSafetySection
+      workload={workload}
+      validation={validation}
+      isValidating={validateMutation.isPending}
+      activeConfigLoading={isLoading}
+      activeConfigError={isError}
+      pendingHash={pendingHash}
+      timedOut={timedOut}
+      configStatus={derivedStatus}
+      rollback={rollback}
+      canPush={canPush}
+    />
+  )
+
   // ── SDK workloads: labels as "configuration" ──────────────────────────────
   if (workload.type === 'sdk') {
     const hasLabels = Object.keys(workload.labels).length > 0
     if (!hasLabels) return null
     return (
       <>
+        {safetySection}
         <p className="section-title">Configuration</p>
         <div className="label-chip-list">
           {Object.entries(workload.labels).map(([k, v]) => (
@@ -186,6 +203,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     const hasConfig = !!workload.active_config_id
     return (
       <>
+        {safetySection}
         <p className="section-title">Configuration</p>
         {hasConfig && isLoading ? (
           <div className="loading">Loading configuration...</div>
@@ -295,7 +313,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   if (configsListError) {
     placeholderLabel = '— Failed to load configs —'
   } else if (isConfigsEmpty) {
-    placeholderLabel = '— No saved configs (create one in Configs) —'
+    placeholderLabel = '— No saved configs (create one in Config Library) —'
   }
 
   const applySelector = (
@@ -324,6 +342,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   if (!workload.active_config_id) {
     return (
       <>
+        {safetySection}
         <p className="section-title">Configuration</p>
         {applySelector}
         {editMode ? (
@@ -346,6 +365,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   if (isLoading) {
     return (
       <>
+        {safetySection}
         <p className="section-title">Configuration</p>
         <div className="loading">Loading configuration...</div>
       </>
@@ -354,6 +374,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   if (isError) {
     return (
       <>
+        {safetySection}
         <p className="section-title">Configuration</p>
         <div className="error-text">Failed to load configuration</div>
       </>
@@ -362,6 +383,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
 
   return (
     <>
+      {safetySection}
       <p className="section-title">Configuration</p>
       {applySelector}
 

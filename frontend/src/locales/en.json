@@ -7,7 +7,7 @@
     "nav": {
       "dashboard": "Dashboard",
       "inventory": "Inventory",
-      "configs": "Configurations",
+      "configs": "Config Library",
       "alerts": "Alerts",
       "profile": "Profile",
       "administration": "Administration"
@@ -32,7 +32,8 @@
       "push_activity": "Push activity (7d)",
       "fleet_health": "Fleet health",
       "deployed_versions": "Deployed versions",
-      "recent_alerts": "Recent alerts"
+      "recent_alerts": "Recent alerts",
+      "config_safety_status": "Config safety status"
     },
     "fleet": {
       "connected": "Connected",
@@ -49,6 +50,21 @@
     },
     "alerts": {
       "empty": "No active alerts"
+    },
+    "config_safety": {
+      "title": "Config safety status",
+      "hint": "Safe remote config across supervised collectors",
+      "supervised_collectors": "Supervised collectors",
+      "last_7d_pushes": "Last 7d pushes",
+      "loading": "Loading config safety status…",
+      "error": "Unable to load config safety status.",
+      "cta": "Review supervised workloads",
+      "status": {
+        "empty": "No supervised collectors yet — connect one with OpAMP Supervisor to enable safe push.",
+        "ready": "Validation, diff, safe push and rollback are available on workload detail pages.",
+        "applying": "Config push in progress — waiting for workload acknowledgement.",
+        "failed": "A config push failed — open the workload to fix or roll back."
+      }
     }
   },
   "workloads": {
@@ -80,6 +96,87 @@
         "rollback_in_flight": "Rolling back…",
         "rollback_error": "Rollback failed.",
         "cancel_button": "Cancel"
+      },
+      "safety": {
+        "title": "Config safety",
+        "subtitle": "Know what will change before it reaches this workload.",
+        "flow_aria": "Config safety flow",
+        "flow": {
+          "validate": "Validate",
+          "compare": "Compare",
+          "push": "Push",
+          "rollback": "Roll back"
+        },
+        "readonly": {
+          "title": "Read-only collector",
+          "body": "Push is unavailable because this collector only reports config."
+        },
+        "footer": "Safety path: validate the draft, review the diff, push only when valid, then rollback from history if needed.",
+        "validate": {
+          "title": "Validate before push",
+          "body": "YAML and collector rules are checked before Push is enabled.",
+          "badge": {
+            "initial": "Validation required",
+            "loading": "Validating…",
+            "success": "Valid",
+            "error": "Fix required"
+          },
+          "helper": {
+            "initial": "Run validation to unlock Push.",
+            "success": "Push is now available.",
+            "error": "Fix validation errors before pushing."
+          }
+        },
+        "compare": {
+          "title": "Compare with active config",
+          "body": "Review the diff against the config currently reported by this workload.",
+          "badge": {
+            "available": "Diff available",
+            "first": "First config",
+            "loading": "Loading active config…",
+            "error": "Active config unavailable"
+          },
+          "helper": {
+            "available": "Use the Diff tab before pushing.",
+            "first": "No active config yet; this push becomes the baseline.",
+            "error": "Diff is unavailable. You can retry loading before pushing."
+          }
+        },
+        "push": {
+          "title": "Push safely",
+          "body": "Push sends only a validated config and tracks whether the workload applies it.",
+          "cta": "Push validated config",
+          "badge": {
+            "locked": "Push locked",
+            "ready": "Ready to push",
+            "applying": "Applying…",
+            "applied": "Applied",
+            "failed": "Failed",
+            "unavailable": "Unavailable"
+          },
+          "helper": {
+            "locked": "Validate the configuration first.",
+            "readonly": "Push is unavailable because this collector only reports config.",
+            "applying": "Waiting for workload acknowledgement.",
+            "applied": "Config applied successfully.",
+            "failed": "The draft is preserved so you can fix and retry.",
+            "timeout": "No response from workload yet. Keep this page open or check Activity."
+          }
+        },
+        "rollback": {
+          "title": "Roll back to known-good",
+          "body": "Every applied revision is kept in history and can be re-pushed as a rollback.",
+          "badge": {
+            "history": "History available",
+            "empty": "No known-good yet",
+            "auto": "Auto-rolled back to known-good"
+          },
+          "helper": {
+            "history": "Open Push history to restore a previous revision.",
+            "empty": "A successful push will create the first rollback point.",
+            "auto": "The failed config was replaced by revision {{hash}}."
+          }
+        }
       }
     }
   },
@@ -215,6 +312,26 @@
   "nav": {
     "admin": {
       "sso": "SSO providers"
+    }
+  },
+  "configs": {
+    "title": "Config Library",
+    "new_button": "+ New config",
+    "loading": "Loading configs…",
+    "empty": "No saved configs yet. Save a reusable config, then apply it from a supervised workload.",
+    "form": {
+      "header": "New saved config",
+      "name": "Name",
+      "name_placeholder": "e.g. collector-prod-v2",
+      "content": "Content (YAML)",
+      "submit": "Save config",
+      "saving": "Saving…"
+    },
+    "table": {
+      "name": "Name",
+      "created_by": "Created by",
+      "created_at": "Created at",
+      "id": "ID"
     }
   }
 }
