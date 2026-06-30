@@ -101,6 +101,87 @@
           "empty_sampling": "No sampling changes.",
           "empty_auth": "No auth or header changes."
         }
+      },
+      "safety": {
+        "title": "Config safety",
+        "subtitle": "Know what will change before it reaches this workload.",
+        "flow_aria": "Configuration safety flow",
+        "flow": {
+          "validate": "Validate",
+          "compare": "Compare",
+          "push": "Push",
+          "rollback": "Rollback"
+        },
+        "readonly": {
+          "title": "Read-only collector",
+          "body": "Push is unavailable because this collector only reports config. Run it under the OpAMP Supervisor to enable remote config changes."
+        },
+        "footer": "Supervised collectors apply remote config through OpAMP and report status back here.",
+        "validate": {
+          "title": "Validate before push",
+          "body": "Server-side checks parse YAML, verify collector structure, and compare referenced components with this workload.",
+          "badge": {
+            "loading": "Validating…",
+            "success": "Validation passed",
+            "error": "Fix errors first",
+            "initial": "Validation required"
+          },
+          "helper": {
+            "success": "This draft passed validation and can move to the push step.",
+            "error": "Resolve the blocking validation errors before pushing.",
+            "initial": "Validate the configuration first."
+          }
+        },
+        "compare": {
+          "title": "Compare with active config",
+          "body": "Use the diff to review YAML and OTel impact before changing the live collector.",
+          "badge": {
+            "loading": "Loading active config",
+            "error": "Diff unavailable",
+            "first": "First config",
+            "available": "Diff available"
+          },
+          "helper": {
+            "error": "Reload the active config before relying on the diff.",
+            "first": "No active config exists yet, so this push will become the first known config.",
+            "available": "Review the active-vs-draft diff before pushing."
+          }
+        },
+        "push": {
+          "title": "Push safely",
+          "body": "Remote config is sent only after validation passes and the workload can accept pushes.",
+          "cta": "Push validated config",
+          "badge": {
+            "unavailable": "Push unavailable",
+            "applying": "Applying",
+            "failed": "Apply failed",
+            "applied": "Applied",
+            "ready": "Ready to push",
+            "locked": "Push locked"
+          },
+          "helper": {
+            "readonly": "This collector runs in read-only mode and cannot receive remote config.",
+            "timeout": "No response has arrived yet; keep monitoring before retrying.",
+            "applying": "Waiting for the workload to acknowledge the new config.",
+            "failed": "The workload rejected or failed to apply the last pushed config.",
+            "applied": "The workload reported that the latest pushed config was applied.",
+            "locked": "Validate the configuration first."
+          }
+        },
+        "rollback": {
+          "title": "Roll back to known-good",
+          "body": "Push history keeps previous revisions available when you need to recover quickly.",
+          "badge": {
+            "auto": "Auto-rollback complete",
+            "history": "History available",
+            "empty": "No history yet"
+          },
+          "helper": {
+            "auto": "Automatically restored {{hash}} after the workload reported a failed apply.",
+            "history": "Use push history to inspect or restore a previous revision.",
+            "empty": "After the first successful push, this workload will keep rollback history."
+          }
+        }
       }
     }
   },
