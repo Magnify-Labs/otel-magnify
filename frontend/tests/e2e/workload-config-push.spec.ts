@@ -59,7 +59,7 @@ function mockHistory(page: Page, rows: unknown[]) {
   )
 }
 
-function mockValidate(page: Page, result: { valid: boolean; errors?: unknown[] }) {
+function mockValidate(page: Page, result: Record<string, unknown> & { valid: boolean }) {
   return page.route(`**/api/workloads/${WORKLOAD_ID}/config/validate`, (route) =>
     route.fulfill({
       status: 200,
@@ -68,6 +68,60 @@ function mockValidate(page: Page, result: { valid: boolean; errors?: unknown[] }
     }),
   )
 }
+
+const VALIDATION_CHECKS_SUCCESS = [
+  {
+    id: 'yaml_static',
+    label: 'YAML syntax',
+    source: 'server.static_yaml',
+    status: 'passed',
+    required: true,
+    messages: [{ code: 'yaml_parse_ok', severity: 'info', message: 'YAML parsed successfully.' }],
+  },
+  {
+    id: 'collector_structure',
+    label: 'Collector structure',
+    source: 'server.structure',
+    status: 'passed',
+    required: true,
+    messages: [
+      {
+        code: 'collector_structure_ok',
+        severity: 'info',
+        message: 'Pipelines reference defined components.',
+      },
+    ],
+  },
+  {
+    id: 'component_availability',
+    label: 'Components available on workload',
+    source: 'workload.available_components',
+    status: 'passed',
+    required: true,
+    messages: [
+      {
+        code: 'components_available',
+        severity: 'info',
+        message: 'All referenced components are available on this workload.',
+      },
+    ],
+  },
+  {
+    id: 'otelcol_runtime',
+    label: 'Collector runtime validation',
+    source: 'otelcol.binary',
+    status: 'passed',
+    required: false,
+    metadata: {
+      binary_version: '0.150.1',
+      target_version: '0.150.1',
+      binary_path: '/usr/local/bin/otelcol',
+    },
+    messages: [
+      { code: 'otelcol_validate_ok', severity: 'info', message: 'otelcol validate succeeded.' },
+    ],
+  },
+]
 
 test.beforeEach(async ({ loggedInPage: page }) => {
   await mockConfigsList(page, [])
@@ -159,7 +213,9 @@ test('config safety shows read-only collector caveat and no enabled push CTA', a
   const safety = page.locator('.config-safety-card')
   await expect(safety).toBeVisible()
   await expect(safety).toContainText('Read-only collector')
-  await expect(safety).toContainText('Push is unavailable because this collector only reports config.')
+  await expect(safety).toContainText(
+    'Push is unavailable because this collector only reports config.',
+  )
   await expect(safety).not.toContainText('Push validated config')
 })
 
@@ -185,7 +241,13 @@ test('validate exposes errors and blocks push', async ({ loggedInPage: page }) =
   await mockHistory(page, [])
   await mockValidate(page, {
     valid: false,
-    errors: [{ code: 'undefined_component', message: 'pipeline "traces" references exporter "nope"', path: 'service.pipelines.traces.exporters[0]' }],
+    errors: [
+      {
+        code: 'undefined_component',
+        message: 'pipeline "traces" references exporter "nope"',
+        path: 'service.pipelines.traces.exporters[0]',
+      },
+    ],
   })
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
@@ -213,6 +275,168 @@ test('valid config unlocks push button', async ({ loggedInPage: page }) => {
   await page.getByRole('button', { name: 'Validate' }).click()
 
   await expect(page.locator('.validation-ok')).toContainText('valid')
+  await expect(page.getByRole('button', { name: 'Push' })).toBeEnabled()
+})
+
+test('validation details show separated static component and runtime checks', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, {
+    valid: true,
+    overall_status: 'passed',
+    summary: 'All validation checks passed.',
+    target_collector_version: '0.150.1',
+    checks: VALIDATION_CHECKS_SUCCESS,
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Validate' }).click()
+
+  const details = page.locator('.validation-details')
+  await expect(details).toContainText('Validation passed')
+  await expect(details).toContainText('Target 0.150.1')
+  await expect(details).toContainText('otelcol 0.150.1')
+  await expect(details.locator('.validation-check-card')).toHaveCount(4)
+  await expect(details.locator('.validation-check-card').nth(0)).toContainText('YAML syntax')
+  await expect(details.locator('.validation-check-card').nth(2)).toContainText(
+    'Components available on workload',
+  )
+  await expect(details.locator('.validation-check-card').nth(3)).toContainText(
+    'Collector runtime validation',
+  )
+})
+
+test('validation details separate non-blocking warnings from blocking errors', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, {
+    valid: false,
+    overall_status: 'failed',
+    summary: 'One blocking validation check failed.',
+    target_collector_version: '0.150.1',
+    errors: [
+      {
+        code: 'undefined_component',
+        message: 'pipeline "traces" references exporter "nope"',
+        path: 'service.pipelines.traces.exporters[0]',
+        check_id: 'collector_structure',
+      },
+    ],
+    warnings: [
+      {
+        code: 'otelcol_version_mismatch',
+        severity: 'warning',
+        message: 'Runtime validation used otelcol 0.149.0 while target version is 0.150.1.',
+        check_id: 'otelcol_runtime',
+      },
+    ],
+    checks: [
+      VALIDATION_CHECKS_SUCCESS[0],
+      {
+        id: 'collector_structure',
+        label: 'Collector structure',
+        source: 'server.structure',
+        status: 'failed',
+        required: true,
+        messages: [
+          {
+            code: 'undefined_component',
+            severity: 'error',
+            message: 'pipeline "traces" references exporter "nope"',
+            path: 'service.pipelines.traces.exporters[0]',
+          },
+        ],
+      },
+      {
+        id: 'otelcol_runtime',
+        label: 'Collector runtime validation',
+        source: 'otelcol.binary',
+        status: 'warning',
+        required: false,
+        metadata: { binary_version: '0.149.0', target_version: '0.150.1' },
+        messages: [
+          {
+            code: 'otelcol_version_mismatch',
+            severity: 'warning',
+            message: 'Runtime validation used otelcol 0.149.0 while target version is 0.150.1.',
+          },
+        ],
+      },
+    ],
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Validate' }).click()
+
+  const details = page.locator('.validation-details')
+  await expect(details).toContainText('Blocking errors')
+  await expect(details).toContainText('Warnings')
+  await expect(details.locator('.validation-check-card-failed')).toContainText('Required')
+  await expect(details.locator('.validation-check-card-warning')).toContainText('Advisory')
+  await expect(details.locator('.validation-check-card-failed')).toContainText(
+    'undefined_component',
+  )
+  await expect(details.locator('.validation-check-card-warning')).toContainText(
+    'otelcol_version_mismatch',
+  )
+  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+})
+
+test('validation details explain when otelcol runtime check is skipped', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, {
+    valid: true,
+    overall_status: 'warning',
+    summary: 'Static validation passed; runtime validation skipped.',
+    target_collector_version: '0.150.1',
+    warnings: [
+      {
+        code: 'otelcol_not_found',
+        severity: 'warning',
+        message: 'otelcol binary "otelcol" was not found on the server.',
+        check_id: 'otelcol_runtime',
+      },
+    ],
+    checks: [
+      ...VALIDATION_CHECKS_SUCCESS.slice(0, 3),
+      {
+        id: 'otelcol_runtime',
+        label: 'Collector runtime validation',
+        source: 'otelcol.binary',
+        status: 'skipped',
+        required: false,
+        metadata: { target_version: '0.150.1' },
+        messages: [
+          {
+            code: 'otelcol_not_found',
+            severity: 'warning',
+            message: 'otelcol binary "otelcol" was not found on the server.',
+          },
+        ],
+      },
+    ],
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Validate' }).click()
+
+  const details = page.locator('.validation-details')
+  await expect(details).toContainText('Validation passed with warnings')
+  await expect(details).toContainText('Skipped')
+  await expect(details).toContainText('otelcol binary "otelcol" was not found on the server.')
   await expect(page.getByRole('button', { name: 'Push' })).toBeEnabled()
 })
 
@@ -327,21 +551,28 @@ test('diff tab shows two editor panels', async ({ loggedInPage: page }) => {
   await expect(page.locator('.cm-mergeView .cm-editor')).toHaveCount(2)
 })
 
-test('history refreshes when WS workload_config_status arrives from another session', async ({ loggedInPage: page }) => {
+test('history refreshes when WS workload_config_status arrives from another session', async ({
+  loggedInPage: page,
+}) => {
   await mockWorkload(page)
   await mockConfig(page, 'a: 1\n')
 
   let call = 0
   await page.route(`**/api/workloads/${WORKLOAD_ID}/configs`, (route) => {
     call += 1
-    const rows = call === 1 ? [] : [{
-      workload_id: WORKLOAD_ID,
-      config_id: 'ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-      applied_at: new Date().toISOString(),
-      status: 'applied',
-      pushed_by: 'other@user',
-      error_message: '',
-    }]
+    const rows =
+      call === 1
+        ? []
+        : [
+            {
+              workload_id: WORKLOAD_ID,
+              config_id: 'ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+              applied_at: new Date().toISOString(),
+              status: 'applied',
+              pushed_by: 'other@user',
+              error_message: '',
+            },
+          ]
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -376,8 +607,23 @@ test('history table renders with rollback action', async ({ loggedInPage: page }
   await mockWorkload(page)
   await mockConfig(page, 'a: 1\n')
   await mockHistory(page, [
-    { workload_id: WORKLOAD_ID, config_id: '1111111111111111', applied_at: new Date().toISOString(), status: 'applied', pushed_by: 'me@x', content: 'old: true' },
-    { workload_id: WORKLOAD_ID, config_id: '2222222222222222', applied_at: new Date().toISOString(), status: 'failed', error_message: 'boom', pushed_by: 'me@x', content: 'bad' },
+    {
+      workload_id: WORKLOAD_ID,
+      config_id: '1111111111111111',
+      applied_at: new Date().toISOString(),
+      status: 'applied',
+      pushed_by: 'me@x',
+      content: 'old: true',
+    },
+    {
+      workload_id: WORKLOAD_ID,
+      config_id: '2222222222222222',
+      applied_at: new Date().toISOString(),
+      status: 'failed',
+      error_message: 'boom',
+      pushed_by: 'me@x',
+      content: 'bad',
+    },
   ])
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
@@ -424,12 +670,7 @@ function mockConfigsList(page: Page, configs: Array<{ id: string; name: string }
   )
 }
 
-function mockConfigDetail(
-  page: Page,
-  id: string,
-  name: string,
-  content: string,
-) {
+function mockConfigDetail(page: Page, id: string, name: string, content: string) {
   return page.route(`**/api/configs/${id}`, (route) =>
     route.fulfill({
       status: 200,
