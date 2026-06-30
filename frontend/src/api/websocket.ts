@@ -73,6 +73,12 @@ function dispatch(data: WsMessage) {
 }
 
 export function connectWS() {
+  if (
+    (window as unknown as { __OTEL_MAGNIFY_E2E_DISABLE_WS__?: boolean })
+      .__OTEL_MAGNIFY_E2E_DISABLE_WS__
+  ) {
+    return
+  }
   if (ws?.readyState === WebSocket.OPEN) return
 
   const token = localStorage.getItem('token')
