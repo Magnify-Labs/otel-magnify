@@ -176,7 +176,7 @@ func (d *DB) GetLatestPendingOrApplyingWorkloadConfig(workloadID string) (*model
 	err := d.QueryRow(`
 		SELECT workload_id, config_id, applied_at, status,
 		       COALESCE(error_message, ''), COALESCE(pushed_by, ''), label
-		FROM workload_configs WHERE workload_id = ? AND status IN ('pending', 'applying')
+		FROM workload_configs WHERE workload_id = ? AND status IN ('pending', 'submitted', 'sent', 'applying')
 		ORDER BY applied_at DESC LIMIT 1`, workloadID,
 	).Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status, &wc.ErrorMessage, &wc.PushedBy, &label)
 	if errors.Is(err, sql.ErrNoRows) {
