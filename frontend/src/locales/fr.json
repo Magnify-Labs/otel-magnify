@@ -101,6 +101,87 @@
           "empty_sampling": "Aucun changement de sampling.",
           "empty_auth": "Aucun changement auth ou header."
         }
+      },
+      "safety": {
+        "title": "Sécurité de configuration",
+        "subtitle": "Comprenez ce qui va changer avant que cela atteigne ce workload.",
+        "flow_aria": "Flux de sécurité de configuration",
+        "flow": {
+          "validate": "Valider",
+          "compare": "Comparer",
+          "push": "Pousser",
+          "rollback": "Restaurer"
+        },
+        "readonly": {
+          "title": "Collecteur en lecture seule",
+          "body": "Le push est indisponible car ce collecteur ne fait que reporter sa config. Lancez-le sous l’OpAMP Supervisor pour activer les changements de config à distance."
+        },
+        "footer": "Les collecteurs supervisés appliquent la config distante via OpAMP et remontent leur statut ici.",
+        "validate": {
+          "title": "Valider avant le push",
+          "body": "Les checks serveur analysent le YAML, vérifient la structure Collector et comparent les composants référencés avec ce workload.",
+          "badge": {
+            "loading": "Validation…",
+            "success": "Validation réussie",
+            "error": "Corriger les erreurs",
+            "initial": "Validation requise"
+          },
+          "helper": {
+            "success": "Ce brouillon a passé la validation et peut passer à l’étape de push.",
+            "error": "Corrigez les erreurs bloquantes avant de pousser.",
+            "initial": "Validez d’abord la configuration."
+          }
+        },
+        "compare": {
+          "title": "Comparer avec la config active",
+          "body": "Utilisez le diff pour vérifier le YAML et l’impact OTel avant de modifier le collecteur live.",
+          "badge": {
+            "loading": "Chargement de la config active",
+            "error": "Diff indisponible",
+            "first": "Première config",
+            "available": "Diff disponible"
+          },
+          "helper": {
+            "error": "Rechargez la config active avant de vous fier au diff.",
+            "first": "Aucune config active n’existe encore, ce push deviendra donc la première config connue.",
+            "available": "Vérifiez le diff actif-vs-brouillon avant le push."
+          }
+        },
+        "push": {
+          "title": "Pousser en sécurité",
+          "body": "La config distante n’est envoyée qu’après validation et seulement si le workload accepte les pushes.",
+          "cta": "Pousser la config validée",
+          "badge": {
+            "unavailable": "Push indisponible",
+            "applying": "Application",
+            "failed": "Échec d’application",
+            "applied": "Appliquée",
+            "ready": "Prêt au push",
+            "locked": "Push verrouillé"
+          },
+          "helper": {
+            "readonly": "Ce collecteur fonctionne en lecture seule et ne peut pas recevoir de config distante.",
+            "timeout": "Aucune réponse n’est encore arrivée ; continuez à surveiller avant de réessayer.",
+            "applying": "En attente de l’accusé de réception du workload pour la nouvelle config.",
+            "failed": "Le workload a rejeté ou n’a pas appliqué la dernière config poussée.",
+            "applied": "Le workload a indiqué que la dernière config poussée est appliquée.",
+            "locked": "Validez d’abord la configuration."
+          }
+        },
+        "rollback": {
+          "title": "Restaurer un état sain",
+          "body": "L’historique des pushes garde les révisions précédentes disponibles pour récupérer rapidement.",
+          "badge": {
+            "auto": "Auto-rollback terminé",
+            "history": "Historique disponible",
+            "empty": "Pas encore d’historique"
+          },
+          "helper": {
+            "auto": "{{hash}} a été restaurée automatiquement après un échec d’application signalé par le workload.",
+            "history": "Utilisez l’historique des pushes pour inspecter ou restaurer une révision précédente.",
+            "empty": "Après le premier push réussi, ce workload conservera un historique de rollback."
+          }
+        }
       }
     }
   },
