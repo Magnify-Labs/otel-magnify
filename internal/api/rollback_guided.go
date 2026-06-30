@@ -78,6 +78,14 @@ func (a *API) handlePrepareRollback(w http.ResponseWriter, r *http.Request) {
 		respondRollbackError(w, http.StatusNotFound, "config not found in this workload's history", "target_not_found", false, "none", nil)
 		return
 	}
+	if wl.ArchivedAt != nil {
+		respondRollbackError(w, http.StatusConflict, "workload is archived", "workload_archived", false, "none", nil)
+		return
+	}
+	if target.Status != models.PushStatusApplied {
+		respondRollbackError(w, http.StatusConflict, "rollback target must be an applied config", "target_not_applied", false, "none", map[string]string{"target_status": target.Status})
+		return
+	}
 
 	current := a.resolveCurrentConfig(wl)
 	validation := a.buildRollbackValidation(wl, target)
@@ -380,20 +388,22 @@ func (a *API) handleRollbackStatus(w http.ResponseWriter, r *http.Request) {
 		terminalStatus = "unknown"
 	}
 	report := map[string]any{
-		"schema_version":       "guided-rollback-status.v1",
-		"request_id":           r.URL.Query().Get("request_id"),
-		"workload_id":          workloadID,
-		"target_hash":          ref.TargetHash,
-		"request_status":       "accepted",
-		"apply_status":         apply,
-		"terminal":             terminal,
-		"started_at":           ref.StartedAt,
-		"elapsed_ms":           elapsed.Milliseconds(),
-		"timeout_seconds":      rollbackTimeoutSeconds,
-		"timed_out":            apply == "unknown",
-		"history_row":          row,
-		"remote_config_status": wl.RemoteConfigStatus,
-		"last_known_status":    last,
+		"schema_version":      "guided-rollback-status.v1",
+		"request_id":          r.URL.Query().Get("request_id"),
+		"workload_id":         workloadID,
+		"target_hash":         ref.TargetHash,
+		"target_status":       row.Status,
+		"target_applied_at":   row.AppliedAt,
+		"target_submitted_at": row.SubmittedAt,
+		"target_pushed_by":    row.PushedBy,
+		"request_status":      "accepted",
+		"apply_status":        apply,
+		"terminal":            terminal,
+		"started_at":          ref.StartedAt,
+		"elapsed_ms":          elapsed.Milliseconds(),
+		"timeout_seconds":     rollbackTimeoutSeconds,
+		"timed_out":           apply == "unknown",
+		"last_known_status":   last,
 	}
 	if terminalStatus != "" {
 		report["terminal_status"] = terminalStatus
@@ -401,15 +411,26 @@ func (a *API) handleRollbackStatus(w http.ResponseWriter, r *http.Request) {
 	if row.Label != nil {
 		report["target_label"] = *row.Label
 	}
-	if row.ErrorMessage != "" {
-		report["error_message"] = row.ErrorMessage
-	}
 	respondJSON(w, http.StatusOK, report)
 }
 
 func newRollbackRequestID(workloadID, targetHash string, startedAt time.Time) string {
 	b, _ := json.Marshal(rollbackRequestRef{WorkloadID: workloadID, TargetHash: targetHash, StartedAt: startedAt.UTC()})
 	return "rb_" + base64.RawURLEncoding.EncodeToString(b)
+}
+
+func rollbackAuditDetail(targetKind, requestID, currentHash, targetHash string) string {
+	detail := map[string]string{
+		"target_kind":  targetKind,
+		"request_id":   requestID,
+		"current_hash": currentHash,
+		"target_hash":  targetHash,
+	}
+	b, err := json.Marshal(detail)
+	if err != nil {
+		return targetHash
+	}
+	return string(b)
 }
 
 func decodeRollbackRequestID(id string) (rollbackRequestRef, error) {

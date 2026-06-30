@@ -72,19 +72,21 @@ func newTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPusher) {
 
 func authedRequest(t *testing.T, method, url string) *http.Request {
 	t.Helper()
+	return authedRequestForGroups(t, method, url, "", []string{"administrator"})
+}
+
+func authedRequestForGroups(t *testing.T, method, url, body string, groups []string) *http.Request {
+	t.Helper()
 	a := auth.New("test-secret-key-at-least-32-bytes!")
-	token, _ := a.GenerateToken("user-001", "admin@test.com", []string{"administrator"})
-	req := httptest.NewRequest(method, url, nil)
+	token, _ := a.GenerateToken("user-001", "admin@test.com", groups)
+	req := httptest.NewRequest(method, url, strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	return req
 }
 
 func authedPost(t *testing.T, url, body string) *http.Request {
 	t.Helper()
-	a := auth.New("test-secret-key-at-least-32-bytes!")
-	token, _ := a.GenerateToken("user-001", "admin@test.com", []string{"administrator"})
-	req := httptest.NewRequest("POST", url, strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req := authedRequestForGroups(t, "POST", url, body, []string{"administrator"})
 	req.Header.Set("Content-Type", "text/yaml")
 	return req
 }
@@ -736,6 +738,202 @@ service:
 		t.Fatalf("history = %+v", history)
 	}
 }
+
+func TestRollbackPrepareRejectsNonAppliedTarget(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	targetHash := seedRollbackConfig(t, db, "w1", validRollbackYAMLForAPI(), "failed", "", time.Now().UTC(), nil)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
+
+	req := authedRequest(t, "GET", "/api/workloads/w1/rollback/prepare?target_hash="+targetHash)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["code"] != "target_not_applied" {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestRollbackActionRejectsNonAppliedTarget(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	targetHash := seedRollbackConfig(t, db, "w1", validRollbackYAMLForAPI(), "failed", "", time.Now().UTC(), nil)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
+
+	req := authedPost(t, "/api/workloads/w1/configs/"+targetHash+"/rollback", "")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["code"] != "target_not_applied" {
+		t.Fatalf("body = %+v", body)
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("expected no opamp push, got %+v", fake.pushed)
+	}
+}
+
+func TestDefaultRollbackRejectsArchivedNonCollectorAndConcurrentChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		workload models.Workload
+		setup    func(ext.Store)
+		wantCode string
+	}{
+		{
+			name:     "archived",
+			workload: models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true, ArchivedAt: ptrTime(time.Now().UTC())},
+			wantCode: "workload_archived",
+		},
+		{
+			name:     "non collector",
+			workload: models.Workload{ID: "w1", Type: "sdk", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true},
+			wantCode: "workload_not_collector",
+		},
+		{
+			name:     "concurrent",
+			workload: models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true},
+			setup: func(db ext.Store) {
+				_ = db.CreateConfig(models.Config{ID: "pending", Name: "pending", Content: validRollbackYAMLForAPI(), CreatedAt: time.Now().UTC()})
+				_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "pending", Status: "pending", AppliedAt: time.Now().UTC()})
+			},
+			wantCode: "concurrent_config_change",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db, router, fake := newTestAPI(t)
+			seedRollbackConfig(t, db, "w1", validRollbackYAMLForAPI(), "applied", "", time.Now().UTC().Add(-time.Hour), nil)
+			_ = db.UpsertWorkload(tc.workload)
+			if tc.setup != nil {
+				tc.setup(db)
+			}
+
+			req := authedPost(t, "/api/workloads/w1/rollback", "")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+			}
+			var body map[string]any
+			_ = json.Unmarshal(rec.Body.Bytes(), &body)
+			if body["code"] != tc.wantCode {
+				t.Fatalf("body = %+v, want code %s", body, tc.wantCode)
+			}
+			if len(fake.pushed) != 0 {
+				t.Fatalf("expected no opamp push, got %+v", fake.pushed)
+			}
+		})
+	}
+}
+
+func TestDefaultRollbackPermissionsViewerForbiddenEditorAllowed(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true, ActiveConfigHash: "current"})
+	_ = db.CreateConfig(models.Config{ID: "current", Name: "current", Content: strings.ReplaceAll(validRollbackYAMLForAPI(), "logging", "debug"), CreatedAt: time.Now().UTC().Add(-2 * time.Hour)})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "current", Status: "applied", AppliedAt: time.Now().UTC().Add(-2 * time.Hour)})
+	seedRollbackConfig(t, db, "w1", validRollbackYAMLForAPI(), "applied", "", time.Now().UTC().Add(-time.Hour), nil)
+
+	viewerReq := authedRequestForGroups(t, http.MethodPost, "/api/workloads/w1/rollback", "", []string{"viewer"})
+	viewerRec := httptest.NewRecorder()
+	router.ServeHTTP(viewerRec, viewerReq)
+	if viewerRec.Code != http.StatusForbidden {
+		t.Fatalf("viewer status = %d, want 403", viewerRec.Code)
+	}
+
+	editorReq := authedRequestForGroups(t, http.MethodPost, "/api/workloads/w1/rollback", "", []string{"editor"})
+	editorRec := httptest.NewRecorder()
+	router.ServeHTTP(editorRec, editorReq)
+	if editorRec.Code != http.StatusAccepted {
+		t.Fatalf("editor status = %d, body=%s", editorRec.Code, editorRec.Body.String())
+	}
+	if len(fake.pushed) != 1 {
+		t.Fatalf("editor should push once, got %+v", fake.pushed)
+	}
+}
+
+func TestRollbackStatusRedactsRawConfigAndRemoteErrors(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	secretYAML := strings.Replace(validRollbackYAMLForAPI(), "logging", "secret_exporter", 1)
+	targetHash := seedRollbackConfig(t, db, "w1", secretYAML, "applied", "operator@example.com", time.Now().UTC().Add(-time.Hour), ptrString("safe label"))
+	startedAt := time.Now().UTC()
+	requestID := newRollbackRequestID("w1", targetHash, startedAt)
+	if err := db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: targetHash, AppliedAt: startedAt, Status: models.PushStatusSent, PushedBy: "operator@example.com", ErrorMessage: "backend secret detail", Label: ptrString("safe label")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetWorkloadConfigLabel("w1", targetHash, "safe label"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true, RemoteConfigStatus: &models.RemoteConfigStatus{Status: "failed", ConfigHash: targetHash, ErrorMessage: "remote secret detail", UpdatedAt: time.Now().UTC()}})
+
+	req := authedRequest(t, "GET", "/api/workloads/w1/rollback/status?request_id="+requestID)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, forbidden := range []string{"history_row", "remote_config_status", "content", "secret_exporter", "backend secret detail", "remote secret detail"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("status response leaked %q in %s", forbidden, body)
+		}
+	}
+	var report map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &report)
+	if report["target_hash"] != targetHash || report["target_label"] != "safe label" || report["target_status"] == "" || report["target_pushed_by"] != "operator@example.com" {
+		t.Fatalf("redacted report missing safe target fields: %+v", report)
+	}
+}
+
+func TestRollbackAuditDetailIncludesContextWithoutRawConfig(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	currentHash := seedRollbackConfig(t, db, "w1", strings.Replace(validRollbackYAMLForAPI(), "logging", "debug", 1), "applied", "", time.Now().UTC().Add(-2*time.Hour), nil)
+	targetHash := seedRollbackConfig(t, db, "w1", validRollbackYAMLForAPI(), "applied", "", time.Now().UTC().Add(-time.Hour), nil)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true, ActiveConfigHash: currentHash})
+
+	req := authedPost(t, "/api/workloads/w1/configs/"+targetHash+"/rollback", "")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	events := audit.snapshot()
+	if len(events) != 1 || events[0].Action != "config.rollback" {
+		t.Fatalf("events = %+v", events)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(events[0].Detail), &detail); err != nil {
+		t.Fatalf("audit detail is not JSON: %q", events[0].Detail)
+	}
+	if detail["target_kind"] != "hash" || detail["request_id"] == "" || detail["current_hash"] != currentHash || detail["target_hash"] != targetHash {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if strings.Contains(events[0].Detail, "receivers:") || strings.Contains(events[0].Detail, "exporters:") {
+		t.Fatalf("audit detail leaked raw config: %s", events[0].Detail)
+	}
+}
+
+func validRollbackYAMLForAPI() string {
+	return `receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+}
+
+func ptrString(v string) *string { return &v }
+
+func ptrTime(v time.Time) *time.Time { return &v }
 
 // --- Delete ---
 

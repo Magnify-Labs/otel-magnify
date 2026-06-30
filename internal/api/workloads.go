@@ -600,12 +600,23 @@ func (a *API) handleRollbackWorkloadDefault(w http.ResponseWriter, r *http.Reque
 		respondError(w, 500, "failed to load workload")
 		return
 	}
+	if wl.ArchivedAt != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "workload is archived", "code": "workload_archived"})
+		return
+	}
+	if wl.Type != "" && wl.Type != "collector" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "rollback is supported only for collector workloads", "code": "workload_not_collector"})
+		return
+	}
 	if !wl.AcceptsRemoteConfig {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": "workload does not accept remote config", "code": "remote_config_unsupported"})
 		return
 	}
-	if wl.ArchivedAt != nil {
-		respondJSON(w, http.StatusConflict, map[string]string{"error": "workload is archived", "code": "workload_archived"})
+	if concurrent, err := a.db.GetLatestPendingOrApplyingWorkloadConfig(workloadID); err != nil {
+		respondError(w, 500, "failed to check pending config changes")
+		return
+	} else if concurrent != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "a config change is already pending or applying for this workload", "code": "concurrent_config_change"})
 		return
 	}
 	excludeHash := wl.ActiveConfigHash
@@ -688,6 +699,10 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 		respondRollbackError(w, 404, "config not found in this workload's history", "target_not_found", false, "none", nil)
 		return
 	}
+	if wc.Status != models.PushStatusApplied {
+		respondRollbackError(w, http.StatusConflict, "rollback target must be an applied config", "target_not_applied", false, "none", map[string]string{"target_status": wc.Status})
+		return
+	}
 	if wc.Content == "" {
 		// History rows JOIN configs.content; an empty string means the
 		// underlying configs row is missing. Refuse to rollback to a
@@ -705,12 +720,23 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 		respondRollbackError(w, 500, "failed to load workload", "internal_error", true, "none", nil)
 		return
 	}
+	if wl.ArchivedAt != nil {
+		respondRollbackError(w, http.StatusConflict, "workload is archived", "workload_archived", false, "none", nil)
+		return
+	}
 	if wl.Type != "" && wl.Type != "collector" {
 		respondRollbackError(w, http.StatusConflict, "rollback is supported only for collector workloads", "workload_not_collector", false, "none", nil)
 		return
 	}
 	if !wl.AcceptsRemoteConfig {
 		respondRollbackError(w, http.StatusConflict, "workload does not accept remote config", "remote_config_unsupported", false, "none", nil)
+		return
+	}
+	if concurrent, err := a.db.GetLatestPendingOrApplyingWorkloadConfig(workloadID); err != nil {
+		respondRollbackError(w, 500, "failed to check pending config changes", "internal_error", true, "none", nil)
+		return
+	} else if concurrent != nil {
+		respondRollbackError(w, http.StatusConflict, "a config change is already pending or applying for this workload", "concurrent_config_change", false, "none", nil)
 		return
 	}
 
@@ -769,11 +795,17 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 	}
 	_ = a.db.MarkWorkloadConfigSent(workloadID, hash, time.Now().UTC())
 
-	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, hash); err != nil {
+	requestID := newRollbackRequestID(workloadID, hash, appliedAt)
+	currentHash := wl.ActiveConfigHash
+	if currentHash == "" {
+		if current := a.resolveCurrentConfig(wl); current != nil {
+			currentHash = current.ConfigID
+		}
+	}
+	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, rollbackAuditDetail("hash", requestID, currentHash, hash)); err != nil {
 		respondAuditUnavailable(w, sideEffectApplied)
 		return
 	}
-	requestID := newRollbackRequestID(workloadID, hash, appliedAt)
 	respondJSON(w, 202, map[string]any{
 		"schema_version": "guided-rollback-action.v1",
 		"request_id":     requestID,
