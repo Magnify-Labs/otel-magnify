@@ -1,0 +1,30 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: localhost:4317
+processors:
+  memory_limiter:
+    limit_mib: 512
+  batch: {}
+exporters:
+  otlp:
+    endpoint: https://otel-old.example:4317
+    tls:
+      insecure: false
+    headers:
+      Authorization: ${OTEL_TOKEN}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
