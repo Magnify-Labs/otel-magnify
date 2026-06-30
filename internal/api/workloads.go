@@ -170,7 +170,12 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 	if wl.AvailableComponents != nil {
 		available = wl.AvailableComponents
 	}
-	if result := validator.Validate(body, available); !result.Valid {
+	runtimeOpts := validator.RuntimeOptionsFromEnv()
+	runtimeOpts.TargetVersion = wl.Version
+	if runtimeOpts.TargetVersion != "" {
+		runtimeOpts.TargetVersionSource = "workload"
+	}
+	if result := validator.ValidateWithRuntime(r.Context(), body, available, runtimeOpts); !result.Valid {
 		respondJSON(w, 400, map[string]any{
 			"error":             "configuration failed validation",
 			"validation_errors": result.Errors,
@@ -244,10 +249,17 @@ func (a *API) handleValidateWorkloadConfig(w http.ResponseWriter, r *http.Reques
 
 	var available *models.AvailableComponents
 	targetVersion := strings.TrimSpace(r.URL.Query().Get("target_collector_version"))
+	versionSource := ""
+	if targetVersion != "" {
+		versionSource = "request"
+	}
 	if wl, err := a.db.GetWorkload(id); err == nil {
 		available = wl.AvailableComponents
 		if targetVersion == "" {
 			targetVersion = wl.Version
+			if targetVersion != "" {
+				versionSource = "workload"
+			}
 		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		respondError(w, 500, "failed to load workload")
@@ -256,6 +268,7 @@ func (a *API) handleValidateWorkloadConfig(w http.ResponseWriter, r *http.Reques
 
 	runtimeOpts := validator.RuntimeOptionsFromEnv()
 	runtimeOpts.TargetVersion = targetVersion
+	runtimeOpts.TargetVersionSource = versionSource
 	respondJSON(w, 200, validator.ValidateWithRuntime(r.Context(), body, available, runtimeOpts))
 }
 
@@ -384,7 +397,12 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 	// rather than trusting that the past hash is still semantically valid.
 	// A rollback to a config that referenced a now-uninstalled exporter
 	// must fail loudly, not silently break the agent.
-	if result := validator.Validate(body, available); !result.Valid {
+	runtimeOpts := validator.RuntimeOptionsFromEnv()
+	runtimeOpts.TargetVersion = wl.Version
+	if runtimeOpts.TargetVersion != "" {
+		runtimeOpts.TargetVersionSource = "workload"
+	}
+	if result := validator.ValidateWithRuntime(r.Context(), body, available, runtimeOpts); !result.Valid {
 		respondJSON(w, 400, map[string]any{
 			"error":             "configuration failed validation",
 			"validation_errors": result.Errors,

@@ -101,11 +101,36 @@ export interface ValidationError {
   code: string
   message: string
   path?: string
+  check_id?: string
+}
+
+export interface ValidationMessage {
+  code: string
+  severity: 'info' | 'warning' | 'error'
+  message: string
+  path?: string
+  check_id?: string
+}
+
+export interface ValidationCheck {
+  id: string
+  label: string
+  source: string
+  status: 'passed' | 'warning' | 'failed' | 'skipped'
+  required: boolean
+  messages?: ValidationMessage[]
+  metadata?: Record<string, unknown>
 }
 
 export interface ValidationResult {
   valid: boolean
+  overall_status?: 'passed' | 'warning' | 'failed' | 'unknown'
+  summary?: string
+  target_collector_version?: string
+  validated_at?: string
   errors?: ValidationError[]
+  warnings?: ValidationMessage[]
+  checks?: ValidationCheck[]
 }
 
 export interface PushActivityPoint {

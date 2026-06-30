@@ -47,6 +47,7 @@ type Message struct {
 	Severity string `json:"severity"`
 	Message  string `json:"message"`
 	Path     string `json:"path,omitempty"`
+	CheckID  string `json:"check_id,omitempty"`
 }
 
 // Check describes one validation check in the enriched response contract.
@@ -62,23 +63,26 @@ type Check struct {
 
 // Result is the outcome of a validation pass.
 type Result struct {
-	Valid         bool      `json:"valid"`
-	OverallStatus string    `json:"overall_status,omitempty"`
-	Summary       string    `json:"summary,omitempty"`
-	Errors        []Error   `json:"errors,omitempty"`
-	Warnings      []Message `json:"warnings,omitempty"`
-	Checks        []Check   `json:"checks,omitempty"`
+	Valid                  bool      `json:"valid"`
+	OverallStatus          string    `json:"overall_status"`
+	Summary                string    `json:"summary"`
+	TargetCollectorVersion string    `json:"target_collector_version,omitempty"`
+	ValidatedAt            time.Time `json:"validated_at"`
+	Errors                 []Error   `json:"errors"`
+	Warnings               []Message `json:"warnings"`
+	Checks                 []Check   `json:"checks"`
 }
 
 // RuntimeOptions controls optional validation through a local otelcol binary.
 // Runtime validation is opt-in because it executes an operator-configured local
 // binary. Empty BinaryPath defaults to "otelcol" when Enabled is true.
 type RuntimeOptions struct {
-	Enabled        bool
-	BinaryPath     string
-	Timeout        time.Duration
-	TargetVersion  string
-	MinimumVersion string
+	Enabled             bool
+	BinaryPath          string
+	Timeout             time.Duration
+	TargetVersion       string
+	TargetVersionSource string
+	MinimumVersion      string
 }
 
 const defaultRuntimeTimeout = 5 * time.Second
@@ -93,25 +97,135 @@ var pipelineSectionToCategory = map[string]string{
 }
 
 // Validate runs the light validation. `available` may be nil, in which case
-// only structural checks are performed. Returns a Result with Valid=true and
-// no errors if everything checks out.
+// component availability is reported as a non-blocking warning. Returns a
+// Result with Valid=true when no blocking validation error is found. The
+// enriched checks/errors/warnings fields are populated for API clients while the
+// legacy Valid and Errors fields remain available for existing callers.
 func Validate(yamlContent []byte, available *models.AvailableComponents) Result {
+	result, _ := validateStatic(yamlContent, available, RuntimeOptions{})
+	finalize(&result)
+	return result
+}
+
+type componentRef struct {
+	Category string
+	ID       string
+	Path     string
+}
+
+type staticValidationState struct {
+	root              map[string]any
+	definedByCategory map[string]map[string]bool
+	refs              []componentRef
+	yamlOK            bool
+	structureOK       bool
+}
+
+func validateStatic(yamlContent []byte, available *models.AvailableComponents, opts RuntimeOptions) (Result, staticValidationState) {
+	result := Result{
+		Valid:                  true,
+		TargetCollectorVersion: strings.TrimSpace(opts.TargetVersion),
+		ValidatedAt:            time.Now().UTC(),
+		Errors:                 []Error{},
+		Warnings:               []Message{},
+		Checks:                 []Check{},
+	}
+	state := staticValidationState{}
+
+	yamlCheck := Check{
+		ID:       "yaml_static",
+		Label:    "YAML syntax",
+		Source:   "server.static_yaml",
+		Required: true,
+		Metadata: map[string]any{"bytes": len(yamlContent)},
+	}
 	var root map[string]any
 	if err := yaml.Unmarshal(yamlContent, &root); err != nil {
-		return Result{Errors: []Error{{
-			Code:    "yaml_parse",
-			Message: fmt.Sprintf("invalid YAML: %v", err),
-		}}}
+		yamlCheck.Status = "failed"
+		msg := Message{Code: "yaml_parse", Severity: "error", Message: fmt.Sprintf("invalid YAML: %v", err), CheckID: yamlCheck.ID}
+		yamlCheck.Messages = []Message{msg}
+		result.Checks = append(result.Checks, yamlCheck)
+		result.Errors = append(result.Errors, Error{Code: msg.Code, Message: msg.Message, CheckID: yamlCheck.ID})
+		appendSkippedDependents(&result, "yaml_static", "YAML parsing failed; this check was not executed.", "collector_structure", "component_availability", "collector_version_compatibility")
+		return result, state
 	}
 	if root == nil {
-		return Result{Errors: []Error{{
-			Code:    "empty_config",
-			Message: "configuration is empty",
-		}}}
+		yamlCheck.Status = "failed"
+		msg := Message{Code: "empty_config", Severity: "error", Message: "configuration is empty", CheckID: yamlCheck.ID}
+		yamlCheck.Messages = []Message{msg}
+		result.Checks = append(result.Checks, yamlCheck)
+		result.Errors = append(result.Errors, Error{Code: msg.Code, Message: msg.Message, CheckID: yamlCheck.ID})
+		appendSkippedDependents(&result, "yaml_static", "Configuration is empty; this check was not executed.", "collector_structure", "component_availability", "collector_version_compatibility")
+		return result, state
+	}
+	yamlCheck.Status = "passed"
+	yamlCheck.Messages = []Message{{Code: "yaml_parse_ok", Severity: "info", Message: "YAML parsed successfully.", CheckID: yamlCheck.ID}}
+	result.Checks = append(result.Checks, yamlCheck)
+	state.root = root
+	state.yamlOK = true
+
+	structureCheck, refs, defined := validateCollectorStructure(root)
+	result.Checks = append(result.Checks, structureCheck)
+	state.definedByCategory = defined
+	state.refs = refs
+	state.structureOK = structureCheck.Status != "failed"
+	collectCheckMessages(&result, structureCheck)
+
+	if state.structureOK {
+		componentCheck := validateComponentAvailability(refs, available)
+		result.Checks = append(result.Checks, componentCheck)
+		collectCheckMessages(&result, componentCheck)
+	} else {
+		appendSkippedDependents(&result, "collector_structure", "Collector structure failed; component availability was not checked.", "component_availability")
 	}
 
-	var errs []Error
+	versionCheck := validateVersionCompatibility(opts.TargetVersion, opts.TargetVersionSource, opts.MinimumVersion)
+	result.Checks = append(result.Checks, versionCheck)
+	collectCheckMessages(&result, versionCheck)
+	return result, state
+}
 
+func appendSkippedDependents(result *Result, dependsOn, message string, ids ...string) {
+	for _, id := range ids {
+		check := baseCheck(id)
+		check.Status = "skipped"
+		check.Metadata = map[string]any{"depends_on_failed_check": dependsOn}
+		check.Messages = []Message{{Code: "depends_on_failed_check", Severity: "info", Message: message, CheckID: id}}
+		result.Checks = append(result.Checks, check)
+	}
+}
+
+func baseCheck(id string) Check {
+	switch id {
+	case "yaml_static":
+		return Check{ID: id, Label: "YAML syntax", Source: "server.static_yaml", Required: true, Messages: []Message{}, Metadata: map[string]any{}}
+	case "collector_structure":
+		return Check{ID: id, Label: "Collector structure", Source: "server.structure", Required: true, Messages: []Message{}, Metadata: map[string]any{}}
+	case "component_availability":
+		return Check{ID: id, Label: "Components available on workload", Source: "workload.available_components", Required: true, Messages: []Message{}, Metadata: map[string]any{}}
+	case "collector_version_compatibility":
+		return Check{ID: id, Label: "Collector version compatibility", Source: "server.target_version_policy", Required: false, Messages: []Message{}, Metadata: map[string]any{}}
+	case "otelcol_runtime":
+		return Check{ID: id, Label: "Collector runtime validation", Source: "otelcol.binary", Required: false, Messages: []Message{}, Metadata: map[string]any{}}
+	default:
+		return Check{ID: id, Required: false, Messages: []Message{}, Metadata: map[string]any{}}
+	}
+}
+
+func collectCheckMessages(result *Result, check Check) {
+	for _, msg := range check.Messages {
+		msg.CheckID = check.ID
+		switch msg.Severity {
+		case "error":
+			result.Errors = append(result.Errors, Error{Code: msg.Code, Message: msg.Message, Path: msg.Path, CheckID: check.ID})
+		case "warning":
+			result.Warnings = append(result.Warnings, msg)
+		}
+	}
+}
+
+func validateCollectorStructure(root map[string]any) (Check, []componentRef, map[string]map[string]bool) {
+	check := baseCheck("collector_structure")
 	definedByCategory := map[string]map[string]bool{
 		"receivers":  extractDefined(root, "receivers"),
 		"processors": extractDefined(root, "processors"),
@@ -119,97 +233,155 @@ func Validate(yamlContent []byte, available *models.AvailableComponents) Result 
 		"connectors": extractDefined(root, "connectors"),
 		"extensions": extractDefined(root, "extensions"),
 	}
+	check.Metadata["defined_components"] = definedComponentCounts(definedByCategory)
 
+	var refs []componentRef
 	service, ok := root["service"].(map[string]any)
 	if !ok {
-		errs = append(errs, Error{
-			Code: "missing_service", Message: "'service' section is required", Path: "service",
-		})
-		return Result{Errors: errs}
+		check.Messages = append(check.Messages, Message{Code: "missing_service", Severity: "error", Message: "'service' section is required", Path: "service"})
+		check.Status = "failed"
+		return check, refs, definedByCategory
 	}
-
 	pipelines, ok := service["pipelines"].(map[string]any)
 	if !ok || len(pipelines) == 0 {
-		errs = append(errs, Error{
-			Code: "missing_pipelines", Message: "'service.pipelines' must define at least one pipeline", Path: "service.pipelines",
-		})
-		return Result{Errors: errs}
+		check.Messages = append(check.Messages, Message{Code: "missing_pipelines", Severity: "error", Message: "'service.pipelines' must define at least one pipeline", Path: "service.pipelines"})
+		check.Status = "failed"
+		return check, refs, definedByCategory
 	}
 
-	// Sort pipeline names for deterministic error ordering.
 	pipelineNames := make([]string, 0, len(pipelines))
 	for name := range pipelines {
 		pipelineNames = append(pipelineNames, name)
 	}
 	sort.Strings(pipelineNames)
+	check.Metadata["pipelines"] = pipelineNames
 
 	for _, name := range pipelineNames {
 		pipelineRaw := pipelines[name]
 		pipeline, ok := pipelineRaw.(map[string]any)
 		if !ok {
-			errs = append(errs, Error{
-				Code: "invalid_pipeline", Message: fmt.Sprintf("pipeline %q is not an object", name),
-				Path: "service.pipelines." + name,
-			})
+			check.Messages = append(check.Messages, Message{Code: "invalid_pipeline", Severity: "error", Message: fmt.Sprintf("pipeline %q is not an object", name), Path: "service.pipelines." + name})
 			continue
 		}
-
-		// A pipeline needs at least receivers and exporters.
 		for _, required := range []string{"receivers", "exporters"} {
 			if _, present := pipeline[required]; !present {
-				errs = append(errs, Error{
-					Code:    "missing_pipeline_section",
-					Message: fmt.Sprintf("pipeline %q is missing '%s'", name, required),
-					Path:    "service.pipelines." + name + "." + required,
-				})
+				check.Messages = append(check.Messages, Message{Code: "missing_pipeline_section", Severity: "error", Message: fmt.Sprintf("pipeline %q is missing '%s'", name, required), Path: "service.pipelines." + name + "." + required})
 			}
 		}
-
 		for section, category := range pipelineSectionToCategory {
-			refs := toStringSlice(pipeline[section])
-			for i, id := range refs {
+			refsInSection := toStringSlice(pipeline[section])
+			for i, id := range refsInSection {
 				path := fmt.Sprintf("service.pipelines.%s.%s[%d]", name, section, i)
 				if _, defined := definedByCategory[category][id]; !defined {
-					// A component referenced in a pipeline but not defined top-level is a hard error.
-					errs = append(errs, Error{
-						Code:    "undefined_component",
-						Message: fmt.Sprintf("pipeline %q references %s %q which is not defined under top-level '%s'", name, singular(section), id, category),
-						Path:    path,
-					})
+					check.Messages = append(check.Messages, Message{Code: "undefined_component", Severity: "error", Message: fmt.Sprintf("pipeline %q references %s %q which is not defined under top-level '%s'", name, singular(section), id, category), Path: path})
 					continue
 				}
-				if available != nil {
-					if msg := checkInstalled(category, id, available); msg != "" {
-						errs = append(errs, Error{
-							Code: "component_not_installed", Message: msg, Path: path,
-						})
-					}
-				}
+				refs = append(refs, componentRef{Category: category, ID: id, Path: path})
 			}
 		}
 	}
 
-	// Extensions declared in service.extensions must be defined too.
 	if extRefs := toStringSlice(service["extensions"]); len(extRefs) > 0 {
 		for i, id := range extRefs {
 			path := fmt.Sprintf("service.extensions[%d]", i)
 			if _, defined := definedByCategory["extensions"][id]; !defined {
-				errs = append(errs, Error{
-					Code:    "undefined_component",
-					Message: fmt.Sprintf("service.extensions references %q which is not defined under top-level 'extensions'", id),
-					Path:    path,
-				})
+				check.Messages = append(check.Messages, Message{Code: "undefined_component", Severity: "error", Message: fmt.Sprintf("service.extensions references %q which is not defined under top-level 'extensions'", id), Path: path})
 				continue
 			}
-			if available != nil {
-				if msg := checkInstalled("extensions", id, available); msg != "" {
-					errs = append(errs, Error{Code: "component_not_installed", Message: msg, Path: path})
-				}
-			}
+			refs = append(refs, componentRef{Category: "extensions", ID: id, Path: path})
 		}
 	}
 
-	return Result{Valid: len(errs) == 0, Errors: errs}
+	check.Metadata["component_refs_checked"] = len(refs)
+	check.Status = statusWithWarnings(check.Messages)
+	if check.Status == "passed" {
+		check.Messages = []Message{{Code: "collector_structure_ok", Severity: "info", Message: "Collector service pipelines and component references are structurally valid."}}
+	}
+	return check, refs, definedByCategory
+}
+
+func validateComponentAvailability(refs []componentRef, available *models.AvailableComponents) Check {
+	check := baseCheck("component_availability")
+	check.Metadata["component_refs_checked"] = len(refs)
+	if available == nil || len(available.Components) == 0 {
+		check.Status = "warning"
+		check.Metadata["reported_categories"] = []string{}
+		check.Messages = []Message{{Code: "available_components_missing", Severity: "warning", Message: "Target workload has not reported AvailableComponents; installed component checks were not enforced."}}
+		return check
+	}
+	reportedCategories := make([]string, 0, len(available.Components))
+	for category := range available.Components {
+		reportedCategories = append(reportedCategories, category)
+	}
+	sort.Strings(reportedCategories)
+	check.Metadata["reported_categories"] = reportedCategories
+
+	warnedCategory := map[string]bool{}
+	for _, ref := range refs {
+		installed, ok := available.Components[ref.Category]
+		if !ok {
+			if !warnedCategory[ref.Category] {
+				check.Messages = append(check.Messages, Message{Code: "component_category_unreported", Severity: "warning", Message: fmt.Sprintf("AvailableComponents did not report category %q; components in that category were not enforced.", ref.Category)})
+				warnedCategory[ref.Category] = true
+			}
+			continue
+		}
+		componentType := componentType(ref.ID)
+		if !slices.Contains(installed, componentType) {
+			check.Messages = append(check.Messages, Message{Code: "component_not_installed", Severity: "error", Message: fmt.Sprintf("%s type %q is not installed on the target workload (available: %s)", singular(ref.Category), componentType, strings.Join(installed, ", ")), Path: ref.Path})
+		}
+	}
+	check.Status = statusWithWarnings(check.Messages)
+	if check.Status == "passed" {
+		check.Messages = []Message{{Code: "component_availability_ok", Severity: "info", Message: "All referenced component types are reported as available on the target workload."}}
+	}
+	return check
+}
+
+func validateVersionCompatibility(targetVersion, versionSource, minimumVersion string) Check {
+	check := baseCheck("collector_version_compatibility")
+	targetVersion = strings.TrimSpace(targetVersion)
+	versionSource = strings.TrimSpace(versionSource)
+	minimumVersion = strings.TrimSpace(minimumVersion)
+	if versionSource == "" {
+		versionSource = "unknown"
+	}
+	check.Metadata["version_source"] = versionSource
+	if minimumVersion != "" {
+		check.Metadata["minimum_supported_version"] = minimumVersion
+	}
+	if targetVersion == "" {
+		check.Status = "warning"
+		check.Messages = []Message{{Code: "target_version_unknown", Severity: "warning", Message: "No target collector version was provided or reported by the workload."}}
+		return check
+	}
+	check.Metadata["target_version"] = targetVersion
+	if versionSource == "unknown" {
+		check.Metadata["version_source"] = "default"
+	}
+	if minimumVersion != "" && compareVersions(targetVersion, minimumVersion) < 0 {
+		check.Status = "failed"
+		check.Messages = []Message{{Code: "target_version_too_old", Severity: "error", Message: fmt.Sprintf("Target collector version %s is below the configured minimum %s.", targetVersion, minimumVersion)}}
+		return check
+	}
+	check.Status = "passed"
+	check.Messages = []Message{{Code: "target_version_checked", Severity: "info", Message: fmt.Sprintf("Target collector version %s is compatible with the configured validation policy.", targetVersion)}}
+	return check
+}
+
+func definedComponentCounts(defined map[string]map[string]bool) map[string]int {
+	out := make(map[string]int, len(defined))
+	for category, items := range defined {
+		out[category] = len(items)
+	}
+	return out
+}
+
+func componentType(id string) string {
+	if idx := strings.Index(id, "/"); idx >= 0 {
+		return id[:idx]
+	}
+	return id
 }
 
 // RuntimeOptionsFromEnv loads the local otelcol runtime validation settings.
@@ -232,49 +404,32 @@ func RuntimeOptionsFromEnv() RuntimeOptions {
 // structure validation already failed, because otelcol would only duplicate the
 // known failure and could obscure the deterministic server-side errors.
 func ValidateWithRuntime(ctx context.Context, yamlContent []byte, available *models.AvailableComponents, opts RuntimeOptions) Result {
-	result := Validate(yamlContent, available)
-	result.Checks = append(result.Checks, staticSummaryCheck(result))
+	result, _ := validateStatic(yamlContent, available, opts)
 
-	if !result.Valid {
-		result.Checks = append(result.Checks, Check{
-			ID:       "otelcol_runtime",
-			Label:    "Collector runtime validation",
-			Source:   "otelcol.binary",
-			Status:   "skipped",
-			Required: false,
-			Messages: []Message{{Code: "depends_on_failed_check", Severity: "info", Message: "Runtime validation skipped because static validation failed."}},
-		})
+	if len(result.Errors) > 0 {
+		check := baseCheck("otelcol_runtime")
+		check.Status = "skipped"
+		check.Metadata = map[string]any{"depends_on_failed_check": firstFailedRequiredCheck(result.Checks)}
+		check.Messages = []Message{{Code: "depends_on_failed_check", Severity: "info", Message: "Runtime validation skipped because a required validation check failed.", CheckID: check.ID}}
+		result.Checks = append(result.Checks, check)
 		finalize(&result)
 		return result
 	}
 
 	check := runRuntimeCheck(ctx, yamlContent, opts)
 	result.Checks = append(result.Checks, check)
-	for _, msg := range check.Messages {
-		if msg.Severity == "warning" {
-			result.Warnings = append(result.Warnings, msg)
-		}
-		if msg.Severity == "error" {
-			result.Errors = append(result.Errors, Error{Code: msg.Code, Message: msg.Message, Path: msg.Path, CheckID: check.ID})
-		}
-	}
-	result.Valid = len(result.Errors) == 0
+	collectCheckMessages(&result, check)
 	finalize(&result)
 	return result
 }
 
-func staticSummaryCheck(result Result) Check {
-	check := Check{ID: "yaml_static", Label: "YAML/static structure", Source: "server.static_yaml", Required: true}
-	if result.Valid {
-		check.Status = "passed"
-		check.Messages = []Message{{Code: "static_validation_passed", Severity: "info", Message: "Static validation passed."}}
-		return check
+func firstFailedRequiredCheck(checks []Check) string {
+	for _, check := range checks {
+		if check.Required && check.Status == "failed" {
+			return check.ID
+		}
 	}
-	check.Status = "failed"
-	for _, err := range result.Errors {
-		check.Messages = append(check.Messages, Message{Code: err.Code, Severity: "error", Message: err.Message, Path: err.Path})
-	}
-	return check
+	return "static_validation"
 }
 
 func runRuntimeCheck(ctx context.Context, yamlContent []byte, opts RuntimeOptions) Check {
@@ -537,27 +692,6 @@ func extractDefined(root map[string]any, section string) map[string]bool {
 		out[id] = true
 	}
 	return out
-}
-
-// checkInstalled returns an empty string if the component type (everything
-// before an optional "/instance_name" suffix) is listed in available
-// components for the given category, otherwise a human-readable message.
-// If the category is not reported at all, we assume the agent's view is
-// incomplete and skip the check (stay conservative, not block push).
-func checkInstalled(category, id string, available *models.AvailableComponents) string {
-	installed, ok := available.Components[category]
-	if !ok {
-		return ""
-	}
-	componentType := id
-	if idx := strings.Index(id, "/"); idx >= 0 {
-		componentType = id[:idx]
-	}
-	if slices.Contains(installed, componentType) {
-		return ""
-	}
-	return fmt.Sprintf("%s type %q is not installed on the target agent (available: %s)",
-		singular(category), componentType, strings.Join(installed, ", "))
 }
 
 // toStringSlice coerces an arbitrary YAML value into a list of strings,

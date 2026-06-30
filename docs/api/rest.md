@@ -70,7 +70,56 @@ On validation failure, 400 with `{ "error": "...", "validation_errors": [ ... ] 
 
 ### `POST /api/workloads/{id}/config/validate`
 
-Same request shape as the push endpoint (raw YAML). Always returns 200 with a `validator.Result`: `{ "valid": true }` or `{ "valid": false, "errors": [ { "code", "message", "path" }, ... ] }`.
+Same request shape as the push endpoint (raw YAML). Optional query parameter: `target_collector_version` overrides the workload-reported collector version for compatibility/runtime proof messaging.
+
+For a non-empty readable body, the endpoint always returns 200 with an enriched validation result. `valid` and top-level `errors[]` are preserved for existing clients; new clients should prefer `overall_status`, `warnings[]`, and `checks[]`.
+
+```json
+{
+  "valid": false,
+  "overall_status": "failed",
+  "summary": "Configuration failed 1 blocking validation error(s).",
+  "target_collector_version": "0.150.1",
+  "validated_at": "2026-06-30T15:09:00Z",
+  "checks": [
+    {
+      "id": "yaml_static",
+      "label": "YAML syntax",
+      "source": "server.static_yaml",
+      "status": "passed",
+      "required": true,
+      "messages": [
+        { "code": "yaml_parse_ok", "severity": "info", "message": "YAML parsed successfully.", "check_id": "yaml_static" }
+      ],
+      "metadata": { "bytes": 1842 }
+    },
+    {
+      "id": "otelcol_runtime",
+      "label": "Collector runtime validation",
+      "source": "otelcol.binary",
+      "status": "failed",
+      "required": false,
+      "messages": [
+        { "code": "otelcol_validation_failed", "severity": "error", "message": "otelcol validate failed: ...", "check_id": "otelcol_runtime" }
+      ],
+      "metadata": {
+        "binary_path": "/usr/local/bin/otelcol",
+        "binary_version": "0.150.1",
+        "binary_distribution": "otelcol-contrib",
+        "exit_code": 1,
+        "duration_ms": 126,
+        "command_mode": "otelcol validate --config"
+      }
+    }
+  ],
+  "errors": [
+    { "code": "otelcol_validation_failed", "message": "otelcol validate failed: ...", "check_id": "otelcol_runtime" }
+  ],
+  "warnings": []
+}
+```
+
+Stable check IDs: `yaml_static`, `collector_structure`, `component_availability`, `collector_version_compatibility`, `otelcol_runtime`. Check statuses are `passed`, `warning`, `failed`, or `skipped`; message severities are `info`, `warning`, or `error`. Warnings do not block push. Errors make `valid=false` and are also returned by push/rollback as `validation_errors[]`.
 
 ## Error format
 

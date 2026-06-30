@@ -357,6 +357,46 @@ service:
 	}
 }
 
+func TestPushWorkloadConfig_RejectsRuntimeValidationFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake uses POSIX sh")
+	}
+	bin := writeAPIShim(t, `
+case "$1" in
+  --version) echo "otelcol version 0.150.1"; exit 0 ;;
+  validate) echo "bad runtime config" >&2; exit 42 ;;
+esac
+exit 9
+`)
+	t.Setenv("OTELCOL_RUNTIME_VALIDATION_ENABLED", "true")
+	t.Setenv("OTELCOL_BINARY_PATH", bin)
+
+	db, router, fake := newTestAPI(t)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Version: "0.150.1", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
+
+	req := authedPost(t, "/api/workloads/w1/config", validWorkloadConfig)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("runtime-invalid config should not be pushed, got %d pushes", len(fake.pushed))
+	}
+	var body struct {
+		ValidationErrors []struct {
+			Code    string `json:"code"`
+			CheckID string `json:"check_id"`
+		} `json:"validation_errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.ValidationErrors) != 1 || body.ValidationErrors[0].Code != "otelcol_validation_failed" || body.ValidationErrors[0].CheckID != "otelcol_runtime" {
+		t.Fatalf("runtime validation error not returned stably: %+v", body.ValidationErrors)
+	}
+}
+
 func TestPushWorkloadConfig_RejectsEmptyBody(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	_ = db.UpsertWorkload(models.Workload{

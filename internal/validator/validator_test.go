@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -136,6 +137,86 @@ service:
 	}
 	if !found {
 		t.Errorf("jaeger not-installed not reported, got %+v", r.Errors)
+	}
+}
+
+func TestValidateWithRuntime_ReturnsEnrichedChecksAndStableTopLevelFields(t *testing.T) {
+	available := &models.AvailableComponents{
+		Components: map[string][]string{
+			"receivers":  {"otlp"},
+			"processors": {"batch"},
+			"exporters":  {"logging"},
+		},
+	}
+
+	result := ValidateWithRuntime(t.Context(), []byte(validMinimal), available, RuntimeOptions{
+		TargetVersion:  "0.150.1",
+		MinimumVersion: "0.100.0",
+	})
+
+	if !result.Valid || result.OverallStatus != "warning" {
+		t.Fatalf("runtime-disabled result should be warning-valid, got %+v", result)
+	}
+	var payload struct {
+		Valid                  bool      `json:"valid"`
+		OverallStatus          string    `json:"overall_status"`
+		Summary                string    `json:"summary"`
+		TargetCollectorVersion string    `json:"target_collector_version"`
+		ValidatedAt            string    `json:"validated_at"`
+		Errors                 []Error   `json:"errors"`
+		Warnings               []Message `json:"warnings"`
+		Checks                 []Check   `json:"checks"`
+	}
+	body, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Valid || payload.OverallStatus != "warning" || payload.Summary == "" || payload.TargetCollectorVersion != "0.150.1" || payload.ValidatedAt == "" {
+		t.Fatalf("top-level response fields missing or wrong: %s", body)
+	}
+	for _, id := range []string{"yaml_static", "collector_structure", "component_availability", "collector_version_compatibility", "otelcol_runtime"} {
+		check := findCheck(t, result, id)
+		if check.Label == "" || check.Source == "" || check.Status == "" || check.Messages == nil || check.Metadata == nil {
+			t.Fatalf("check %s is not fully populated: %+v", id, check)
+		}
+	}
+	if len(payload.Errors) != 0 {
+		t.Fatalf("expected no blocking errors, got %+v", payload.Errors)
+	}
+	if !hasMessage(findCheck(t, result, "otelcol_runtime"), "otelcol_runtime_disabled") {
+		t.Fatalf("runtime disabled warning missing: %+v", findCheck(t, result, "otelcol_runtime"))
+	}
+}
+
+func TestValidateWithRuntime_InvalidYAMLSkipsDependentChecksWithCheckIDs(t *testing.T) {
+	result := ValidateWithRuntime(t.Context(), []byte("receivers: [oops\n"), nil, RuntimeOptions{})
+
+	if result.Valid || result.OverallStatus != "failed" || len(result.Errors) == 0 {
+		t.Fatalf("expected failed result with errors, got %+v", result)
+	}
+	if result.Errors[0].Code != "yaml_parse" || result.Errors[0].CheckID != "yaml_static" {
+		t.Fatalf("yaml error should carry check_id yaml_static, got %+v", result.Errors[0])
+	}
+	if findCheck(t, result, "yaml_static").Status != "failed" {
+		t.Fatalf("yaml_static should fail: %+v", findCheck(t, result, "yaml_static"))
+	}
+	for _, id := range []string{"collector_structure", "component_availability", "collector_version_compatibility", "otelcol_runtime"} {
+		check := findCheck(t, result, id)
+		if check.Status != "skipped" || !hasMessage(check, "depends_on_failed_check") || check.Metadata["depends_on_failed_check"] != "yaml_static" {
+			t.Fatalf("dependent check %s should be skipped with dependency metadata: %+v", id, check)
+		}
+	}
+}
+
+func TestValidateWithRuntime_AvailableComponentsMissingIsWarningOnly(t *testing.T) {
+	result := ValidateWithRuntime(t.Context(), []byte(validMinimal), nil, RuntimeOptions{})
+
+	check := findCheck(t, result, "component_availability")
+	if !result.Valid || check.Status != "warning" || !hasMessage(check, "available_components_missing") {
+		t.Fatalf("missing AvailableComponents should be warning-only: result=%+v check=%+v", result, check)
 	}
 }
 
