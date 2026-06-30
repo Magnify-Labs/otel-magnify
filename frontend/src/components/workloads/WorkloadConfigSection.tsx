@@ -10,7 +10,7 @@ import PushHistoryTable from './PushHistoryTable'
 import ConfigSafetySection from './ConfigSafetySection'
 import { useStore } from '../../store'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
-import type { Workload, ValidationResult } from '../../types'
+import type { ValidationCheck, ValidationMessage, ValidationResult, Workload } from '../../types'
 
 interface Props {
   workload: Workload
@@ -252,25 +252,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       {tab === 'edit' && <YamlEditor value={draftYaml} onChange={onDraftChange} />}
       {tab === 'diff' && <ConfigDiffView oldYaml={activeContent} newYaml={draftYaml} />}
 
-      {validation && (
-        <div
-          className={`validation-block ${validation.valid ? 'validation-ok' : 'validation-errors'}`}
-        >
-          {validation.valid ? (
-            <span>✓ Configuration is valid</span>
-          ) : (
-            <ul className="validation-error-list">
-              {(validation.errors ?? []).map((e, i) => (
-                <li key={i}>
-                  <strong>{e.code}</strong>
-                  {e.path ? <code className="validation-error-path">{e.path}</code> : null}
-                  <span className="validation-error-msg">— {e.message}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      {validation && <ValidationDetails validation={validation} />}
 
       {pushError && <div className="error-text error-text-push">{pushError}</div>}
 
@@ -409,4 +391,222 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <PushHistoryTable workloadId={workload.id} />
     </>
   )
+}
+
+interface ValidationDetailsProps {
+  validation: ValidationResult
+}
+
+function ValidationDetails({ validation }: ValidationDetailsProps) {
+  const errors = validation.errors ?? []
+  const warnings = validation.warnings ?? []
+  const blockingMessages: ValidationMessage[] = errors.map((error) => ({
+    code: error.code,
+    severity: 'error',
+    message: error.message,
+    path: error.path,
+    check_id: error.check_id,
+  }))
+  const checks = validation.checks ?? legacyChecksFromResult(validation)
+  const runtimeCheck = checks.find((check) => check.id === 'otelcol_runtime')
+  const binaryVersion = metadataString(runtimeCheck, 'binary_version')
+  const targetVersion =
+    validation.target_collector_version ?? metadataString(runtimeCheck, 'target_version')
+  const statusLabel = validationStatusLabel(validation)
+
+  return (
+    <section
+      className={`validation-block validation-details ${validation.valid ? 'validation-ok' : 'validation-errors'}`}
+      aria-label="Configuration validation result"
+    >
+      <div className="validation-details-header">
+        <div>
+          <p className="validation-details-title">{statusLabel}</p>
+          {validation.summary && <p className="validation-details-summary">{validation.summary}</p>}
+        </div>
+        <div className="validation-version-row" aria-label="Validation versions">
+          {targetVersion && <span className="validation-version-pill">Target {targetVersion}</span>}
+          {binaryVersion ? (
+            <span className="validation-version-pill">otelcol {binaryVersion}</span>
+          ) : runtimeCheck ? (
+            <span className="validation-version-pill">otelcol unavailable</span>
+          ) : null}
+        </div>
+      </div>
+
+      {(errors.length > 0 || warnings.length > 0) && (
+        <div className="validation-message-groups">
+          {errors.length > 0 && (
+            <ValidationMessageGroup
+              title="Blocking errors"
+              tone="error"
+              messages={blockingMessages}
+            />
+          )}
+          {warnings.length > 0 && (
+            <ValidationMessageGroup title="Warnings" tone="warning" messages={warnings} />
+          )}
+        </div>
+      )}
+
+      <div className="validation-check-grid">
+        {checks.map((check) => (
+          <article
+            className={`validation-check-card validation-check-card-${check.status}`}
+            key={check.id}
+          >
+            <div className="validation-check-topline">
+              <div>
+                <p className="validation-check-label">{check.label || humanizeCheckId(check.id)}</p>
+                <p className="validation-check-source">{check.source}</p>
+              </div>
+              <div className="validation-check-badges">
+                <span className={`validation-status-badge validation-status-badge-${check.status}`}>
+                  {humanizeStatus(check.status)}
+                </span>
+                <span className="validation-required-badge">
+                  {check.required ? 'Required' : 'Advisory'}
+                </span>
+              </div>
+            </div>
+
+            {check.id === 'otelcol_runtime' && (
+              <dl className="validation-check-meta">
+                {metadataString(check, 'binary_version') && (
+                  <>
+                    <dt>Binary</dt>
+                    <dd>otelcol {metadataString(check, 'binary_version')}</dd>
+                  </>
+                )}
+                {metadataString(check, 'target_version') && (
+                  <>
+                    <dt>Target</dt>
+                    <dd>{metadataString(check, 'target_version')}</dd>
+                  </>
+                )}
+                {metadataString(check, 'binary_path') && (
+                  <>
+                    <dt>Path</dt>
+                    <dd>{metadataString(check, 'binary_path')}</dd>
+                  </>
+                )}
+              </dl>
+            )}
+
+            {(check.messages ?? []).length > 0 && (
+              <ul className="validation-check-messages">
+                {(check.messages ?? []).map((message, index) => (
+                  <ValidationMessageItem message={message} key={`${message.code}-${index}`} />
+                ))}
+              </ul>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ValidationMessageGroup({
+  title,
+  tone,
+  messages,
+}: {
+  title: string
+  tone: 'error' | 'warning'
+  messages: ValidationMessage[]
+}) {
+  return (
+    <div className={`validation-message-group validation-message-group-${tone}`}>
+      <p className="validation-message-group-title">{title}</p>
+      <ul className="validation-error-list">
+        {messages.map((message, index) => (
+          <ValidationMessageItem message={message} key={`${message.code}-${index}`} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ValidationMessageItem({ message }: { message: ValidationMessage }) {
+  return (
+    <li>
+      <strong>{message.code}</strong>
+      {message.path ? <code className="validation-error-path">{message.path}</code> : null}
+      <span className="validation-error-msg">— {message.message}</span>
+    </li>
+  )
+}
+
+function validationStatusLabel(validation: ValidationResult) {
+  if (!validation.valid) return 'Validation failed'
+  if (validation.overall_status === 'warning' || (validation.warnings ?? []).length > 0) {
+    return 'Validation passed with warnings'
+  }
+  return 'Validation passed'
+}
+
+function legacyChecksFromResult(validation: ValidationResult): ValidationCheck[] {
+  if (validation.valid) {
+    return [
+      {
+        id: 'legacy_validation',
+        label: 'Configuration validation',
+        source: 'server.validation',
+        status: 'passed',
+        required: true,
+        messages: [
+          {
+            code: 'validation_ok',
+            severity: 'info',
+            message: 'Configuration is valid.',
+            check_id: 'legacy_validation',
+          },
+        ],
+      },
+    ]
+  }
+  return [
+    {
+      id: 'legacy_validation',
+      label: 'Configuration validation',
+      source: 'server.validation',
+      status: 'failed',
+      required: true,
+      messages: (validation.errors ?? []).map((error) => ({
+        code: error.code,
+        severity: 'error' as const,
+        message: error.message,
+        path: error.path,
+        check_id: error.check_id,
+      })),
+    },
+  ]
+}
+
+function metadataString(check: ValidationCheck | undefined, key: string) {
+  const value = check?.metadata?.[key]
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function humanizeStatus(status: ValidationCheck['status']) {
+  switch (status) {
+    case 'passed':
+      return 'Passed'
+    case 'warning':
+      return 'Warning'
+    case 'failed':
+      return 'Failed'
+    case 'skipped':
+      return 'Skipped'
+    default:
+      return status
+  }
+}
+
+function humanizeCheckId(id: string) {
+  return id
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
