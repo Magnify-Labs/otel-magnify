@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workloadsAPI } from '../../api/client'
 import YamlEditor from '../config/YamlEditor'
 import ConfigCompareDialog from './ConfigCompareDialog'
+import GuidedRollbackDialog from './GuidedRollbackDialog'
 import type { WorkloadConfig } from '../../types'
 
 interface Props {
@@ -14,7 +15,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [viewing, setViewing] = useState<WorkloadConfig | null>(null)
-  const [confirmRollback, setConfirmRollback] = useState<WorkloadConfig | null>(null)
+  const [rollbackTarget, setRollbackTarget] = useState<WorkloadConfig | null>(null)
   const [compareOpen, setCompareOpen] = useState(false)
   const [editingLabel, setEditingLabel] = useState<string | null>(null)
 
@@ -28,15 +29,6 @@ export default function PushHistoryTable({ workloadId }: Props) {
       workloadsAPI.setConfigLabel(workloadId, hash, label),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workload-config-history', workloadId] })
-    },
-  })
-
-  const rollbackMutation = useMutation({
-    mutationFn: (hash: string) => workloadsAPI.rollbackConfig(workloadId, hash),
-    onSuccess: () => {
-      setConfirmRollback(null)
-      queryClient.invalidateQueries({ queryKey: ['workload-config-history', workloadId] })
-      queryClient.invalidateQueries({ queryKey: ['workload', workloadId] })
     },
   })
 
@@ -131,11 +123,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
                     {t('workloads.config.versioning.view_button')}
                   </button>
                   {row.content && (
-                    <button
-                      className="btn btn-small"
-                      onClick={() => setConfirmRollback(row)}
-                      disabled={rollbackMutation.isPending}
-                    >
+                    <button className="btn btn-small" onClick={() => setRollbackTarget(row)}>
                       {t('workloads.config.versioning.rollback_button')}
                     </button>
                   )}
@@ -164,42 +152,12 @@ export default function PushHistoryTable({ workloadId }: Props) {
         </div>
       )}
 
-      {confirmRollback && (
-        <div className="modal-backdrop" onClick={() => setConfirmRollback(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <span>{t('workloads.config.versioning.rollback_confirm_title')}</span>
-            </div>
-            <p style={{ padding: '1rem' }}>
-              {t('workloads.config.versioning.rollback_confirm_body', {
-                hash: confirmRollback.config_id.substring(0, 12),
-              })}
-            </p>
-            <div className="btn-row" style={{ padding: '0 1rem 1rem' }}>
-              <button
-                className="btn btn-primary"
-                onClick={() => rollbackMutation.mutate(confirmRollback.config_id)}
-                disabled={rollbackMutation.isPending}
-              >
-                {rollbackMutation.isPending
-                  ? t('workloads.config.versioning.rollback_in_flight')
-                  : t('workloads.config.versioning.rollback_confirm_yes')}
-              </button>
-              <button
-                className="btn"
-                onClick={() => setConfirmRollback(null)}
-                disabled={rollbackMutation.isPending}
-              >
-                {t('workloads.config.versioning.cancel_button')}
-              </button>
-              {rollbackMutation.isError && (
-                <span className="error-text error-text-inline">
-                  {t('workloads.config.versioning.rollback_error')}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+      {rollbackTarget && (
+        <GuidedRollbackDialog
+          workloadId={workloadId}
+          target={rollbackTarget}
+          onClose={() => setRollbackTarget(null)}
+        />
       )}
 
       {compareOpen && (

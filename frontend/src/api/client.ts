@@ -11,6 +11,9 @@ import type {
   PushActivityPoint,
   MeResponse,
   UserPreferences,
+  RollbackPrepareResponse,
+  RollbackActionResponse,
+  RollbackStatusReport,
 } from '../types'
 
 declare module 'axios' {
@@ -87,9 +90,21 @@ export const workloadsAPI = {
     api
       .post<{ label: string }>(`/workloads/${id}/configs/${hash}/label`, { label })
       .then((r) => r.data),
+  prepareRollback: (id: string, targetHash: string) =>
+    api
+      .get<RollbackPrepareResponse>(`/workloads/${id}/rollback/prepare`, {
+        params: { target_hash: targetHash },
+      })
+      .then((r) => r.data),
   rollbackConfig: (id: string, hash: string) =>
     api
-      .post<{ status: string; config_hash: string }>(`/workloads/${id}/configs/${hash}/rollback`)
+      .post<RollbackActionResponse>(`/workloads/${id}/configs/${hash}/rollback`)
+      .then((r) => r.data),
+  getRollbackStatus: (id: string, requestId: string) =>
+    api
+      .get<RollbackStatusReport>(`/workloads/${id}/rollback/status`, {
+        params: { request_id: requestId },
+      })
       .then((r) => r.data),
   delete: (id: string) => api.delete(`/workloads/${id}`),
 }

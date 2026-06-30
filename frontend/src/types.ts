@@ -90,6 +90,173 @@ export interface WorkloadConfig {
   label?: string
 }
 
+export type RollbackValidationStatus = 'valid' | 'valid_with_warnings' | 'invalid' | 'unavailable'
+export type ValidationSeverity = 'error' | 'warning' | 'info'
+export type RollbackApplyStatus = 'accepted' | 'applying' | 'applied' | 'failed' | 'unknown'
+export type RollbackTerminalStatus = 'applied' | 'failed' | 'unknown' | 'request_failed'
+
+export interface RollbackConfigMetadata {
+  label?: string
+  known_good: boolean
+  applied_at?: string
+  pushed_by?: string
+  previous_status?: PushStatus
+  error_message?: string
+  active_config_id?: string
+  active_config_hash?: string
+}
+
+export interface RollbackConfigSnapshot {
+  hash: string
+  content_available: boolean
+  content?: string
+  content_sha256?: string
+  source: 'active_config' | 'history'
+  metadata: RollbackConfigMetadata
+}
+
+export interface RollbackValidationFinding {
+  code: string
+  severity: ValidationSeverity
+  message: string
+  path?: string
+  blocking: boolean
+  source: 'yaml' | 'capabilities' | 'remote_config' | 'target' | 'concurrency' | 'server'
+}
+
+export interface UnavailableComponentWarning {
+  category: 'receivers' | 'processors' | 'exporters' | 'extensions' | 'connectors'
+  component_id: string
+  component_type: string
+  path?: string
+  available?: string[]
+  blocking: true
+}
+
+export interface RollbackValidationResult {
+  status: RollbackValidationStatus
+  valid: boolean
+  can_confirm: boolean
+  checked_at: string
+  validator_version: string
+  inputs: {
+    workload_id: string
+    workload_type: 'collector' | 'sdk'
+    accepts_remote_config: boolean
+    available_components_hash?: string
+    available_components?: AvailableComponents
+    target_hash: string
+    target_content_sha256?: string
+  }
+  findings: RollbackValidationFinding[]
+  unavailable_components: UnavailableComponentWarning[]
+}
+
+export interface RollbackDiffPayload {
+  status: 'available' | 'empty' | 'unavailable' | 'error'
+  direction: 'current_to_target'
+  computation: 'backend_raw' | 'backend_semantic' | 'frontend_raw_inputs_only'
+  base_hash?: string
+  target_hash: string
+  raw_diff?: {
+    format: 'unified'
+    language: 'yaml'
+    base_label: string
+    target_label: string
+    text: string
+    truncated: boolean
+  }
+  inputs?: {
+    current_content_available: boolean
+    target_content_available: boolean
+    current_yaml?: string
+    target_yaml?: string
+  }
+  message?: string
+}
+
+export interface RollbackPrepareResponse {
+  schema_version: 'guided-rollback-prepare.v1'
+  workload: Pick<
+    Workload,
+    | 'id'
+    | 'display_name'
+    | 'type'
+    | 'status'
+    | 'accepts_remote_config'
+    | 'active_config_id'
+    | 'active_config_hash'
+    | 'remote_config_status'
+    | 'available_components'
+  >
+  target_ref: {
+    selector: 'hash' | 'known_good'
+    source: 'push_history_row' | 'latest_known_good'
+    workload_id: string
+    target_hash: string
+    known_good: boolean
+    known_good_source: 'first_class_marker' | 'label_convention' | 'none'
+  }
+  current_config: RollbackConfigSnapshot
+  target_config: RollbackConfigSnapshot
+  diff: RollbackDiffPayload
+  validation: RollbackValidationResult
+  action: {
+    can_submit: boolean
+    submit_url: string
+    method: 'POST'
+    requires_confirmation: true
+    confirmation_label: 'Confirm rollback' | 'Confirm rollback with warnings'
+    blocking_reasons: RollbackValidationFinding[]
+    warnings: RollbackValidationFinding[]
+    concurrent_change?: {
+      in_progress: boolean
+      config_hash?: string
+      status?: PushStatus
+      message?: string
+    }
+  }
+  status_context: {
+    initial_remote_config_status?: RemoteConfigStatus
+    timeout_seconds: number
+  }
+}
+
+export interface RollbackActionResponse {
+  schema_version?: 'guided-rollback-action.v1'
+  request_id?: string
+  status: string
+  message?: string
+  workload_id?: string
+  target_hash?: string
+  config_hash: string
+  history_row?: WorkloadConfig
+  status_url?: string
+  timeout_seconds?: number
+  audit?: { event: string; emitted: boolean }
+}
+
+export interface RollbackStatusReport {
+  schema_version: 'guided-rollback-status.v1'
+  request_id: string
+  workload_id: string
+  target_hash: string
+  target_label?: string
+  request_status: 'accepted' | 'request_failed'
+  apply_status: RollbackApplyStatus
+  terminal: boolean
+  terminal_status?: RollbackTerminalStatus
+  started_at: string
+  updated_at?: string
+  elapsed_ms: number
+  timeout_seconds: number
+  timed_out: boolean
+  history_row?: WorkloadConfig
+  remote_config_status?: RemoteConfigStatus
+  last_known_status?: PushStatus
+  error_message?: string
+}
+
 export interface AutoRollbackEvent {
   workload_id: string
   from_hash: string
