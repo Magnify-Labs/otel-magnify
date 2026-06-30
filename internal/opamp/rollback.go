@@ -15,19 +15,20 @@ func (s *Server) handleRemoteConfigStatus(workloadID, instanceUID string, rcs *p
 	if statusStr == "" {
 		return
 	}
+	errorMessage := models.SanitizeRemoteConfigErrorMessage(rcs.ErrorMessage)
 
 	configHash := hex.EncodeToString(rcs.LastRemoteConfigHash)
 	snap := models.RemoteConfigStatus{
 		Status:       statusStr,
 		ConfigHash:   configHash,
-		ErrorMessage: rcs.ErrorMessage,
+		ErrorMessage: errorMessage,
 		UpdatedAt:    time.Now().UTC(),
 	}
 
-	if err := s.store.UpdateWorkloadConfigStatus(workloadID, configHash, statusStr, rcs.ErrorMessage); err != nil {
+	if err := s.store.UpdateWorkloadConfigStatus(workloadID, configHash, statusStr, errorMessage); err != nil {
 		log.Printf("update workload_config status %s/%s: %v", shortID(workloadID), shortID(configHash), err)
 	}
-	if err := s.store.UpdateWorkloadConfigInstanceStatus(workloadID, configHash, instanceUID, statusStr, rcs.ErrorMessage, snap.UpdatedAt); err != nil {
+	if err := s.store.UpdateWorkloadConfigInstanceStatus(workloadID, configHash, instanceUID, statusStr, errorMessage, snap.UpdatedAt); err != nil {
 		log.Printf("update workload_config instance status %s/%s/%s: %v", shortID(workloadID), shortID(configHash), shortID(instanceUID), err)
 	}
 	if push, err := s.store.GetLatestWorkloadConfig(workloadID); err == nil {
@@ -46,7 +47,7 @@ func (s *Server) handleRemoteConfigStatus(workloadID, instanceUID string, rcs *p
 	}
 
 	if statusStr == "failed" {
-		s.attemptAutoRollback(workloadID, configHash, rcs.ErrorMessage)
+		s.attemptAutoRollback(workloadID, configHash, errorMessage)
 	}
 }
 

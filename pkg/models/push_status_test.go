@@ -1,9 +1,92 @@
 package models
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestWorkloadConfigHydratePushStatus_PartialRolloutTimesOutSilentRequiredTargets(t *testing.T) {
+	submitted := time.Date(2026, 6, 30, 10, 12, 0, 0, time.UTC)
+	wc := WorkloadConfig{
+		WorkloadID:           "w1",
+		ConfigID:             "feedface",
+		Status:               "sent",
+		SubmittedAt:          submitted,
+		SentAt:               ptrTime(submitted.Add(time.Second)),
+		OpAMPStatusTimeoutAt: ptrTime(submitted.Add(30 * time.Second)),
+		InstanceStatuses: []WorkloadConfigInstanceStatus{
+			{InstanceUID: "applied", Required: true, Status: "applied", UpdatedAt: submitted.Add(5 * time.Second)},
+			{InstanceUID: "silent", Required: true, Status: "sent", UpdatedAt: submitted.Add(time.Second)},
+		},
+	}
+
+	wc.HydratePushStatus(submitted.Add(31 * time.Second))
+
+	if !wc.TimedOutWaitingForOpAMPStatus || wc.TimeoutMessage != OpAMPStatusTimeoutMessage {
+		t.Fatalf("expected aggregate timeout flag/message, got timeout=%v message=%q", wc.TimedOutWaitingForOpAMPStatus, wc.TimeoutMessage)
+	}
+	if wc.Status != PushStatusApplying {
+		t.Fatalf("status = %q, want applying while one target applied and one required target is timed out", wc.Status)
+	}
+	if wc.TargetCount != 2 || wc.AppliedCount != 1 || wc.PendingCount != 1 {
+		t.Fatalf("counts = target:%d applied:%d pending:%d", wc.TargetCount, wc.AppliedCount, wc.PendingCount)
+	}
+	if wc.InstanceStatuses[1].Status != InstanceStatusNoStatus {
+		t.Fatalf("silent required instance status = %q, want no_status", wc.InstanceStatuses[1].Status)
+	}
+	b, err := json.Marshal(wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(b, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["timed_out_count"] != float64(1) || payload["no_status_count"] != float64(1) {
+		t.Fatalf("payload counts = timed_out:%v no_status:%v, want 1/1; json=%s", payload["timed_out_count"], payload["no_status_count"], string(b))
+	}
+	instances := payload["instance_statuses"].([]any)
+	silent := instances[1].(map[string]any)
+	if silent["timed_out"] != true {
+		t.Fatalf("silent instance timed_out = %v, want true; json=%s", silent["timed_out"], string(b))
+	}
+	if !timelineContainsTimedOutNoStatus(wc.Timeline) {
+		t.Fatalf("timeline missing timed-out no_status entry: %+v", wc.Timeline)
+	}
+}
+
+func TestWorkloadConfigHydratePushStatus_RedactsRemoteErrorSamplesEverywhere(t *testing.T) {
+	now := time.Date(2026, 6, 30, 10, 12, 0, 0, time.UTC)
+	raw := "collector failed: exporters.otlp.headers.authorization=Bearer SECRET_TOKEN endpoint=https://tenant-a.internal:4317"
+	wc := WorkloadConfig{
+		WorkloadID:   "w1",
+		ConfigID:     "deadbeef",
+		Status:       "failed",
+		ErrorMessage: raw,
+		SubmittedAt:  now,
+		AppliedAt:    now,
+		InstanceStatuses: []WorkloadConfigInstanceStatus{
+			{InstanceUID: "i1", Required: true, Status: "failed", ErrorMessage: raw, UpdatedAt: now.Add(time.Second)},
+		},
+	}
+
+	wc.HydratePushStatus(now.Add(2 * time.Second))
+	b, err := json.Marshal(wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(b)
+	for _, forbidden := range []string{"SECRET_TOKEN", "tenant-a.internal", "authorization=Bearer", raw} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("redacted payload still contains %q: %s", forbidden, payload)
+		}
+	}
+	if wc.ErrorMessage == "" || wc.InstanceStatuses[0].ErrorMessage == "" || wc.ErrorGroups[0].SampleMessage == "" {
+		t.Fatalf("expected stable redacted samples to remain available: %+v", wc)
+	}
+}
 
 func TestWorkloadConfigHydratePushStatus_TimeoutLayerClearsAfterLateStatus(t *testing.T) {
 	submitted := time.Date(2026, 6, 30, 10, 12, 0, 0, time.UTC)
@@ -95,6 +178,15 @@ func TestWorkloadConfigHydratePushStatus_ErrorGrouping(t *testing.T) {
 	if got := wc.ErrorGroups[0].AffectedInstances; len(got) != 2 || got[0] != "i1" || got[1] != "i2" {
 		t.Fatalf("affected instances = %+v", got)
 	}
+}
+
+func timelineContainsTimedOutNoStatus(entries []WorkloadConfigTimelineEntry) bool {
+	for _, entry := range entries {
+		if entry.State == InstanceStatusNoStatus && entry.TimedOut {
+			return true
+		}
+	}
+	return false
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }

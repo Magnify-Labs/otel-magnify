@@ -27,6 +27,10 @@ func (d *DB) RecordWorkloadConfig(wc models.WorkloadConfig) error {
 		timeoutAt := submittedAt.Add(30 * time.Second)
 		wc.OpAMPStatusTimeoutAt = &timeoutAt
 	}
+	wc.ErrorMessage = models.SanitizeRemoteConfigErrorMessage(wc.ErrorMessage)
+	for i := range wc.InstanceStatuses {
+		wc.InstanceStatuses[i].ErrorMessage = models.SanitizeRemoteConfigErrorMessage(wc.InstanceStatuses[i].ErrorMessage)
+	}
 	instancesJSON, err := json.Marshal(wc.InstanceStatuses)
 	if err != nil {
 		return err
@@ -56,6 +60,7 @@ func (d *DB) MarkWorkloadConfigSent(workloadID, configID string, sentAt time.Tim
 
 // UpdateWorkloadConfigStatus updates status and error_message on the latest workload_configs row for the given (workload, config) pair.
 func (d *DB) UpdateWorkloadConfigStatus(workloadID, configID, status, errorMessage string) error {
+	errorMessage = models.SanitizeRemoteConfigErrorMessage(errorMessage)
 	_, err := d.Exec(`
 		UPDATE workload_configs SET status = ?, error_message = ?
 		WHERE workload_id = ? AND config_id = ?
@@ -69,6 +74,7 @@ func (d *DB) UpdateWorkloadConfigStatus(workloadID, configID, status, errorMessa
 
 // UpdateWorkloadConfigInstanceStatus merges a single instance's remote status into the latest push row.
 func (d *DB) UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUID, status, errorMessage string, updatedAt time.Time) error {
+	errorMessage = models.SanitizeRemoteConfigErrorMessage(errorMessage)
 	wc, err := d.GetLatestWorkloadConfigByHash(workloadID, configID)
 	if err != nil || wc == nil {
 		return err
