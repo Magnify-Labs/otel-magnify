@@ -10,7 +10,13 @@ import PushHistoryTable from './PushHistoryTable'
 import ConfigSafetySection from './ConfigSafetySection'
 import { useStore } from '../../store'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
-import type { ValidationCheck, ValidationMessage, ValidationResult, Workload } from '../../types'
+import type {
+  ValidationCheck,
+  ValidationMessage,
+  ValidationResult,
+  Workload,
+  WorkloadConfig,
+} from '../../types'
 
 interface Props {
   workload: Workload
@@ -29,6 +35,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const [tab, setTab] = useState<Tab>('edit')
   const [draftYaml, setDraftYaml] = useState('')
   const [pendingHash, setPendingHash] = useState<string | null>(null)
+  const [pendingPush, setPendingPush] = useState<WorkloadConfig | null>(null)
   const [timedOut, setTimedOut] = useState(false)
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
@@ -68,7 +75,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const pushMutation = useMutation({
     mutationFn: () => workloadsAPI.pushConfig(workload.id, draftYaml),
     onSuccess: (res) => {
-      setPendingHash(res.config_hash)
+      const nextHash = res.config_hash || res.config_id || null
+      setPendingHash(nextHash)
+      setPendingPush(res)
       setTimedOut(false)
       setPushError(null)
     },
@@ -110,6 +119,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   if (pendingHash && configStatus && configStatus.config_hash === pendingHash) {
     if (configStatus.status === 'applied') {
       setPendingHash(null)
+      setPendingPush(null)
       setTimedOut(false)
       setEditMode(false)
       setDraftYaml('')
@@ -117,6 +127,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     } else if (configStatus.status === 'failed') {
       // keep editMode + draftYaml so the user can fix and retry
       setPendingHash(null)
+      setPendingPush(null)
       setTimedOut(false)
     }
   }
@@ -147,13 +158,18 @@ export default function WorkloadConfigSection({ workload }: Props) {
     if (validation !== null) setValidation(null)
   }
 
-  const derivedStatus = pendingHash
-    ? {
-        status: 'applying' as const,
-        config_hash: pendingHash,
-        updated_at: new Date().toISOString(),
-      }
-    : configStatus
+  const currentPush = configStatus?.push_status ?? pendingPush ?? workload.current_config_push
+  const derivedStatus =
+    configStatus ??
+    (currentPush
+      ? {
+          status: currentPush.status,
+          config_hash: currentPush.config_hash || currentPush.config_id,
+          error_message: currentPush.error_message,
+          updated_at: currentPush.updated_at || currentPush.applied_at,
+          push_status: currentPush,
+        }
+      : undefined)
 
   const canPush =
     !!draftYaml &&
@@ -336,6 +352,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
         )}
         <PushStatusBanner
           status={derivedStatus}
+          push={currentPush}
           rollback={rollback}
           onDismissRollback={() => clearRollback(workload.id)}
         />
@@ -384,6 +401,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
 
       <PushStatusBanner
         status={derivedStatus}
+        push={currentPush}
         rollback={rollback}
         onDismissRollback={() => clearRollback(workload.id)}
       />

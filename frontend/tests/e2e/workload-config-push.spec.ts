@@ -440,6 +440,167 @@ test('validation details explain when otelcol runtime check is skipped', async (
   await expect(page.getByRole('button', { name: 'Push' })).toBeEnabled()
 })
 
+test('push timeline renders aggregate progress and per-instance details', async ({
+  loggedInPage: page,
+}) => {
+  const submittedAt = '2026-06-30T10:12:00Z'
+  const sentAt = '2026-06-30T10:12:01Z'
+  await mockWorkload(page, {
+    current_config_push: {
+      push_id: 'push_01JVISIBLE',
+      workload_id: WORKLOAD_ID,
+      config_id: 'feedfacefeedface',
+      config_hash: 'feedfacefeedface',
+      status: 'applying',
+      submitted_at: submittedAt,
+      sent_at: sentAt,
+      updated_at: '2026-06-30T10:12:05Z',
+      target_count: 3,
+      applied_count: 1,
+      failed_count: 0,
+      pending_count: 2,
+      timeline: [
+        { state: 'submitted', at: submittedAt, terminal: false },
+        { state: 'sent', at: sentAt, terminal: false },
+        { state: 'applying', at: '2026-06-30T10:12:05Z', terminal: false },
+      ],
+      instance_statuses: [
+        {
+          instance_uid: 'inst-a',
+          pod_name: 'otel-a',
+          required: true,
+          status: 'applied',
+          config_hash: 'feedfacefeedface',
+          updated_at: '2026-06-30T10:12:06Z',
+        },
+        {
+          instance_uid: 'inst-b',
+          pod_name: 'otel-b',
+          required: true,
+          status: 'applying',
+          config_hash: 'feedfacefeedface',
+          updated_at: '2026-06-30T10:12:05Z',
+        },
+        {
+          instance_uid: 'inst-c',
+          pod_name: 'otel-c',
+          required: true,
+          status: 'no_status',
+          config_hash: 'feedfacefeedface',
+        },
+      ],
+    },
+  })
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  const panel = page.locator('.push-status-panel')
+  await expect(panel).toContainText('Applying')
+  await expect(panel).toContainText('1/3 applied')
+  await expect(panel).toContainText('2 pending')
+  await expect(panel.locator('.push-timeline-step')).toContainText([
+    'Validated',
+    'Submitted',
+    'Sent via OpAMP',
+    'Applying',
+    'Applied',
+  ])
+
+  await page.getByRole('button', { name: 'View instance details' }).click()
+  await expect(page.locator('.push-instance-table tbody tr')).toHaveCount(3)
+  await expect(page.locator('.push-instance-table')).toContainText('inst-a')
+  await expect(page.locator('.push-instance-table')).toContainText('otel-c')
+  await expect(page.locator('.push-instance-table')).toContainText('No status yet')
+})
+
+test('push status shows the explicit OpAMP timeout message from the API', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page, {
+    current_config_push: {
+      push_id: 'push_timeout',
+      workload_id: WORKLOAD_ID,
+      config_id: 'deadbeefdeadbeef',
+      config_hash: 'deadbeefdeadbeef',
+      status: 'sent',
+      submitted_at: '2026-06-30T10:12:00Z',
+      sent_at: '2026-06-30T10:12:01Z',
+      updated_at: '2026-06-30T10:12:30Z',
+      timed_out_waiting_for_opamp_status: true,
+      timeout_message: 'No OpAMP status after 30s',
+      target_count: 1,
+      applied_count: 0,
+      failed_count: 0,
+      pending_count: 1,
+    },
+  })
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  await expect(page.locator('.push-timeout-banner')).toContainText('No OpAMP status after 30s')
+  await expect(page.locator('.push-timeout-banner')).toContainText(
+    'otel-magnify sent the config but has not received an OpAMP status from the workload yet.',
+  )
+})
+
+test('remote config errors are grouped by cause with affected instances', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page, {
+    current_config_push: {
+      push_id: 'push_failed',
+      workload_id: WORKLOAD_ID,
+      config_id: 'badbadbadbad',
+      config_hash: 'badbadbadbad',
+      status: 'failed',
+      submitted_at: '2026-06-30T10:12:00Z',
+      updated_at: '2026-06-30T10:12:08Z',
+      target_count: 3,
+      applied_count: 0,
+      failed_count: 3,
+      pending_count: 0,
+      error_groups: [
+        {
+          cause: 'collector_validation',
+          title: 'Collector rejected the config',
+          severity: 'high',
+          count: 2,
+          affected_instances: ['inst-a', 'inst-b'],
+          sample_message: "unknown exporter 'othttp'",
+          sample_path: 'service.pipelines.traces.exporters[0]',
+          config_hash: 'badbadbadbad',
+          retryable: true,
+        },
+        {
+          cause: 'opamp_send_failed',
+          title: 'OpAMP delivery failed',
+          severity: 'high',
+          count: 1,
+          affected_instances: ['inst-c'],
+          sample_message: 'connection lost',
+          config_hash: 'badbadbadbad',
+          retryable: true,
+        },
+      ],
+    },
+  })
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  const errors = page.locator('.push-error-groups')
+  await expect(errors).toContainText('Collector rejected the config')
+  await expect(errors).toContainText('2 instances')
+  await expect(errors).toContainText("unknown exporter 'othttp'")
+  await expect(errors).toContainText('inst-a')
+  await expect(errors).toContainText('OpAMP delivery failed')
+})
+
 test('push failed shows error banner and preserves draft', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
