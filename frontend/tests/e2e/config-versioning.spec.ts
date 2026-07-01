@@ -341,6 +341,66 @@ test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page
   await expect(page.locator('.config-diff-view .cm-content')).toHaveCount(2)
 })
 
+test('viewer cannot initiate rollback or known-good history actions', async ({ loggedInPage: page }) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, BASE_HISTORY)
+  await mockConfigsList(page)
+
+  let prepareHit = false
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/rollback/prepare**`, (route) => {
+    prepareHit = true
+    return route.fulfill({ status: 500, body: 'viewer must not prepare rollback' })
+  })
+
+  await gotoWorkloadDetail(page, 'viewer')
+  const olderRow = page.locator('.history-table tbody tr').nth(1)
+  const rollbackButton = olderRow.getByRole('button', { name: 'Rollback' })
+
+  await expect(rollbackButton).toBeDisabled()
+  await expect(rollbackButton).toHaveAttribute('title', 'Requires workload:push_config permission')
+  const knownGoodButton = olderRow.getByRole('button', { name: /Mark as known-good|Clear known-good/ })
+  await expect(knownGoodButton).toBeDisabled()
+  await expect(knownGoodButton).toHaveAttribute('title', 'Requires workload:push_config permission')
+  expect(prepareHit).toBe(false)
+})
+
+test('failed history candidate is not rollbackable', async ({ loggedInPage: page }) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, [
+    BASE_HISTORY[0],
+    {
+      workload_id: WORKLOAD_ID,
+      config_id: HASH_OLD,
+      applied_at: '2026-05-01T09:00:00Z',
+      status: 'failed',
+      pushed_by: 'admin@e2e.local',
+      content: YAML_OLD,
+      error_message: 'collector rejected this candidate',
+    },
+  ])
+  await mockConfigsList(page)
+
+  let prepareHit = false
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/rollback/prepare**`, (route) => {
+    prepareHit = true
+    return route.fulfill({ status: 500, body: 'failed candidate must not prepare rollback' })
+  })
+
+  await gotoWorkloadDetail(page, 'editor')
+  const failedRow = page.locator('.history-table tbody tr').nth(1)
+  const rollbackButton = failedRow.getByRole('button', { name: 'Rollback' })
+
+  await expect(failedRow.getByText('failed')).toBeVisible()
+  await expect(rollbackButton).toBeDisabled()
+  await expect(rollbackButton).toHaveAttribute(
+    'title',
+    'Only applied revisions can be rolled back. Failed or pending revisions are not safe rollback targets.',
+  )
+  expect(prepareHit).toBe(false)
+})
+
 function buildRollbackPrepare(overrides: Record<string, unknown> = {}) {
   return {
     schema_version: 'guided-rollback-prepare.v1',
