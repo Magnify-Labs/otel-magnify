@@ -73,6 +73,59 @@ func TestUpsertWorkloadSanitizesRemoteConfigStatusBeforeStorage(t *testing.T) {
 	}
 }
 
+func TestUpsertWorkloadSanitizesNestedRemoteConfigPushStatusBeforeStorage(t *testing.T) {
+	db := newTestDB(t)
+	raw := "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+	now := time.Now().UTC()
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID:         "wl-nested-sensitive",
+		Type:       "collector",
+		Status:     "connected",
+		LastSeenAt: now,
+		RemoteConfigStatus: &models.RemoteConfigStatus{
+			Status:       "failed",
+			ConfigHash:   "hash-a",
+			ErrorMessage: raw,
+			UpdatedAt:    now,
+			PushStatus: &models.WorkloadConfig{
+				WorkloadID:   "wl-nested-sensitive",
+				ConfigID:     "hash-a",
+				Status:       "failed",
+				ErrorMessage: raw,
+				AppliedAt:    now,
+				SubmittedAt:  now,
+				ErrorGroups:  []models.WorkloadConfigErrorGroup{{Cause: "unknown", SampleMessage: raw}},
+				Timeline:     []models.WorkloadConfigTimelineEntry{{State: "failed", At: now, Message: raw, Terminal: true}},
+				InstanceStatuses: []models.WorkloadConfigInstanceStatus{
+					{InstanceUID: "instance-1", Status: "failed", ErrorMessage: raw, UpdatedAt: now},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("UpsertWorkload: %v", err)
+	}
+
+	var stored string
+	if err := db.QueryRow(`SELECT remote_config_status FROM workloads WHERE id = ?`, "wl-nested-sensitive").Scan(&stored); err != nil {
+		t.Fatalf("query stored remote_config_status: %v", err)
+	}
+	assertNoSensitiveWorkloadStatusText(t, stored)
+
+	got, err := db.GetWorkload("wl-nested-sensitive")
+	if err != nil {
+		t.Fatalf("GetWorkload: %v", err)
+	}
+	if got.RemoteConfigStatus == nil || got.RemoteConfigStatus.PushStatus == nil {
+		t.Fatalf("expected nested push status")
+	}
+	encoded, err := json.Marshal(got.RemoteConfigStatus)
+	if err != nil {
+		t.Fatalf("marshal remote config status: %v", err)
+	}
+	assertNoSensitiveWorkloadStatusText(t, string(encoded))
+}
+
 func TestMigrateSanitizesLegacyRemoteConfigStatusesAtRest(t *testing.T) {
 	db := newTestDB(t)
 	raw := "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
