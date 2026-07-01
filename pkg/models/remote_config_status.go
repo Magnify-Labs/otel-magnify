@@ -6,6 +6,10 @@ import "encoding/json"
 // persistence, API responses, and broadcast payloads.
 func (r RemoteConfigStatus) Sanitized() RemoteConfigStatus {
 	r.ErrorMessage = SanitizeRemoteConfigErrorMessage(r.ErrorMessage)
+	if r.PushStatus != nil {
+		pushStatus := r.PushStatus.SanitizedRemoteConfigErrors()
+		r.PushStatus = &pushStatus
+	}
 	return r
 }
 
@@ -15,6 +19,9 @@ func (r *RemoteConfigStatus) Sanitize() {
 		return
 	}
 	r.ErrorMessage = SanitizeRemoteConfigErrorMessage(r.ErrorMessage)
+	if r.PushStatus != nil {
+		r.PushStatus.SanitizeRemoteConfigErrors()
+	}
 }
 
 // MarshalJSON serializes a sanitized remote config status so model-level JSON

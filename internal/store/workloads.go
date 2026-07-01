@@ -20,7 +20,8 @@ func (d *DB) UpsertWorkload(w models.Workload) error {
 	}
 	var statusJSON any
 	if w.RemoteConfigStatus != nil {
-		s, err := w.RemoteConfigStatus.Value()
+		status := w.RemoteConfigStatus.Sanitized()
+		s, err := status.Value()
 		if err != nil {
 			return fmt.Errorf("marshal remote_config_status: %w", err)
 		}

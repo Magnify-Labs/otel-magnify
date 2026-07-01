@@ -71,6 +71,34 @@ type WorkloadConfigErrorGroup struct {
 	Retryable         bool      `json:"retryable"`
 }
 
+// SanitizedRemoteConfigErrors returns a copy with all nested remote-config
+// error samples safe for storage and API responses, without recomputing derived
+// push status fields.
+func (wc WorkloadConfig) SanitizedRemoteConfigErrors() WorkloadConfig {
+	wc.Timeline = append([]WorkloadConfigTimelineEntry(nil), wc.Timeline...)
+	wc.InstanceStatuses = append([]WorkloadConfigInstanceStatus(nil), wc.InstanceStatuses...)
+	wc.ErrorGroups = append([]WorkloadConfigErrorGroup(nil), wc.ErrorGroups...)
+	wc.SanitizeRemoteConfigErrors()
+	return wc
+}
+
+// SanitizeRemoteConfigErrors mutates stored push-status error samples in place.
+func (wc *WorkloadConfig) SanitizeRemoteConfigErrors() {
+	if wc == nil {
+		return
+	}
+	wc.ErrorMessage = SanitizeRemoteConfigErrorMessage(wc.ErrorMessage)
+	for i := range wc.InstanceStatuses {
+		wc.InstanceStatuses[i].ErrorMessage = SanitizeRemoteConfigErrorMessage(wc.InstanceStatuses[i].ErrorMessage)
+	}
+	for i := range wc.ErrorGroups {
+		wc.ErrorGroups[i].SampleMessage = SanitizeRemoteConfigErrorMessage(wc.ErrorGroups[i].SampleMessage)
+	}
+	for i := range wc.Timeline {
+		wc.Timeline[i].Message = SanitizeRemoteConfigErrorMessage(wc.Timeline[i].Message)
+	}
+}
+
 // HydratePushStatus normalizes legacy status aliases, rebuilds timeline/counts,
 // overlays the 30s no-OpAMP-status warning, and groups per-instance errors.
 func (wc *WorkloadConfig) HydratePushStatus(now time.Time) {
@@ -286,6 +314,9 @@ func SanitizeRemoteConfigErrorMessage(msg string) string {
 		return ""
 	}
 	if msg == "Remote config error details redacted" {
+		return msg
+	}
+	if msg == OpAMPStatusTimeoutMessage {
 		return msg
 	}
 	for _, cause := range []string{"collector_validation", "opamp_send_failed", "apply_timeout", "capability_mismatch", "permission_or_policy", "rollback_unavailable", "unknown"} {

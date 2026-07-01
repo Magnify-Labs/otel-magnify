@@ -109,6 +109,39 @@ func TestRemoteConfigStatusJSONMarshalSanitizesSensitiveErrorMessage(t *testing.
 	}
 }
 
+func TestRemoteConfigStatusSanitizedDoesNotMutateNestedPushStatus(t *testing.T) {
+	raw := "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+	status := RemoteConfigStatus{
+		Status:       "failed",
+		ConfigHash:   "hash-a",
+		ErrorMessage: raw,
+		UpdatedAt:    time.Unix(0, 0).UTC(),
+		PushStatus: &WorkloadConfig{
+			WorkloadID:   "wl-sensitive",
+			ConfigID:     "hash-a",
+			Status:       "failed",
+			ErrorMessage: raw,
+			Timeline:     []WorkloadConfigTimelineEntry{{State: "failed", Message: raw, Terminal: true}},
+			ErrorGroups:  []WorkloadConfigErrorGroup{{Cause: "unknown", SampleMessage: raw}},
+			InstanceStatuses: []WorkloadConfigInstanceStatus{
+				{InstanceUID: "instance-1", Status: "failed", ErrorMessage: raw},
+			},
+		},
+	}
+
+	sanitized := status.Sanitized()
+
+	assertNoSensitiveRemoteStatusText(t, sanitized.ErrorMessage)
+	assertNoSensitiveRemoteStatusText(t, sanitized.PushStatus.ErrorMessage)
+	assertNoSensitiveRemoteStatusText(t, sanitized.PushStatus.Timeline[0].Message)
+	assertNoSensitiveRemoteStatusText(t, sanitized.PushStatus.ErrorGroups[0].SampleMessage)
+	assertNoSensitiveRemoteStatusText(t, sanitized.PushStatus.InstanceStatuses[0].ErrorMessage)
+
+	if status.ErrorMessage != raw || status.PushStatus.ErrorMessage != raw || status.PushStatus.Timeline[0].Message != raw || status.PushStatus.ErrorGroups[0].SampleMessage != raw || status.PushStatus.InstanceStatuses[0].ErrorMessage != raw {
+		t.Fatalf("Sanitized must not mutate the source status: %+v", status)
+	}
+}
+
 func TestRemoteConfigStatusJSONUnmarshalSanitizesSensitiveErrorMessage(t *testing.T) {
 	raw := `{"status":"failed","config_hash":"hash-a","error_message":"collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces","updated_at":"1970-01-01T00:00:00Z"}`
 
