@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
+import { safeRemoteErrorText } from '../../src/lib/safeRemoteErrorText'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const ACTIVE_CONFIG_ID = 'abc123'
@@ -667,8 +668,7 @@ test('remote config errors are grouped by cause with affected instances', async 
   await expect(errors).toContainText('Collector rejected the config')
   await expect(errors).toContainText('2 instances')
   await expect(errors).toContainText("unknown exporter 'othttp'")
-  await expect(errors).toContainText('token=[redacted]')
-  await expect(errors).toContainText('[endpoint redacted]')
+  await expect(errors).toContainText('credential/endpoint details redacted')
   await expect(errors).toContainText('Severity: high')
   await expect(errors).toContainText('collector_validation')
   await expect(errors).toContainText('inst-a')
@@ -719,6 +719,66 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   await expect(page.locator('.push-banner-failed')).toContainText("unknown exporter 'othttp'")
   // Draft preserved — editor still shows our addition
   await expect(page.locator('.cm-content').first()).toContainText('# touched')
+})
+
+test('push and rollback banners redact sensitive remote error text', () => {
+  const rawError =
+    'collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces'
+
+  const rendered = safeRemoteErrorText(rawError)
+
+  expect(rendered).toBe('redacted credential; redacted endpoint; redacted tenant')
+  expect(rendered).not.toContain('SECRET_TOKEN')
+  expect(rendered).not.toContain('authorization=Bearer')
+  expect(rendered).not.toContain('abc123')
+  expect(rendered).not.toContain('super-secret')
+  expect(rendered).not.toContain('tenant-a.internal')
+  expect(rendered).not.toContain('/v1/traces')
+})
+
+test('rollback reasons keep a safe short cause while redacting legacy remote details', () => {
+  const rawReason =
+    "collector rejected config for tenant-a.internal: unknown exporter 'othttp' SECRET_TOKEN=abc123 authorization=Bearer super-secret exporters:\n  otlphttp:\n    endpoint: https://tenant-a.internal:4318/v1/traces"
+
+  const rendered = safeRemoteErrorText(rawReason)
+
+  expect(rendered).toBe(
+    "unknown exporter 'othttp' — redacted credential; redacted endpoint; redacted tenant; configuration error",
+  )
+  expect(rendered).not.toContain('SECRET_TOKEN')
+  expect(rendered).not.toContain('authorization=Bearer')
+  expect(rendered).not.toContain('abc123')
+  expect(rendered).not.toContain('super-secret')
+  expect(rendered).not.toContain('tenant-a.internal')
+  expect(rendered).not.toContain('exporters:')
+  expect(rendered).not.toContain('otlphttp')
+})
+
+test('rollback reasons do not preserve sensitive unknown component names as causes', () => {
+  const rawReason =
+    "unknown exporter 'tenant-a.internal' authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+
+  const rendered = safeRemoteErrorText(rawReason)
+
+  expect(rendered).toBe('redacted credential; redacted endpoint; redacted tenant')
+  expect(rendered).not.toContain('tenant-a.internal')
+  expect(rendered).not.toContain('authorization=Bearer')
+  expect(rendered).not.toContain('super-secret')
+  expect(rendered).not.toContain('/v1/traces')
+})
+
+test('rollback reasons map config snippets and tenant identifiers to concise safe labels', () => {
+  const rawReason =
+    'tenant-a failed rollback validation: service:\n  pipelines:\n    traces:\n      exporters: [otlp]\nexporters:\n  otlp:\n    endpoint: tenant-a.internal:4317'
+
+  const rendered = safeRemoteErrorText(rawReason)
+
+  expect(rendered).toBe('redacted endpoint; redacted tenant; configuration error')
+  expect(rendered).not.toContain('tenant-a')
+  expect(rendered).not.toContain('tenant-a.internal')
+  expect(rendered).not.toContain('service:')
+  expect(rendered).not.toContain('exporters:')
+  expect(rendered).not.toContain('otlp')
 })
 
 test('push applied closes edit mode, clears draft, shows applied banner', async ({

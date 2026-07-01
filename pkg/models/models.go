@@ -78,7 +78,7 @@ type RemoteConfigStatus struct {
 
 // Value JSON-encodes the remote config status for storage as TEXT.
 func (r RemoteConfigStatus) Value() (string, error) {
-	b, err := json.Marshal(r)
+	b, err := json.Marshal(r.Sanitized())
 	return string(b), err
 }
 
@@ -89,12 +89,20 @@ func (r *RemoteConfigStatus) Scan(src any) error {
 		if v == "" {
 			return nil
 		}
-		return json.Unmarshal([]byte(v), r)
+		if err := json.Unmarshal([]byte(v), r); err != nil {
+			return err
+		}
+		r.Sanitize()
+		return nil
 	case []byte:
 		if len(v) == 0 {
 			return nil
 		}
-		return json.Unmarshal(v, r)
+		if err := json.Unmarshal(v, r); err != nil {
+			return err
+		}
+		r.Sanitize()
+		return nil
 	case nil:
 		return nil
 	default:

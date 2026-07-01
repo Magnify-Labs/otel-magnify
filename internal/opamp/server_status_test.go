@@ -210,6 +210,79 @@ func TestOnMessage_RemoteConfigStatusFailed_AutoRollback(t *testing.T) {
 	}
 }
 
+func TestOnMessage_RemoteConfigStatusFailed_RedactsSensitiveHistoryAndBroadcasts(t *testing.T) {
+	s, db, n := newTestServer(t)
+
+	uid := make([]byte, 16)
+	uid[0] = 0xBD
+	uidHex := hex.EncodeToString(uid)
+	wlID := fingerprintUIDHex(uidHex)
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID: wlID, Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+	}); err != nil {
+		t.Fatalf("seed workload: %v", err)
+	}
+	_ = db.CreateConfig(models.Config{ID: "aaaaaaaa", Name: "A", Content: "good-yaml", CreatedAt: time.Now().UTC().Add(-time.Hour), CreatedBy: "u"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: wlID, ConfigID: "aaaaaaaa", Status: "applied", AppliedAt: time.Now().UTC().Add(-time.Hour)})
+	_ = db.CreateConfig(models.Config{ID: "bbbbbbbb", Name: "B", Content: "bad-yaml", CreatedAt: time.Now().UTC(), CreatedBy: "u"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: wlID, ConfigID: "bbbbbbbb", Status: "pending"})
+
+	s.onMessage(context.TODO(), nil, &protobufs.AgentToServer{
+		InstanceUid: uid,
+		AgentDescription: &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{
+				{Key: "service.name", Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "otelcol-contrib"}}},
+			},
+		},
+	})
+
+	s.pushFn = func(_ string, _ []byte, _ string) error { return nil }
+	rawError := "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+	hashB, _ := hex.DecodeString("bbbbbbbb")
+	s.onMessage(context.TODO(), nil, &protobufs.AgentToServer{
+		InstanceUid: uid,
+		RemoteConfigStatus: &protobufs.RemoteConfigStatus{
+			LastRemoteConfigHash: hashB,
+			Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
+			ErrorMessage:         rawError,
+		},
+	})
+
+	hist, _ := db.GetWorkloadConfigHistory(wlID)
+	var foundFailed bool
+	for _, row := range hist {
+		if row.ConfigID == "bbbbbbbb" {
+			foundFailed = true
+			assertNoSensitiveRemoteConfigText(t, row.ErrorMessage)
+		}
+	}
+	if !foundFailed {
+		t.Fatalf("failed config row missing from history: %+v", hist)
+	}
+	if len(n.statuses) != 1 {
+		t.Fatalf("expected one status broadcast, got %+v", n.statuses)
+	}
+	assertNoSensitiveRemoteConfigText(t, n.statuses[0].status.ErrorMessage)
+	if len(n.rollbacks) != 1 {
+		t.Fatalf("expected one rollback broadcast, got %+v", n.rollbacks)
+	}
+	assertNoSensitiveRemoteConfigText(t, n.rollbacks[0].reason)
+}
+
+func assertNoSensitiveRemoteConfigText(t *testing.T, text string) {
+	t.Helper()
+	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("text leaked %q: %s", forbidden, text)
+		}
+	}
+	if !strings.Contains(text, "redacted") {
+		t.Fatalf("text should explain redacted details: %s", text)
+	}
+}
+
 func TestOnMessage_RemoteConfigStatusFailed_NoRollbackTarget(t *testing.T) {
 	s, db, n := newTestServer(t)
 

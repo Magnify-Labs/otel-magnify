@@ -8,6 +8,7 @@ import type {
   WorkloadConfigInstanceStatus,
   WorkloadConfigTimelineEntry,
 } from '../../types'
+import { safeRemoteErrorText, safeRollbackReasonText } from '../../lib/safeRemoteErrorText'
 
 interface Props {
   status?: RemoteConfigStatus
@@ -22,6 +23,7 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
   const [detailsOpen, setDetailsOpen] = useState(false)
   const visiblePush = push ?? statusToPush(status)
   const timedOut = hasTimedOutRequiredTarget(visiblePush)
+  const rollbackReason = safeRollbackReasonText(rollback?.reason)
 
   return (
     <div className="push-status-panel" aria-label="Config push status">
@@ -107,7 +109,7 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
               </button>
             )}
           </div>
-          {rollback.reason && <pre className="push-banner-error">{rollback.reason}</pre>}
+          {rollbackReason && <pre className="push-banner-error">{rollbackReason}</pre>}
         </div>
       )}
     </div>
@@ -390,20 +392,6 @@ function errorCauseLabel(cause: string): string {
 function severityLabel(severity: string): string {
   if (!severity) return 'Severity: medium'
   return `Severity: ${severity}`
-}
-
-function safeRemoteErrorText(value: string): string {
-  const normalized = value
-    .replace(/bearer\s+[a-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
-    .replace(
-      /(token|password|passwd|secret|authorization|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,
-      '$1=[redacted]',
-    )
-    .replace(/https?:\/\/[^\s'"]+/gi, '[endpoint redacted]')
-    .replace(/otelcol[^\n]{80,}/gi, 'collector details redacted')
-    .trim()
-  if (normalized.length > 160) return `${normalized.slice(0, 157)}…`
-  return normalized
 }
 
 function formatInstanceCount(count: number): string {

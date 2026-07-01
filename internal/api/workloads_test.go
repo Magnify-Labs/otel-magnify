@@ -156,6 +156,91 @@ func TestGetWorkload_NotFound(t *testing.T) {
 	}
 }
 
+func TestGetWorkload_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	seedLegacyRemoteConfigStatus(t, db, "w-legacy")
+
+	req := authedRequest(t, "GET", "/api/workloads/w-legacy")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
+	var w models.Workload
+	if err := json.NewDecoder(rec.Body).Decode(&w); err != nil {
+		t.Fatalf("decode workload: %v", err)
+	}
+	assertRemoteConfigStatusSanitized(t, w.RemoteConfigStatus)
+}
+
+func TestListWorkloads_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	seedLegacyRemoteConfigStatus(t, db, "w-legacy")
+
+	req := authedRequest(t, "GET", "/api/workloads")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
+	var items []models.Workload
+	if err := json.NewDecoder(rec.Body).Decode(&items); err != nil {
+		t.Fatalf("decode workloads: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len = %d, want 1", len(items))
+	}
+	assertRemoteConfigStatusSanitized(t, items[0].RemoteConfigStatus)
+}
+
+func seedLegacyRemoteConfigStatus(t *testing.T, db ext.Store, workloadID string) {
+	t.Helper()
+	if err := db.UpsertWorkload(models.Workload{ID: workloadID, DisplayName: "legacy", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}}); err != nil {
+		t.Fatalf("UpsertWorkload: %v", err)
+	}
+	sqlDB, ok := db.(*store.DB)
+	if !ok {
+		t.Fatalf("test store is %T, want *store.DB", db)
+	}
+	raw := `{"status":"failed","config_hash":"hash-a","error_message":"collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces","updated_at":"1970-01-01T00:00:00Z"}`
+	if _, err := sqlDB.Exec(`UPDATE workloads SET remote_config_status = ? WHERE id = ?`, raw, workloadID); err != nil {
+		t.Fatalf("seed legacy remote_config_status: %v", err)
+	}
+}
+
+func assertNoSensitiveRemoteConfigStatusLeak(t *testing.T, body string) {
+	t.Helper()
+	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("response leaked %q: %s", forbidden, body)
+		}
+	}
+	if !strings.Contains(body, "redacted") {
+		t.Fatalf("response should explain redacted remote status details: %s", body)
+	}
+}
+
+func assertRemoteConfigStatusSanitized(t *testing.T, status *models.RemoteConfigStatus) {
+	t.Helper()
+	if status == nil {
+		t.Fatal("remote_config_status is nil")
+	}
+	if status.Status != "failed" {
+		t.Fatalf("remote_config_status.status = %q, want failed", status.Status)
+	}
+	if status.ConfigHash != "hash-a" {
+		t.Fatalf("remote_config_status.config_hash = %q, want hash-a", status.ConfigHash)
+	}
+	const want = "Remote config error details redacted"
+	if status.ErrorMessage != want {
+		t.Fatalf("remote_config_status.error_message = %q, want %q", status.ErrorMessage, want)
+	}
+}
+
 // --- Instances ---
 
 func TestListWorkloadInstances_FromRegistry(t *testing.T) {
