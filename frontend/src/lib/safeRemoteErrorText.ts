@@ -103,11 +103,71 @@ const credentialPattern =
 function hasEndpointIdentifier(value: string, options: RemoteErrorTextOptions): boolean {
   const lower = value.toLowerCase()
   if (lower.includes('http://') || lower.includes('https://')) return true
-  if (options.includeBareHostEndpoints && bareHostEndpointPattern.test(lower)) return true
+  if (options.includeBareHostEndpoints && hasBareHostEndpoint(lower)) return true
 
   return lower
     .split(/[\s,;]+/)
     .some((part) => endpointSuffixes.some((suffix) => part.includes(suffix)))
+}
+
+function hasBareHostEndpoint(value: string): boolean {
+  for (const part of value.split(/[\s,;]+/)) {
+    if (part.includes('://')) continue
+
+    const colonIndex = part.lastIndexOf(':')
+    if (colonIndex <= 0) continue
+
+    const host = trimHostBoundary(part.slice(0, colonIndex))
+    if (!isValidBareHost(host)) continue
+
+    if (isPortPrefix(part.slice(colonIndex + 1))) return true
+  }
+
+  return false
+}
+
+function trimHostBoundary(value: string): string {
+  let start = 0
+  let end = value.length
+
+  while (start < end && !isAsciiAlphaNumeric(value[start])) start += 1
+  while (end > start && !isAsciiAlphaNumeric(value[end - 1])) end -= 1
+
+  return value.slice(start, end)
+}
+
+function isValidBareHost(value: string): boolean {
+  if (!value) return false
+
+  return value.split('.').every((label) => {
+    if (!label || !isAsciiAlphaNumeric(label[0])) return false
+    for (const char of label) {
+      if (!isAsciiAlphaNumeric(char) && char !== '-') return false
+    }
+    return true
+  })
+}
+
+function isPortPrefix(value: string): boolean {
+  let digits = 0
+  while (digits < value.length && isAsciiDigit(value[digits])) {
+    digits += 1
+  }
+
+  if (digits < 2 || digits > 5) return false
+  if (digits === value.length) return true
+
+  return !isAsciiAlphaNumeric(value[digits])
+}
+
+function isAsciiAlphaNumeric(value: string): boolean {
+  const code = value.charCodeAt(0)
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+}
+
+function isAsciiDigit(value: string): boolean {
+  const code = value.charCodeAt(0)
+  return code >= 48 && code <= 57
 }
 
 const endpointSuffixes = [
@@ -126,8 +186,6 @@ const endpointSuffixes = [
 ]
 
 const tenantPattern = /\btenant[-_][a-z0-9][a-z0-9_-]*\b/i
-
-const bareHostEndpointPattern = /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*:\d{2,5}\b/i
 
 const configSnippetPattern =
   /(?:^|[\s{,])(?:receivers|processors|exporters|extensions|service|endpoint|headers)\s*:/i
