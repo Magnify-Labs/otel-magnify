@@ -168,16 +168,29 @@ func TestSanitizeRemoteConfigErrorMessageCanonicalRollbackContract(t *testing.T)
 }
 
 func TestRemoteConfigStatusModelBoundariesUseRollbackSanitizerContract(t *testing.T) {
-	raw := strings.Join([]string{
-		"collector failed while applying remote config for tenant tenant-a",
-		"SECRET_TOKEN=abc123",
-		"authorization=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret",
-		"bearer super-secret-token",
-		"endpoint=https://tenant-a.internal:4318/v1/traces",
-		"username=tenant-a password=hunter2",
-		"config snippet: exporters:\n  otlp:\n    endpoint: https://tenant-a.internal:4317\n    headers:\n      authorization: Bearer SECRET_TOKEN",
-	}, " ")
 	want := "Remote config error details redacted"
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "raw secret token", raw: "collector failed: SECRET_TOKEN=abc123"},
+		{name: "internal tenant endpoint", raw: "endpoint=https://tenant-a.internal:4318/v1/traces"},
+		{name: "authorization bearer header", raw: "authorization=Bearer eyJhbGciOiJIUzI1NiJ9.super-secret"},
+		{name: "lowercase bearer token", raw: "bearer super-secret-token"},
+		{name: "tenant identifier", raw: "remote config failed for tenant tenant-a"},
+		{name: "credentials", raw: "credentials username=tenant-a password=hunter2"},
+		{name: "config snippet", raw: "config snippet: exporters:\n  otlp:\n    endpoint: https://tenant-a.internal:4317\n    headers:\n      authorization: Bearer SECRET_TOKEN"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertRemoteConfigStatusModelBoundariesSanitize(t, tt.raw, want)
+		})
+	}
+}
+
+func assertRemoteConfigStatusModelBoundariesSanitize(t *testing.T, raw, want string) {
+	t.Helper()
 	base := RemoteConfigStatus{
 		Status:       "failed",
 		ConfigHash:   "hash-a",
@@ -194,15 +207,7 @@ func TestRemoteConfigStatusModelBoundariesUseRollbackSanitizerContract(t *testin
 	})
 
 	t.Run("Scan", func(t *testing.T) {
-		legacy, err := json.Marshal(map[string]any{
-			"status":        "failed",
-			"config_hash":   "hash-a",
-			"error_message": raw,
-			"updated_at":    time.Unix(0, 0).UTC(),
-		})
-		if err != nil {
-			t.Fatalf("Marshal legacy fixture: %v", err)
-		}
+		legacy := remoteConfigStatusLegacyJSONFixture(t, raw)
 
 		var status RemoteConfigStatus
 		if err := status.Scan(string(legacy)); err != nil {
@@ -223,15 +228,7 @@ func TestRemoteConfigStatusModelBoundariesUseRollbackSanitizerContract(t *testin
 	})
 
 	t.Run("UnmarshalJSON", func(t *testing.T) {
-		legacy, err := json.Marshal(map[string]any{
-			"status":        "failed",
-			"config_hash":   "hash-a",
-			"error_message": raw,
-			"updated_at":    time.Unix(0, 0).UTC(),
-		})
-		if err != nil {
-			t.Fatalf("Marshal legacy fixture: %v", err)
-		}
+		legacy := remoteConfigStatusLegacyJSONFixture(t, raw)
 
 		var status RemoteConfigStatus
 		if err := json.Unmarshal(legacy, &status); err != nil {
@@ -242,6 +239,20 @@ func TestRemoteConfigStatusModelBoundariesUseRollbackSanitizerContract(t *testin
 		}
 		assertNoSensitiveRemoteStatusText(t, status.ErrorMessage)
 	})
+}
+
+func remoteConfigStatusLegacyJSONFixture(t *testing.T, raw string) []byte {
+	t.Helper()
+	legacy, err := json.Marshal(map[string]any{
+		"status":        "failed",
+		"config_hash":   "hash-a",
+		"error_message": raw,
+		"updated_at":    time.Unix(0, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("Marshal legacy fixture: %v", err)
+	}
+	return legacy
 }
 
 func assertRemoteConfigStatusJSONErrorMessage(t *testing.T, payload []byte, want string) {
@@ -258,7 +269,7 @@ func assertRemoteConfigStatusJSONErrorMessage(t *testing.T, payload []byte, want
 
 func assertNoSensitiveRemoteStatusText(t *testing.T, text string) {
 	t.Helper()
-	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "Bearer SECRET_TOKEN", "eyJhbGci", "super-secret", "super-secret-token", "tenant-a", "tenant-a.internal", "4318", "4317", "/v1/traces", "hunter2", "password=", "username=", "exporters:", "headers:"} {
+	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "Bearer SECRET_TOKEN", "eyJhbGci", "super-secret", "super-secret-token", "tenant-a", "tenant-a.internal", "4318", "4317", "/v1/traces", "hunter2", "credentials", "password=", "username=", "endpoint:", "config snippet", "exporters:", "headers:"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("text leaked %q: %s", forbidden, text)
 		}
