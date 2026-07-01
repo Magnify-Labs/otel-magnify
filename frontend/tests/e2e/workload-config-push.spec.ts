@@ -723,17 +723,37 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
 })
 
 test('push and rollback banners redact sensitive remote error text', () => {
-  const rawError = 'collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces'
+  const rawError =
+    'collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces'
 
   const rendered = safeRemoteErrorText(rawError)
 
-  expect(rendered).toContain('Remote config error details redacted')
+  expect(rendered).toContain('collector failed')
+  expect(rendered).toContain('secret=[redacted]')
+  expect(rendered).toContain('authorization=[redacted]')
+  expect(rendered).toContain('[endpoint redacted]')
   expect(rendered).not.toContain('SECRET_TOKEN')
   expect(rendered).not.toContain('authorization=Bearer')
   expect(rendered).not.toContain('abc123')
   expect(rendered).not.toContain('super-secret')
   expect(rendered).not.toContain('tenant-a.internal')
   expect(rendered).not.toContain('/v1/traces')
+})
+
+test('rollback reasons keep a safe short cause while redacting legacy remote details', () => {
+  const rawReason =
+    "collector rejected config for tenant-a.internal: unknown exporter 'othttp' SECRET_TOKEN=abc123 authorization=Bearer super-secret exporters:\n  otlphttp:\n    endpoint: https://tenant-a.internal:4318/v1/traces"
+
+  const rendered = safeRemoteErrorText(rawReason)
+
+  expect(rendered).toContain("unknown exporter 'othttp'")
+  expect(rendered).not.toContain('SECRET_TOKEN')
+  expect(rendered).not.toContain('authorization=Bearer')
+  expect(rendered).not.toContain('abc123')
+  expect(rendered).not.toContain('super-secret')
+  expect(rendered).not.toContain('tenant-a.internal')
+  expect(rendered).not.toContain('exporters:')
+  expect(rendered).not.toContain('otlphttp')
 })
 
 test('push applied closes edit mode, clears draft, shows applied banner', async ({
