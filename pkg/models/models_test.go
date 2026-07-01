@@ -89,6 +89,40 @@ func TestRemoteConfigStatusScanSanitizesLegacySensitiveErrorMessage(t *testing.T
 	}
 }
 
+func TestRemoteConfigStatusJSONMarshalSanitizesSensitiveErrorMessage(t *testing.T) {
+	raw := "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+	status := RemoteConfigStatus{
+		Status:       "failed",
+		ConfigHash:   "hash-a",
+		ErrorMessage: raw,
+		UpdatedAt:    time.Unix(0, 0).UTC(),
+	}
+
+	encoded, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	assertNoSensitiveRemoteStatusText(t, string(encoded))
+	if !strings.Contains(string(encoded), "redacted") {
+		t.Fatalf("encoded status should explain that details were redacted: %s", encoded)
+	}
+}
+
+func TestRemoteConfigStatusJSONUnmarshalSanitizesSensitiveErrorMessage(t *testing.T) {
+	raw := `{"status":"failed","config_hash":"hash-a","error_message":"collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces","updated_at":"1970-01-01T00:00:00Z"}`
+
+	var status RemoteConfigStatus
+	if err := json.Unmarshal([]byte(raw), &status); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	assertNoSensitiveRemoteStatusText(t, status.ErrorMessage)
+	if !strings.Contains(status.ErrorMessage, "redacted") {
+		t.Fatalf("error_message should explain that details were redacted: %q", status.ErrorMessage)
+	}
+}
+
 func assertNoSensitiveRemoteStatusText(t *testing.T, text string) {
 	t.Helper()
 	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
