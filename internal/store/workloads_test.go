@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -72,11 +73,60 @@ func TestUpsertWorkloadSanitizesRemoteConfigStatusBeforeStorage(t *testing.T) {
 	}
 }
 
+func TestMigrateSanitizesLegacyRemoteConfigStatusesAtRest(t *testing.T) {
+	db := newTestDB(t)
+	raw := "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+	updatedAt := time.Unix(42, 0).UTC()
+	legacyPayload := map[string]any{
+		"status":        "failed",
+		"config_hash":   "hash-a",
+		"error_message": raw,
+		"updated_at":    updatedAt.Format(time.RFC3339),
+	}
+	legacyJSON, err := json.Marshal(legacyPayload)
+	if err != nil {
+		t.Fatalf("marshal legacy status: %v", err)
+	}
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID:         "wl-legacy",
+		Type:       "collector",
+		Status:     "connected",
+		LastSeenAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("UpsertWorkload: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE workloads SET remote_config_status = ? WHERE id = ?`, string(legacyJSON), "wl-legacy"); err != nil {
+		t.Fatalf("seed legacy remote_config_status: %v", err)
+	}
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	var stored string
+	if err := db.QueryRow(`SELECT remote_config_status FROM workloads WHERE id = ?`, "wl-legacy").Scan(&stored); err != nil {
+		t.Fatalf("query stored remote_config_status: %v", err)
+	}
+	assertNoSensitiveWorkloadStatusText(t, stored)
+
+	var got models.RemoteConfigStatus
+	if err := json.Unmarshal([]byte(stored), &got); err != nil {
+		t.Fatalf("unmarshal stored remote_config_status: %v", err)
+	}
+	if got.Status != "failed" || got.ConfigHash != "hash-a" || !got.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("status metadata was corrupted: %+v", got)
+	}
+	if got.ErrorMessage != "Remote config error details redacted" {
+		t.Fatalf("error_message = %q, want redacted summary", got.ErrorMessage)
+	}
+}
+
 func assertNoSensitiveWorkloadStatusText(t *testing.T, text string) {
 	t.Helper()
 	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("remote config status leaked %q: %s", forbidden, text)
+			t.Fatalf("remote config status leaked forbidden marker %q", forbidden)
 		}
 	}
 }
