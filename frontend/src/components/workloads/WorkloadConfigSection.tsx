@@ -75,7 +75,7 @@ function ConfigRecoveryPanel({
   const previousAvailable = contentIsAvailable(previous)
   const knownGoodTarget =
     hasKnownGood && knownGoodAvailable
-      ? lastKnownGoodRow ??
+      ? (lastKnownGoodRow ??
         (knownGood
           ? ({
               workload_id: knownGood.workload_id,
@@ -87,7 +87,7 @@ function ConfigRecoveryPanel({
               is_last_known_good: true,
               content_available: knownGood.content_available,
             } satisfies WorkloadConfig)
-          : null)
+          : null))
       : null
   const rollbackTarget = knownGoodTarget ?? (previousAvailable ? previous : null)
   const rollbackKind = knownGoodTarget ? 'last_known_good' : previousAvailable ? 'previous' : null
