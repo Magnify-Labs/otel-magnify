@@ -70,6 +70,10 @@ type Store interface {
 	GetWorkloadConfigByHash(workloadID, hash string) (*models.WorkloadConfig, error)
 	GetPushActivity(days int) ([]models.PushActivityPoint, error)
 
+	CreateCanaryStatus(status models.CanaryStatus) error
+	UpdateCanaryStatus(status models.CanaryStatus) error
+	GetCanaryStatus(workloadID, canaryID string) (*models.CanaryStatus, error)
+
 	CreateAlert(a models.Alert) error
 	ResolveAlert(id string) error
 	ListAlerts(includeResolved bool) ([]models.Alert, error)

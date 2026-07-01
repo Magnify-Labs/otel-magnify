@@ -28,6 +28,8 @@ const (
 	InstanceStatusSent = "sent"
 	// InstanceStatusNoStatus means no OpAMP status arrived before timeout.
 	InstanceStatusNoStatus = "no_status"
+	// InstanceStatusApplied is an alias for the applied remote-config instance state.
+	InstanceStatusApplied = PushStatusApplied
 )
 
 // OpAMPStatusTimeoutMessage is the user-facing timeout message for missing OpAMP status.
