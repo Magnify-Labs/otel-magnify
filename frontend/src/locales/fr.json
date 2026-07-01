@@ -182,6 +182,80 @@
             "empty": "Après le premier push réussi, ce workload conservera un historique de rollback."
           }
         }
+      },
+      "canary": {
+        "title": "Push canary manuel",
+        "subtitle": "Validez un petit groupe de cibles avant de promouvoir une config distante au reste du workload.",
+        "start": "Démarrer un canary",
+        "close": "Fermer le canary",
+        "permission_required": "Nécessite la permission workload:push_config",
+        "validating": "Validation du canary…",
+        "validate": "Valider les cibles canary",
+        "push": "Pousser le canary",
+        "pushing": "Push canary…",
+        "strategy": {
+          "label": "Groupe cible",
+          "aria": "Stratégie canary",
+          "one": "1 collecteur",
+          "count": "N collecteurs",
+          "percentage": "Pourcentage",
+          "label_selector": "Sélecteur de labels"
+        },
+        "fields": {
+          "instance": "Instance collecteur",
+          "no_instances": "Aucun collecteur live",
+          "count": "Nombre de collecteurs",
+          "percentage": "Pourcentage de collecteurs",
+          "labels": "Labels (key=value, un par ligne)"
+        },
+        "validation": {
+          "title": "Résultat de validation canary",
+          "valid": "Cibles canary validées",
+          "invalid": "Le canary ne peut pas démarrer",
+          "target_count": "{{count}} cibles sélectionnées"
+        },
+        "status": {
+          "title": "Statut canary",
+          "counts": "Comptes des cibles canary",
+          "hash_elapsed": "Config {{hash}} · durée {{elapsed}}",
+          "applied": "{{count}} appliquées",
+          "applying": "{{count}} en application",
+          "pending": "{{count}} en attente",
+          "failed": "{{count}} échouées"
+        },
+        "statuses": {
+          "running": "Canary en cours",
+          "succeeded": "Canary réussi",
+          "promoted": "Canary promu",
+          "aborted": "Canary annulé",
+          "rollback_started": "Rollback canary démarré",
+          "stopped": "Canary arrêté",
+          "failed": "Canary échoué"
+        },
+        "stop_title": "Critères d’arrêt",
+        "stop_reasons": {
+          "remote_config_failed": "Échec de config distante",
+          "collector_degraded": "Collecteur dégradé",
+          "no_heartbeat": "Aucun heartbeat du collecteur",
+          "config_drift": "Dérive de config détectée",
+          "alert_triggered": "Alerte déclenchée"
+        },
+        "target_status": {
+          "sent": "Envoyé via OpAMP",
+          "applying": "Application",
+          "applied": "Appliqué",
+          "failed": "Échec",
+          "no_status": "Aucun statut"
+        },
+        "actions": {
+          "promote": "Promouvoir",
+          "abort": "Annuler",
+          "rollback": "Restaurer"
+        },
+        "errors": {
+          "start": "Échec du démarrage canary",
+          "action": "Action canary échouée"
+        }
       }
     }
   },

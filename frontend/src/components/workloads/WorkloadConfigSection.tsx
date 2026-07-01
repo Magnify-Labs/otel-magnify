@@ -9,6 +9,7 @@ import ConfigDiffView from './ConfigDiffView'
 import PushHistoryTable from './PushHistoryTable'
 import ConfigSafetySection from './ConfigSafetySection'
 import GuidedRollbackDialog from './GuidedRollbackDialog'
+import ManualCanaryPanel from './ManualCanaryPanel'
 import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
@@ -368,7 +369,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
     validation !== null &&
     validation.valid === true
 
-  const canRollback = hasPerm(me?.groups, 'workload:push_config')
+  const hasPushPermission = hasPerm(me?.groups, 'workload:push_config')
+  const canRollback = hasPushPermission
   const knownGoodMissing = knownGoodIsError && isNotFoundError(knownGoodError)
   const recoveryPanel = (
     <ConfigRecoveryPanel
@@ -483,6 +485,13 @@ export default function WorkloadConfigSection({ workload }: Props) {
       {tab === 'diff' && <ConfigDiffView oldYaml={activeContent} newYaml={draftYaml} />}
 
       {validation && <ValidationDetails validation={validation} />}
+
+      <ManualCanaryPanel
+        workloadId={workload.id}
+        draftYaml={draftYaml}
+        disabled={!!pendingHash || pushMutation.isPending}
+        canPush={hasPushPermission}
+      />
 
       {pushError && <div className="error-text error-text-push">{pushError}</div>}
 
