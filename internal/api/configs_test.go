@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,8 +40,140 @@ func TestCreateAndListConfigs(t *testing.T) {
 
 	var configs []models.Config
 	json.NewDecoder(rec.Body).Decode(&configs)
-	if len(configs) != 1 {
-		t.Errorf("len = %d, want 1", len(configs))
+	if len(configs) < 1 {
+		t.Errorf("len = %d, want at least 1", len(configs))
+	}
+	var saved *models.Config
+	for i := range configs {
+		if configs[i].Name == "collector-base" {
+			saved = &configs[i]
+		}
+	}
+	if saved == nil {
+		t.Fatalf("created config not listed: %+v", configs)
+	}
+	if saved.Kind != models.ConfigKindSaved || saved.Status != models.ConfigStatusReady || saved.BuiltIn {
+		t.Fatalf("created config metadata = kind %q status %q built_in %v, want saved/ready/not built-in", saved.Kind, saved.Status, saved.BuiltIn)
+	}
+}
+
+func TestListConfigs_IncludesRequiredBuiltInTemplatesWithSafePlaceholders(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+
+	req := authedRequest(t, http.MethodGet, "/api/configs")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var configs []models.Config
+	if err := json.NewDecoder(rec.Body).Decode(&configs); err != nil {
+		t.Fatal(err)
+	}
+
+	required := map[string]bool{
+		"tpl-k8s-otlp-grafana":          false,
+		"tpl-k8s-otlp-datadog":          false,
+		"tpl-logs-loki":                 false,
+		"tpl-traces-tempo":              false,
+		"tpl-metrics-prometheus-remote": false,
+		"tpl-jvm-services":              false,
+		"tpl-nginx":                     false,
+		"tpl-postgresql":                false,
+		"tpl-redis":                     false,
+	}
+	for _, cfg := range configs {
+		if _, ok := required[cfg.ID]; !ok {
+			continue
+		}
+		required[cfg.ID] = true
+		if cfg.Kind != models.ConfigKindTemplate || !cfg.BuiltIn || cfg.Status != models.ConfigStatusReady {
+			t.Fatalf("template %s metadata = kind %q built_in %v status %q", cfg.ID, cfg.Kind, cfg.BuiltIn, cfg.Status)
+		}
+		if cfg.Category == "" || cfg.Stack == "" || cfg.Description == "" || len(cfg.Tags) == 0 {
+			t.Fatalf("template %s missing display metadata: %+v", cfg.ID, cfg)
+		}
+		assertTemplateHasVariables(t, cfg, "endpoint", "headers", "environment", "resource_attributes", "tls")
+		assertTemplateHasNoPlaintextSecrets(t, cfg)
+	}
+	for id, seen := range required {
+		if !seen {
+			t.Fatalf("required built-in template %s not returned", id)
+		}
+	}
+}
+
+func TestGetConfig_ResolvesBuiltInTemplateID(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+
+	req := authedRequest(t, http.MethodGet, "/api/configs/tpl-k8s-otlp-datadog")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var cfg models.Config
+	if err := json.NewDecoder(rec.Body).Decode(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ID != "tpl-k8s-otlp-datadog" || cfg.Kind != models.ConfigKindTemplate || !cfg.BuiltIn {
+		t.Fatalf("unexpected template response: %+v", cfg)
+	}
+	assertTemplateHasVariables(t, cfg, "endpoint", "headers", "environment", "resource_attributes", "tls")
+	assertTemplateHasNoPlaintextSecrets(t, cfg)
+	if !strings.Contains(cfg.Content, "${DATADOG_API_KEY}") {
+		t.Fatalf("datadog template should use DATADOG_API_KEY placeholder, content: %s", cfg.Content)
+	}
+}
+
+func TestListConfigs_CanFilterByKind(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+
+	req := authedRequest(t, http.MethodGet, "/api/configs?kind=template")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var configs []models.Config
+	if err := json.NewDecoder(rec.Body).Decode(&configs); err != nil {
+		t.Fatal(err)
+	}
+	if len(configs) == 0 {
+		t.Fatal("expected templates")
+	}
+	for _, cfg := range configs {
+		if cfg.Kind != models.ConfigKindTemplate {
+			t.Fatalf("filtered list returned non-template: %+v", cfg)
+		}
+	}
+}
+
+func assertTemplateHasVariables(t *testing.T, cfg models.Config, names ...string) {
+	t.Helper()
+	got := map[string]bool{}
+	for _, variable := range cfg.Variables {
+		got[variable.Name] = true
+	}
+	for _, name := range names {
+		if !got[name] {
+			t.Fatalf("template %s missing variable %q in %+v", cfg.ID, name, cfg.Variables)
+		}
+	}
+}
+
+func assertTemplateHasNoPlaintextSecrets(t *testing.T, cfg models.Config) {
+	t.Helper()
+	for _, forbidden := range []string{"secret-token", "api-key-", "Bearer eyJ", "password123", "supersecret"} {
+		if strings.Contains(strings.ToLower(cfg.Content), strings.ToLower(forbidden)) {
+			t.Fatalf("template %s contains real-looking secret literal %q", cfg.ID, forbidden)
+		}
+	}
+	if strings.Contains(strings.ToLower(cfg.Content), "authorization: bearer ") && !strings.Contains(cfg.Content, "${") {
+		t.Fatalf("template %s contains bearer authorization without placeholder", cfg.ID)
 	}
 }
 

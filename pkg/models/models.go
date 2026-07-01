@@ -110,13 +110,48 @@ func (r *RemoteConfigStatus) Scan(src any) error {
 	}
 }
 
+const (
+	// ConfigKindSaved identifies a user-saved config library entry.
+	ConfigKindSaved = "saved"
+	// ConfigKindTemplate identifies a built-in or user-authored reusable template.
+	ConfigKindTemplate = "template"
+	// ConfigKindDraft identifies a config library entry that is not ready to apply.
+	ConfigKindDraft = "draft"
+	// ConfigKindKnownGood identifies a config promoted as a recovery baseline.
+	ConfigKindKnownGood = "known_good"
+
+	// ConfigStatusReady marks a config library entry as ready for display/use.
+	ConfigStatusReady = "ready"
+	// ConfigStatusDraft marks a config library entry as still being edited.
+	ConfigStatusDraft = "draft"
+)
+
+// ConfigVariable describes a frontend-editable placeholder exposed by a
+// library config/template. Names are stable API contract values.
+type ConfigVariable struct {
+	Name        string `json:"name"`
+	Label       string `json:"label"`
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	Description string `json:"description,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+}
+
 // Config is a named, versionable YAML template that operators push to one or more workloads.
 type Config struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
-	CreatedBy string    `json:"created_by"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Content     string           `json:"content"`
+	CreatedAt   time.Time        `json:"created_at"`
+	CreatedBy   string           `json:"created_by"`
+	Kind        string           `json:"kind"`
+	Status      string           `json:"status"`
+	Category    string           `json:"category,omitempty"`
+	Stack       string           `json:"stack,omitempty"`
+	Description string           `json:"description,omitempty"`
+	Variables   []ConfigVariable `json:"variables,omitempty"`
+	Tags        []string         `json:"tags,omitempty"`
+	BuiltIn     bool             `json:"built_in"`
 }
 
 // WorkloadConfig records a single push of a Config to a Workload, including its current apply status.
