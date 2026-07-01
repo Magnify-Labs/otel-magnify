@@ -12,6 +12,71 @@ export type PushStatus =
 
 export type InstancePushStatus = 'sent' | 'applying' | 'applied' | 'failed' | 'no_status'
 
+export type CanaryStatusValue =
+  | 'running'
+  | 'succeeded'
+  | 'promoted'
+  | 'aborted'
+  | 'rollback_started'
+  | 'stopped'
+  | 'failed'
+
+export type CanaryStopReason =
+  | 'remote_config_failed'
+  | 'collector_degraded'
+  | 'no_heartbeat'
+  | 'config_drift'
+  | 'alert_triggered'
+  | string
+
+export interface CanarySelection {
+  strategy: 'one' | 'count' | 'n' | 'percentage' | 'label_selector' | 'instances'
+  instance_uid?: string
+  instance_uids?: string[]
+  count?: number
+  percentage?: number
+  labels?: Record<string, string>
+}
+
+export interface CanaryTarget {
+  instance_uid: string
+  pod_name?: string
+  status: InstancePushStatus | PushStatus | string
+  stop_reason?: CanaryStopReason
+  updated_at?: string
+}
+
+export interface CanaryCounts {
+  pending: number
+  applying: number
+  applied: number
+  failed: number
+}
+
+export interface CanaryValidationResult {
+  valid: boolean
+  targets: CanaryTarget[]
+  stop_reasons?: CanaryStopReason[]
+  errors?: string[]
+}
+
+export interface CanaryStatus {
+  id: string
+  workload_id: string
+  config_hash: string
+  status: CanaryStatusValue
+  selection: CanarySelection
+  targets: CanaryTarget[]
+  counts: CanaryCounts
+  stop_reasons?: CanaryStopReason[]
+  actor?: string
+  created_at: string
+  updated_at: string
+  promoted_at?: string
+  aborted_at?: string
+  rolled_back_at?: string
+}
+
 export type FingerprintSource = 'k8s' | 'host' | 'uid'
 
 export interface WorkloadConfigTimelineEntry {

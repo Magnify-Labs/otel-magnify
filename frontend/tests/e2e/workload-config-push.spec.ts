@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, mockMe } from './fixtures'
 import type { Page } from '@playwright/test'
 import { safeRemoteErrorText } from '../../src/lib/safeRemoteErrorText'
 
@@ -194,7 +194,7 @@ test('edit button enables YAML editing (regression)', async ({ loggedInPage: pag
   await mockConfigsList(page, [])
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Validate for this collector' })).toBeVisible()
 
   // The draft editor is the second `.cm-content` after Edit is clicked? Actually
@@ -312,7 +312,7 @@ test('validate exposes errors and blocks push', async ({ loggedInPage: page }) =
   })
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type('bad: yaml')
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
@@ -329,7 +329,7 @@ test('valid config unlocks push button', async ({ loggedInPage: page }) => {
   await mockValidate(page, { valid: true })
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.press('End')
   await page.keyboard.type(' # touched')
@@ -337,6 +337,150 @@ test('valid config unlocks push button', async ({ loggedInPage: page }) => {
 
   await expect(page.locator('.validation-ok')).toContainText('valid')
   await expect(page.getByRole('button', { name: 'Push' })).toBeEnabled()
+})
+
+test('canary wizard validates a percentage target group before starting canary', async ({
+  loggedInPage: page,
+}) => {
+  await mockEditorMe(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockCanaryValidation(page, {
+    valid: true,
+    targets: [
+      { instance_uid: 'inst-a', pod_name: 'otel-a', status: 'sent' },
+      { instance_uid: 'inst-b', pod_name: 'otel-b', status: 'sent' },
+    ],
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Start canary' }).click()
+  await page.getByLabel('Canary strategy').selectOption('percentage')
+  await page.getByLabel('Percentage of collectors').fill('50')
+  await page.getByRole('button', { name: 'Validate canary targets' }).click()
+
+  await expect(page.locator('.canary-validation-panel')).toContainText('2 selected targets')
+  await expect(page.locator('.canary-validation-panel')).toContainText('otel-a')
+  await expect(page.getByRole('button', { name: 'Push canary' })).toBeEnabled()
+})
+
+test('canary validation expires when the draft changes before push', async ({
+  loggedInPage: page,
+}) => {
+  await mockEditorMe(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockCanaryValidation(page, {
+    valid: true,
+    targets: [{ instance_uid: 'inst-a', pod_name: 'otel-a', status: 'sent' }],
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Start canary' }).click()
+  await page.getByRole('button', { name: 'Validate canary targets' }).click()
+  await expect(page.getByRole('button', { name: 'Push canary' })).toBeEnabled()
+
+  await page.locator('.cm-content').first().click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' # changed after validation')
+
+  await expect(page.getByRole('button', { name: 'Push canary' })).toBeDisabled()
+})
+
+test('canary validation failure blocks submit and explains stop reason', async ({
+  loggedInPage: page,
+}) => {
+  await mockEditorMe(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockCanaryValidation(
+    page,
+    {
+      valid: false,
+      errors: ['stale heartbeat: inst-c'],
+      stop_reasons: ['no_heartbeat'],
+      targets: [
+        { instance_uid: 'inst-c', pod_name: 'otel-c', status: 'sent', stop_reason: 'no_heartbeat' },
+      ],
+    },
+    409,
+  )
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Start canary' }).click()
+  await page.getByRole('button', { name: 'Validate canary targets' }).click()
+
+  await expect(page.locator('.canary-validation-panel')).toContainText(
+    'No heartbeat from collector',
+  )
+  await expect(page.locator('.canary-validation-panel')).toContainText('stale heartbeat: inst-c')
+  await expect(page.getByRole('button', { name: 'Push canary' })).toBeDisabled()
+})
+
+test('canary status panel shows stop reasons and action states', async ({ loggedInPage: page }) => {
+  await mockEditorMe(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockCanaryValidation(page, {
+    valid: true,
+    targets: [{ instance_uid: 'inst-a', pod_name: 'otel-a', status: 'sent' }],
+  })
+  await mockStartCanary(page, {
+    id: 'canary_1234',
+    workload_id: WORKLOAD_ID,
+    config_hash: 'feedfacefeedface',
+    status: 'stopped',
+    selection: { strategy: 'one', instance_uid: 'inst-a' },
+    counts: { pending: 0, applying: 0, applied: 0, failed: 1 },
+    stop_reasons: ['remote_config_failed'],
+    targets: [
+      {
+        instance_uid: 'inst-a',
+        pod_name: 'otel-a',
+        status: 'failed',
+        stop_reason: 'remote_config_failed',
+      },
+    ],
+    created_at: '2026-07-01T10:00:00Z',
+    updated_at: '2026-07-01T10:01:00Z',
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Start canary' }).click()
+  await page.getByRole('button', { name: 'Validate canary targets' }).click()
+  await page.getByRole('button', { name: 'Push canary' }).click()
+
+  const panel = page.locator('.canary-status-panel')
+  await expect(panel).toContainText('Canary stopped')
+  await expect(panel).toContainText('Remote config failed')
+  await expect(panel).toContainText('feedface')
+  await expect(page.getByRole('button', { name: 'Promote' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Abort' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Rollback', exact: true })).toBeEnabled()
+})
+
+test('viewer can inspect canary status but cannot start or act on it', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Start canary' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Start canary' })).toHaveAttribute(
+    'title',
+    /Requires workload:push_config permission/,
+  )
 })
 
 test('validation details show separated static component and runtime checks', async ({
@@ -354,7 +498,7 @@ test('validation details show separated static component and runtime checks', as
   })
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   const details = page.locator('.validation-details')
@@ -434,7 +578,7 @@ test('validation details separate non-blocking warnings from blocking errors', a
   })
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   const details = page.locator('.validation-details')
@@ -491,7 +635,7 @@ test('validation details explain when otelcol runtime check is skipped', async (
   })
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   const details = page.locator('.validation-details')
@@ -630,7 +774,7 @@ test('remote config errors are grouped by cause with affected instances', async 
       failed_count: 3,
       pending_count: 0,
       error_message:
-        'collector failed with authorization: Bearer raw-to...oken and endpoint https://collector.internal/v1/traces',
+        'collector failed with authorization: Bearer *** and endpoint https://collector.internal/v1/traces',
       instance_statuses: [
         {
           instance_uid: 'inst-a',
@@ -701,7 +845,7 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   )
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type(' # touched')
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
@@ -804,7 +948,7 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   )
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type(' # applied-flow')
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
@@ -838,7 +982,7 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   await expect(page.locator('.push-banner-applied')).toContainText('feedface')
 
   // Re-entering edit mode starts from the active config (not the previous draft)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect(page.locator('.cm-content').first()).not.toContainText('# applied-flow')
 })
 
@@ -849,7 +993,7 @@ test('diff tab shows two editor panels', async ({ loggedInPage: page }) => {
   await mockConfigsList(page, [])
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.type('a: 2\n')
@@ -954,6 +1098,44 @@ test('YAML keys are colored via Signal Deck theme', async ({ loggedInPage: page 
   const color = await firstSpan.evaluate((el) => getComputedStyle(el).color)
   expect(color).toBe('rgb(212, 168, 74)')
 })
+
+async function mockEditorMe(page: Page) {
+  await mockMe(page, {
+    groups: [
+      {
+        id: 'grp_system_editor',
+        name: 'editor',
+        role: 'editor',
+        is_system: true,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  })
+}
+
+function mockCanaryValidation(
+  page: Page,
+  result: Record<string, unknown> & { valid: boolean },
+  status = 200,
+) {
+  return page.route(`**/api/workloads/${WORKLOAD_ID}/config/canary/validate`, (route) =>
+    route.fulfill({
+      status,
+      contentType: 'application/json',
+      body: JSON.stringify(result),
+    }),
+  )
+}
+
+function mockStartCanary(page: Page, result: Record<string, unknown>) {
+  return page.route(`**/api/workloads/${WORKLOAD_ID}/config/canary`, (route) =>
+    route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify(result),
+    }),
+  )
+}
 
 function mockConfigsList(page: Page, configs: Array<{ id: string; name: string }>) {
   return page.route(`**/api/configs`, (route) =>
@@ -1150,7 +1332,7 @@ test('selecting a config overwrites in-progress draft silently (no confirm)', as
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   // Enter edit mode and type something
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.type('user-typed-mess: yes\n')

@@ -182,6 +182,80 @@
             "empty": "After the first successful push, this workload will keep rollback history."
           }
         }
+      },
+      "canary": {
+        "title": "Manual canary push",
+        "subtitle": "Validate a small target set before promoting a remote config to the rest of the workload.",
+        "start": "Start canary",
+        "close": "Close canary",
+        "permission_required": "Requires workload:push_config permission",
+        "validating": "Validating canary…",
+        "validate": "Validate canary targets",
+        "push": "Push canary",
+        "pushing": "Pushing canary…",
+        "strategy": {
+          "label": "Target group",
+          "aria": "Canary strategy",
+          "one": "1 collector",
+          "count": "N collectors",
+          "percentage": "Percentage",
+          "label_selector": "Label selector"
+        },
+        "fields": {
+          "instance": "Collector instance",
+          "no_instances": "No live collectors",
+          "count": "Number of collectors",
+          "percentage": "Percentage of collectors",
+          "labels": "Labels (key=value, one per line)"
+        },
+        "validation": {
+          "title": "Canary validation result",
+          "valid": "Canary targets validated",
+          "invalid": "Canary cannot start",
+          "target_count": "{{count}} selected targets"
+        },
+        "status": {
+          "title": "Canary status",
+          "counts": "Canary target counts",
+          "hash_elapsed": "Config {{hash}} · elapsed {{elapsed}}",
+          "applied": "{{count}} applied",
+          "applying": "{{count}} applying",
+          "pending": "{{count}} pending",
+          "failed": "{{count}} failed"
+        },
+        "statuses": {
+          "running": "Canary running",
+          "succeeded": "Canary succeeded",
+          "promoted": "Canary promoted",
+          "aborted": "Canary aborted",
+          "rollback_started": "Canary rollback started",
+          "stopped": "Canary stopped",
+          "failed": "Canary failed"
+        },
+        "stop_title": "Stop criteria",
+        "stop_reasons": {
+          "remote_config_failed": "Remote config failed",
+          "collector_degraded": "Collector degraded",
+          "no_heartbeat": "No heartbeat from collector",
+          "config_drift": "Config drift detected",
+          "alert_triggered": "Alert triggered"
+        },
+        "target_status": {
+          "sent": "Sent via OpAMP",
+          "applying": "Applying",
+          "applied": "Applied",
+          "failed": "Failed",
+          "no_status": "No status yet"
+        },
+        "actions": {
+          "promote": "Promote",
+          "abort": "Abort",
+          "rollback": "Rollback"
+        },
+        "errors": {
+          "start": "Failed to start canary",
+          "action": "Canary action failed"
+        }
       }
     }
   },

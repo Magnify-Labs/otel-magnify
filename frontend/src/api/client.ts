@@ -19,6 +19,9 @@ import type {
   RollbackStatusReport,
   OTelConfigDiffRequest,
   OTelConfigDiffResponse,
+  CanarySelection,
+  CanaryStatus,
+  CanaryValidationResult,
 } from '../types'
 
 declare module 'axios' {
@@ -122,6 +125,29 @@ export const workloadsAPI = {
       .then((r) => r.data),
   rollbackDefault: (id: string) =>
     api.post<DefaultRollbackResponse>(`/workloads/${id}/rollback`).then((r) => r.data),
+  validateCanary: (id: string, config: string, selection: CanarySelection) =>
+    api
+      .post<CanaryValidationResult>(`/workloads/${id}/config/canary/validate`, {
+        config,
+        selection,
+      })
+      .then((r) => r.data),
+  startCanary: (id: string, config: string, selection: CanarySelection) =>
+    api
+      .post<CanaryStatus>(`/workloads/${id}/config/canary`, { config, selection })
+      .then((r) => r.data),
+  getCanary: (id: string, canaryId: string) =>
+    api.get<CanaryStatus>(`/workloads/${id}/config/canary/${canaryId}`).then((r) => r.data),
+  promoteCanary: (id: string, canaryId: string) =>
+    api
+      .post<CanaryStatus>(`/workloads/${id}/config/canary/${canaryId}/promote`)
+      .then((r) => r.data),
+  abortCanary: (id: string, canaryId: string) =>
+    api.post<CanaryStatus>(`/workloads/${id}/config/canary/${canaryId}/abort`).then((r) => r.data),
+  rollbackCanary: (id: string, canaryId: string) =>
+    api
+      .post<CanaryStatus>(`/workloads/${id}/config/canary/${canaryId}/rollback`)
+      .then((r) => r.data),
   getRollbackStatus: (id: string, requestId: string) =>
     api
       .get<RollbackStatusReport>(`/workloads/${id}/rollback/status`, {
