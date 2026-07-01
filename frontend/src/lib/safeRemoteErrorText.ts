@@ -3,7 +3,14 @@ export function safeRemoteErrorText(value?: string): string {
 }
 
 export function safeRollbackReasonText(value?: string): string {
-  return safeRemoteErrorTextWithOptions(value, { includeBareHostEndpoints: true })
+  return safeRemoteErrorTextWithOptions(value, rollbackReasonTextOptions)
+}
+
+const rollbackReasonTextOptions: RemoteErrorTextOptions = {
+  // Rollback reasons can arrive from legacy websocket replay before backend
+  // normalization, so treat bare host:port strings as endpoints in this
+  // display-only path without broadening every remote error label.
+  includeBareHostEndpoints: true,
 }
 
 function safeRemoteErrorTextWithOptions(
