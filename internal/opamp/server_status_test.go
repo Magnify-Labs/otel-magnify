@@ -275,11 +275,11 @@ func assertNoSensitiveRemoteConfigText(t *testing.T, text string) {
 	t.Helper()
 	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("text leaked %q: %s", forbidden, text)
+			t.Fatalf("text leaked forbidden marker %q", forbidden)
 		}
 	}
 	if !strings.Contains(text, "redacted") {
-		t.Fatalf("text should explain redacted details: %s", text)
+		t.Fatalf("text should explain redacted details")
 	}
 }
 
@@ -390,11 +390,11 @@ func assertNoOpAMPTestLeak(t *testing.T, forbidden string, db *store.DB, n *fake
 	}
 	for _, row := range hist {
 		if containsRemoteSecret(row.ErrorMessage, forbidden) {
-			t.Fatalf("history error_message leaked %q: %+v", forbidden, row)
+			t.Fatalf("history error_message leaked forbidden marker %q", forbidden)
 		}
 		for _, inst := range row.InstanceStatuses {
 			if containsRemoteSecret(inst.ErrorMessage, forbidden) {
-				t.Fatalf("instance error_message leaked %q: %+v", forbidden, inst)
+				t.Fatalf("instance error_message leaked forbidden marker %q", forbidden)
 			}
 		}
 	}
@@ -403,16 +403,16 @@ func assertNoOpAMPTestLeak(t *testing.T, forbidden string, db *store.DB, n *fake
 		t.Fatal(err)
 	}
 	if wl.RemoteConfigStatus != nil && containsRemoteSecret(wl.RemoteConfigStatus.ErrorMessage, forbidden) {
-		t.Fatalf("workload remote status leaked %q: %+v", forbidden, wl.RemoteConfigStatus)
+		t.Fatalf("workload remote status leaked forbidden marker %q", forbidden)
 	}
 	for _, status := range n.statuses {
 		if containsRemoteSecret(status.status.ErrorMessage, forbidden) {
-			t.Fatalf("broadcast status leaked %q: %+v", forbidden, status.status)
+			t.Fatalf("broadcast status leaked forbidden marker %q", forbidden)
 		}
 	}
 	for _, rb := range n.rollbacks {
 		if containsRemoteSecret(rb.reason, forbidden) {
-			t.Fatalf("rollback reason leaked %q: %+v", forbidden, rb)
+			t.Fatalf("rollback reason leaked forbidden marker %q", forbidden)
 		}
 	}
 }
