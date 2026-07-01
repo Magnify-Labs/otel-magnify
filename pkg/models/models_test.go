@@ -123,9 +123,142 @@ func TestRemoteConfigStatusJSONUnmarshalSanitizesSensitiveErrorMessage(t *testin
 	}
 }
 
+func TestSanitizeRemoteConfigErrorMessageCanonicalRollbackContract(t *testing.T) {
+	sensitiveRollbackMessage := strings.Join([]string{
+		"collector failed while applying remote config for tenant tenant-a",
+		"SECRET_TOKEN=abc123",
+		"authorization=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret",
+		"bearer super-secret-token",
+		"endpoint=https://tenant-a.internal:4318/v1/traces",
+		"username=tenant-a password=hunter2",
+		"config snippet: exporters:\n  otlp:\n    endpoint: https://tenant-a.internal:4317\n    headers:\n      authorization: Bearer SECRET_TOKEN",
+	}, " ")
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "unknown sensitive rollback details",
+			raw:  sensitiveRollbackMessage,
+			want: "Remote config error details redacted",
+		},
+		{
+			name: "collector validation summary",
+			raw:  "invalid component in config snippet: exporters.otlp.headers.authorization=Bearer SECRET_TOKEN endpoint=https://tenant-a.internal:4317",
+			want: "Collector rejected the config",
+		},
+		{
+			name: "policy summary",
+			raw:  "policy refused tenant tenant-a credentials username=tenant-a password=hunter2 authorization=Bearer SECRET_TOKEN",
+			want: "Agent policy rejected the config",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SanitizeRemoteConfigErrorMessage(tt.raw)
+			if got != tt.want {
+				t.Fatalf("SanitizeRemoteConfigErrorMessage() = %q, want %q", got, tt.want)
+			}
+			assertNoSensitiveRemoteStatusText(t, got)
+		})
+	}
+}
+
+func TestRemoteConfigStatusModelBoundariesUseRollbackSanitizerContract(t *testing.T) {
+	raw := strings.Join([]string{
+		"collector failed while applying remote config for tenant tenant-a",
+		"SECRET_TOKEN=abc123",
+		"authorization=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret",
+		"bearer super-secret-token",
+		"endpoint=https://tenant-a.internal:4318/v1/traces",
+		"username=tenant-a password=hunter2",
+		"config snippet: exporters:\n  otlp:\n    endpoint: https://tenant-a.internal:4317\n    headers:\n      authorization: Bearer SECRET_TOKEN",
+	}, " ")
+	want := "Remote config error details redacted"
+	base := RemoteConfigStatus{
+		Status:       "failed",
+		ConfigHash:   "hash-a",
+		ErrorMessage: raw,
+		UpdatedAt:    time.Unix(0, 0).UTC(),
+	}
+
+	t.Run("Value", func(t *testing.T) {
+		encoded, err := base.Value()
+		if err != nil {
+			t.Fatalf("Value: %v", err)
+		}
+		assertRemoteConfigStatusJSONErrorMessage(t, []byte(encoded), want)
+	})
+
+	t.Run("Scan", func(t *testing.T) {
+		legacy, err := json.Marshal(map[string]any{
+			"status":        "failed",
+			"config_hash":   "hash-a",
+			"error_message": raw,
+			"updated_at":    time.Unix(0, 0).UTC(),
+		})
+		if err != nil {
+			t.Fatalf("Marshal legacy fixture: %v", err)
+		}
+
+		var status RemoteConfigStatus
+		if err := status.Scan(string(legacy)); err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		if status.ErrorMessage != want {
+			t.Fatalf("ErrorMessage = %q, want %q", status.ErrorMessage, want)
+		}
+		assertNoSensitiveRemoteStatusText(t, status.ErrorMessage)
+	})
+
+	t.Run("MarshalJSON", func(t *testing.T) {
+		encoded, err := json.Marshal(base)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		assertRemoteConfigStatusJSONErrorMessage(t, encoded, want)
+	})
+
+	t.Run("UnmarshalJSON", func(t *testing.T) {
+		legacy, err := json.Marshal(map[string]any{
+			"status":        "failed",
+			"config_hash":   "hash-a",
+			"error_message": raw,
+			"updated_at":    time.Unix(0, 0).UTC(),
+		})
+		if err != nil {
+			t.Fatalf("Marshal legacy fixture: %v", err)
+		}
+
+		var status RemoteConfigStatus
+		if err := json.Unmarshal(legacy, &status); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+		if status.ErrorMessage != want {
+			t.Fatalf("ErrorMessage = %q, want %q", status.ErrorMessage, want)
+		}
+		assertNoSensitiveRemoteStatusText(t, status.ErrorMessage)
+	})
+}
+
+func assertRemoteConfigStatusJSONErrorMessage(t *testing.T, payload []byte, want string) {
+	t.Helper()
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("Unmarshal encoded status: %v; json=%s", err, payload)
+	}
+	if got := decoded["error_message"]; got != want {
+		t.Fatalf("error_message = %q, want %q; json=%s", got, want, payload)
+	}
+	assertNoSensitiveRemoteStatusText(t, string(payload))
+}
+
 func assertNoSensitiveRemoteStatusText(t *testing.T, text string) {
 	t.Helper()
-	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
+	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "Bearer SECRET_TOKEN", "eyJhbGci", "super-secret", "super-secret-token", "tenant-a", "tenant-a.internal", "4318", "4317", "/v1/traces", "hunter2", "password=", "username=", "exporters:", "headers:"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("text leaked %q: %s", forbidden, text)
 		}
