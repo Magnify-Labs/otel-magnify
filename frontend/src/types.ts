@@ -334,6 +334,10 @@ export interface RollbackStatusReport {
   workload_id: string
   target_hash: string
   target_label?: string
+  target_status?: PushStatus
+  target_applied_at?: string
+  target_submitted_at?: string
+  target_pushed_by?: string
   request_status: 'accepted' | 'request_failed'
   apply_status: RollbackApplyStatus
   terminal: boolean
@@ -343,8 +347,6 @@ export interface RollbackStatusReport {
   elapsed_ms: number
   timeout_seconds: number
   timed_out: boolean
-  history_row?: WorkloadConfig
-  remote_config_status?: RemoteConfigStatus
   last_known_status?: PushStatus
   error_message?: string
 }

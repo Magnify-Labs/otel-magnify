@@ -330,7 +330,11 @@ test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page
     }),
   )
   await page.route('**/api/configs/diff', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(HIGH_OTEL_DIFF) }),
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(HIGH_OTEL_DIFF),
+    }),
   )
 
   await gotoWorkloadDetail(page)
@@ -341,7 +345,9 @@ test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page
   await expect(page.locator('.config-diff-view .cm-content')).toHaveCount(2)
 })
 
-test('viewer cannot initiate rollback or known-good history actions', async ({ loggedInPage: page }) => {
+test('viewer cannot initiate rollback or known-good history actions', async ({
+  loggedInPage: page,
+}) => {
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, BASE_HISTORY)
@@ -359,7 +365,9 @@ test('viewer cannot initiate rollback or known-good history actions', async ({ l
 
   await expect(rollbackButton).toBeDisabled()
   await expect(rollbackButton).toHaveAttribute('title', 'Requires workload:push_config permission')
-  const knownGoodButton = olderRow.getByRole('button', { name: /Mark as known-good|Clear known-good/ })
+  const knownGoodButton = olderRow.getByRole('button', {
+    name: /Mark as known-good|Clear known-good/,
+  })
   await expect(knownGoodButton).toBeDisabled()
   await expect(knownGoodButton).toHaveAttribute('title', 'Requires workload:push_config permission')
   expect(prepareHit).toBe(false)
@@ -621,6 +629,10 @@ test('guided rollback previews diff, warnings, confirmation, and final status re
           workload_id: WORKLOAD_ID,
           target_hash: HASH_OLD,
           target_label: 'stable-2026-04',
+          target_status: 'applied',
+          target_applied_at: '2026-05-08T12:07:03Z',
+          target_submitted_at: '2026-05-08T12:07:00Z',
+          target_pushed_by: 'admin@e2e.local',
           request_status: 'accepted',
           apply_status: 'applied',
           terminal: true,
@@ -630,11 +642,7 @@ test('guided rollback previews diff, warnings, confirmation, and final status re
           elapsed_ms: 4100,
           timeout_seconds: 30,
           timed_out: false,
-          remote_config_status: {
-            status: 'applied',
-            config_hash: HASH_OLD,
-            updated_at: '2026-05-08T12:07:04Z',
-          },
+          last_known_status: 'applied',
         }),
       }),
   )
@@ -668,8 +676,137 @@ test('guided rollback previews diff, warnings, confirmation, and final status re
   expect(legacyPushHit).toBe(false)
   await expect(dialog.getByText('Rollback applied')).toBeVisible()
   await expect(dialog.getByText('Duration: 4.1s')).toBeVisible()
-  await expect(dialog.getByText(`Remote config: applied ${HASH_OLD.slice(0, 12)}`)).toBeVisible()
+  await expect(
+    dialog.getByText(
+      `Remote config: applied ${HASH_OLD.slice(0, 12)} (target applied, last known applied)`,
+    ),
+  ).toBeVisible()
 })
+
+const ROLLBACK_STATUS_LABEL_CASES = [
+  {
+    applyStatus: 'accepted',
+    targetStatus: 'sent',
+    label: 'Rollback accepted',
+    terminal: false,
+    duration: '120ms',
+  },
+  {
+    applyStatus: 'applying',
+    targetStatus: 'applying',
+    label: 'Applying rollback',
+    terminal: false,
+    duration: '850ms',
+  },
+  {
+    applyStatus: 'applied',
+    targetStatus: 'applied',
+    label: 'Rollback applied',
+    terminal: true,
+    terminalStatus: 'applied',
+    duration: '1.5s',
+  },
+  {
+    applyStatus: 'failed',
+    targetStatus: 'failed',
+    label: 'Rollback failed',
+    terminal: true,
+    terminalStatus: 'failed',
+    duration: '2s',
+  },
+] as const
+
+for (const statusCase of ROLLBACK_STATUS_LABEL_CASES) {
+  test(`guided rollback report renders redacted ${statusCase.applyStatus} status`, async ({
+    loggedInPage: page,
+  }) => {
+    await mockWorkload(page)
+    await mockActiveConfig(page)
+    await mockHistory(page, BASE_HISTORY)
+    await mockConfigsList(page)
+
+    await page.route(
+      `**/api/workloads/${WORKLOAD_ID}/rollback/prepare?target_hash=${HASH_OLD}`,
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(buildRollbackPrepare()),
+        }),
+    )
+
+    const requestId = `rb-${statusCase.applyStatus}`
+    await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/*/rollback`, (route) =>
+      route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schema_version: 'guided-rollback-action.v1',
+          request_id: requestId,
+          status: 'accepted',
+          message: 'rollback initiated',
+          workload_id: WORKLOAD_ID,
+          target_hash: HASH_OLD,
+          config_hash: HASH_OLD,
+          timeout_seconds: 30,
+        }),
+      }),
+    )
+    await page.route(
+      `**/api/workloads/${WORKLOAD_ID}/rollback/status?request_id=${requestId}`,
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            schema_version: 'guided-rollback-status.v1',
+            request_id: requestId,
+            workload_id: WORKLOAD_ID,
+            target_hash: HASH_OLD,
+            target_label: 'stable-2026-04',
+            target_status: statusCase.targetStatus,
+            target_applied_at: '2026-05-08T12:07:03Z',
+            target_submitted_at: '2026-05-08T12:07:00Z',
+            target_pushed_by: 'admin@e2e.local',
+            request_status: 'accepted',
+            apply_status: statusCase.applyStatus,
+            terminal: statusCase.terminal,
+            terminal_status: statusCase.terminalStatus,
+            started_at: '2026-05-08T12:07:00Z',
+            updated_at: '2026-05-08T12:07:04Z',
+            elapsed_ms:
+              statusCase.applyStatus === 'accepted'
+                ? 120
+                : statusCase.applyStatus === 'applying'
+                  ? 850
+                  : statusCase.applyStatus === 'applied'
+                    ? 1500
+                    : 2000,
+            timeout_seconds: 30,
+            timed_out: false,
+            last_known_status: statusCase.targetStatus,
+          }),
+        }),
+    )
+
+    await gotoWorkloadDetail(page)
+    const olderRow = page.locator('.history-table tbody tr').nth(1)
+    await olderRow.getByRole('button', { name: 'Rollback' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Guided rollback' })
+    await dialog.getByLabel('I understand this will replace the collector remote config').check()
+    await dialog.getByRole('button', { name: 'Confirm rollback with warnings' }).click()
+
+    await expect(dialog.getByText(statusCase.label)).toBeVisible()
+    await expect(dialog.getByText(`Duration: ${statusCase.duration}`)).toBeVisible()
+    await expect(
+      dialog.getByText(
+        `Remote config: ${statusCase.applyStatus} ${HASH_OLD.slice(0, 12)} (target ${statusCase.targetStatus}, last known ${statusCase.targetStatus})`,
+      ),
+    ).toBeVisible()
+    await expect(dialog.getByText('remote_config_status')).toHaveCount(0)
+    await expect(dialog.getByText('history_row')).toHaveCount(0)
+  })
+}
 
 test('guided rollback blocks invalid targets and reports prepare failures', async ({
   loggedInPage: page,
@@ -815,7 +952,9 @@ test('compare dialog renders enriched OTel diff without leaking redacted secrets
   await expect(page.getByText(SECRET_LITERAL)).toHaveCount(0)
 })
 
-test('known-good panel renders config states and defaults rollback to Last known-good', async ({ loggedInPage: page }) => {
+test('known-good panel renders config states and defaults rollback to Last known-good', async ({
+  loggedInPage: page,
+}) => {
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, [
@@ -884,7 +1023,9 @@ test('known-good panel renders config states and defaults rollback to Last known
   await expect(page.getByText('Last known-good').first()).toBeVisible()
   await expect(page.getByText('Failed candidate').first()).toBeVisible()
 
-  const knownGoodRow = page.locator('.history-table tbody tr').filter({ hasText: HASH_OLD.substring(0, 8) })
+  const knownGoodRow = page
+    .locator('.history-table tbody tr')
+    .filter({ hasText: HASH_OLD.substring(0, 8) })
   await expect(knownGoodRow.getByText('Previous')).toBeVisible()
   await expect(knownGoodRow.getByText('Last known-good')).toBeVisible()
 
@@ -896,7 +1037,9 @@ test('known-good panel renders config states and defaults rollback to Last known
   expect(legacyDefaultRollbackHit).toBe(false)
 })
 
-test('mark as known-good confirms replacement and posts precondition', async ({ loggedInPage: page }) => {
+test('mark as known-good confirms replacement and posts precondition', async ({
+  loggedInPage: page,
+}) => {
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, [
@@ -919,31 +1062,47 @@ test('mark as known-good confirms replacement and posts precondition', async ({ 
   )
 
   let posted: unknown = null
-  await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/*/known-good`, async (route, request) => {
-    posted = request.postDataJSON()
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        changed: true,
-        replaced_config_id: HASH_OLD,
-        known_good: { workload_id: WORKLOAD_ID, config_id: HASH_NEW, marked_at: new Date().toISOString(), content_available: true },
-      }),
-    })
-  })
+  await page.route(
+    `**/api/workloads/${WORKLOAD_ID}/configs/*/known-good`,
+    async (route, request) => {
+      posted = request.postDataJSON()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          changed: true,
+          replaced_config_id: HASH_OLD,
+          known_good: {
+            workload_id: WORKLOAD_ID,
+            config_id: HASH_NEW,
+            marked_at: new Date().toISOString(),
+            content_available: true,
+          },
+        }),
+      })
+    },
+  )
 
   await gotoWorkloadDetail(page)
-  const currentRow = page.locator('.history-table tbody tr').filter({ hasText: HASH_NEW.substring(0, 8) })
+  const currentRow = page
+    .locator('.history-table tbody tr')
+    .filter({ hasText: HASH_NEW.substring(0, 8) })
   await currentRow.getByRole('button', { name: 'Mark as known-good' }).click()
-  await expect(page.getByRole('dialog', { name: 'Mark this revision as Last known-good?' })).toBeVisible()
-  await expect(page.getByText(`This replaces ${HASH_OLD.substring(0, 8)} as Last known-good.`)).toBeVisible()
+  await expect(
+    page.getByRole('dialog', { name: 'Mark this revision as Last known-good?' }),
+  ).toBeVisible()
+  await expect(
+    page.getByText(`This replaces ${HASH_OLD.substring(0, 8)} as Last known-good.`),
+  ).toBeVisible()
   await page.getByRole('button', { name: 'Mark as Last known-good' }).click()
 
   await expect.poll(() => posted).not.toBeNull()
   expect(posted).toMatchObject({ if_current_known_good: HASH_OLD })
 })
 
-test('known-good empty fallback uses Previous and viewer cannot mark revisions', async ({ loggedInPage: page }) => {
+test('known-good empty fallback uses Previous and viewer cannot mark revisions', async ({
+  loggedInPage: page,
+}) => {
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, [
@@ -952,13 +1111,19 @@ test('known-good empty fallback uses Previous and viewer cannot mark revisions',
   ])
   await mockConfigsList(page)
   await page.route(`**/api/workloads/${WORKLOAD_ID}/known-good`, (route) =>
-    route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'known-good config not found' }) }),
+    route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'known-good config not found' }),
+    }),
   )
 
   await gotoWorkloadDetail(page, 'viewer')
 
   await expect(page.getByText('Last known-good: None')).toBeVisible()
-  await expect(page.getByText('Rollback will use Previous until a known-good revision is marked.')).toBeVisible()
+  await expect(
+    page.getByText('Rollback will use Previous until a known-good revision is marked.'),
+  ).toBeVisible()
   const defaultRollback = page.getByRole('button', { name: 'Rollback to Previous' })
   await expect(defaultRollback).toBeDisabled()
   await expect(defaultRollback).toHaveAttribute('title', 'Requires workload:push_config permission')
