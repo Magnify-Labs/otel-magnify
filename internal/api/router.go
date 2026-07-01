@@ -110,6 +110,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.Use(a.Middleware)
 
 		r.Get("/api/workloads", api.handleListWorkloads)
+		r.Get("/api/workloads/version-intelligence", api.handleFleetVersionIntelligence)
 		r.Get("/api/workloads/{id}", api.handleGetWorkload)
 		r.Get("/api/workloads/{id}/instances", api.handleListWorkloadInstances)
 		r.Get("/api/workloads/{id}/events", api.handleListWorkloadEvents)

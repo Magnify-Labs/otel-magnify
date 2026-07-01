@@ -299,6 +299,72 @@ type Workload struct {
 	ArchivedAt          *time.Time           `json:"archived_at,omitempty"`
 }
 
+// FleetVersionIntelligence is the stable API response for collector fleet
+// version posture and config/component compatibility. It intentionally returns
+// metadata and component names only, never raw config content.
+type FleetVersionIntelligence struct {
+	SchemaVersion               string                             `json:"schema_version"`
+	RecommendedVersion          string                             `json:"recommended_version"`
+	VersionMatrix               []FleetVersionMatrixEntry          `json:"version_matrix"`
+	CollectorsBelowRecommended  []FleetCollectorVersionFinding     `json:"collectors_below_recommended"`
+	UnsupportedConfigComponents []FleetUnsupportedComponentFinding `json:"unsupported_config_components"`
+	InvalidVersions             []FleetInvalidVersionFinding       `json:"invalid_versions"`
+	Recommendations             []FleetVersionRecommendation       `json:"recommendations"`
+}
+
+// FleetVersionMatrixEntry groups workloads by group, type, status, and
+// reported version for fleet-level posture summaries.
+type FleetVersionMatrixEntry struct {
+	Group       string   `json:"group"`
+	Type        string   `json:"type"`
+	Status      string   `json:"status"`
+	Version     string   `json:"version"`
+	Count       int      `json:"count"`
+	WorkloadIDs []string `json:"workload_ids"`
+}
+
+// FleetCollectorVersionFinding identifies one collector running below the
+// recommended version supplied to the fleet intelligence API.
+type FleetCollectorVersionFinding struct {
+	WorkloadID         string `json:"workload_id"`
+	DisplayName        string `json:"display_name"`
+	Group              string `json:"group"`
+	Version            string `json:"version"`
+	RecommendedVersion string `json:"recommended_version"`
+}
+
+// FleetInvalidVersionFinding identifies one collector whose reported version
+// cannot be compared safely against the recommended version.
+type FleetInvalidVersionFinding struct {
+	WorkloadID  string `json:"workload_id"`
+	DisplayName string `json:"display_name"`
+	Version     string `json:"version"`
+	Reason      string `json:"reason"`
+}
+
+// FleetUnsupportedComponentFinding identifies a config component referenced by
+// a workload config that is not present in the collector's reported components.
+type FleetUnsupportedComponentFinding struct {
+	WorkloadID     string   `json:"workload_id"`
+	DisplayName    string   `json:"display_name"`
+	ConfigHash     string   `json:"config_hash"`
+	Category       string   `json:"category"`
+	ComponentType  string   `json:"component_type"`
+	Path           string   `json:"path"`
+	AvailableHash  string   `json:"available_hash,omitempty"`
+	AvailableTypes []string `json:"available_types,omitempty"`
+}
+
+// FleetVersionRecommendation is an operator action suggested by the fleet
+// version intelligence API.
+type FleetVersionRecommendation struct {
+	Action     string   `json:"action"`
+	WorkloadID string   `json:"workload_id,omitempty"`
+	ConfigHash string   `json:"config_hash,omitempty"`
+	Reason     string   `json:"reason"`
+	Components []string `json:"components,omitempty"`
+}
+
 // WorkloadEvent is an append-only record of a pod transition on a workload.
 type WorkloadEvent struct {
 	ID          int64     `json:"id"`
