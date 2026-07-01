@@ -56,6 +56,16 @@ function durationLabel(ms?: number) {
   return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`
 }
 
+function remoteStatusLine(report: RollbackStatusReport) {
+  const details = [
+    report.target_status ? `target ${report.target_status}` : null,
+    report.last_known_status ? `last known ${report.last_known_status}` : null,
+  ].filter(Boolean)
+
+  const summary = `${report.apply_status} ${shortHash(report.target_hash)}`
+  return details.length > 0 ? `${summary} (${details.join(', ')})` : summary
+}
+
 function FindingList({
   title,
   findings,
@@ -287,12 +297,7 @@ export default function GuidedRollbackDialog({ workloadId, target, onClose }: Pr
               <section className="rollback-report" aria-label="Post-rollback report">
                 <h3>{reportLabel(statusReport)}</h3>
                 <p>Duration: {durationLabel(statusReport.elapsed_ms)}</p>
-                <p>
-                  Remote config:{' '}
-                  {statusReport.remote_config_status
-                    ? `${statusReport.remote_config_status.status} ${shortHash(statusReport.remote_config_status.config_hash)}`
-                    : 'not reported yet'}
-                </p>
+                <p>Remote config: {remoteStatusLine(statusReport)}</p>
                 {statusReport.error_message ? (
                   <p className="error-text">{statusReport.error_message}</p>
                 ) : null}
