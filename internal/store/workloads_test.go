@@ -37,39 +37,111 @@ func TestUpsertAndGetWorkload(t *testing.T) {
 
 func TestUpsertWorkloadSanitizesRemoteConfigStatusBeforeStorage(t *testing.T) {
 	db := newTestDB(t)
-	raw := "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "secret token", raw: "collector failed: SECRET_TOKEN=abc123"},
+		{name: "internal endpoint", raw: "endpoint=https://tenant-a.internal:4318/v1/traces"},
+		{name: "authorization bearer", raw: "authorization=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.super-secret"},
+		{name: "lowercase bearer token", raw: "bearer super-secret-token"},
+		{name: "tenant identifier", raw: "remote config failed for tenant tenant-a"},
+		{name: "credentials", raw: "credentials username=tenant-a password=hunter2"},
+		{name: "config snippet", raw: "config snippet: exporters:\n  otlp:\n    endpoint: https://tenant-a.internal:4317\n    headers:\n      authorization: Bearer SECRET_TOKEN"},
+		{name: "collector validation summary", raw: "invalid component in config snippet: exporters.otlp.headers.authorization=Bearer SECRET_TOKEN endpoint=https://tenant-a.internal:4317"},
+		{name: "policy summary", raw: "policy refused tenant tenant-a credentials username=tenant-a password=hunter2 authorization=Bearer SECRET_TOKEN"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := "wl-sensitive-" + strings.NewReplacer(" ", "-", "_", "-").Replace(tt.name)
+			want := models.SanitizeRemoteConfigErrorMessage(tt.raw)
+
+			if err := db.UpsertWorkload(models.Workload{
+				ID:         id,
+				Type:       "collector",
+				Status:     "connected",
+				LastSeenAt: time.Now().UTC(),
+				RemoteConfigStatus: &models.RemoteConfigStatus{
+					Status:       "failed",
+					ConfigHash:   "hash-a",
+					ErrorMessage: tt.raw,
+					UpdatedAt:    time.Unix(0, 0).UTC(),
+				},
+			}); err != nil {
+				t.Fatalf("UpsertWorkload: %v", err)
+			}
+
+			var stored string
+			if err := db.QueryRow(`SELECT remote_config_status FROM workloads WHERE id = ?`, id).Scan(&stored); err != nil {
+				t.Fatalf("query stored remote_config_status: %v", err)
+			}
+			assertNoSensitiveWorkloadStatusText(t, stored)
+			assertStoredRemoteConfigStatusErrorMessage(t, stored, want)
+
+			got, err := db.GetWorkload(id)
+			if err != nil {
+				t.Fatalf("GetWorkload: %v", err)
+			}
+			if got.RemoteConfigStatus == nil {
+				t.Fatalf("expected remote config status")
+			}
+			if got.RemoteConfigStatus.ErrorMessage != want {
+				t.Fatalf("error_message = %q, want %q", got.RemoteConfigStatus.ErrorMessage, want)
+			}
+			assertNoSensitiveWorkloadStatusText(t, got.RemoteConfigStatus.ErrorMessage)
+		})
+	}
+}
+
+func TestGetWorkloadSanitizesLegacyRemoteConfigStatusOnRead(t *testing.T) {
+	db := newTestDB(t)
+	raw := strings.Join([]string{
+		"collector failed while applying remote config for tenant tenant-a",
+		"SECRET_TOKEN=abc123",
+		"authorization=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.super-secret",
+		"bearer super-secret-token",
+		"endpoint=https://tenant-a.internal:4318/v1/traces",
+		"credentials username=tenant-a password=hunter2",
+		"config snippet: exporters:\n  otlp:\n    endpoint: https://tenant-a.internal:4317\n    headers:\n      authorization: Bearer SECRET_TOKEN",
+	}, " ")
+	updatedAt := time.Unix(42, 0).UTC()
+	legacyJSON, err := json.Marshal(map[string]any{
+		"status":        "failed",
+		"config_hash":   "hash-a",
+		"error_message": raw,
+		"updated_at":    updatedAt.Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("marshal legacy status: %v", err)
+	}
 
 	if err := db.UpsertWorkload(models.Workload{
-		ID:         "wl-sensitive",
+		ID:         "wl-legacy-read",
 		Type:       "collector",
 		Status:     "connected",
 		LastSeenAt: time.Now().UTC(),
-		RemoteConfigStatus: &models.RemoteConfigStatus{
-			Status:       "failed",
-			ConfigHash:   "hash-a",
-			ErrorMessage: raw,
-			UpdatedAt:    time.Unix(0, 0).UTC(),
-		},
 	}); err != nil {
 		t.Fatalf("UpsertWorkload: %v", err)
 	}
-
-	var stored string
-	if err := db.QueryRow(`SELECT remote_config_status FROM workloads WHERE id = ?`, "wl-sensitive").Scan(&stored); err != nil {
-		t.Fatalf("query stored remote_config_status: %v", err)
+	if _, err := db.Exec(`UPDATE workloads SET remote_config_status = ? WHERE id = ?`, string(legacyJSON), "wl-legacy-read"); err != nil {
+		t.Fatalf("seed legacy remote_config_status: %v", err)
 	}
-	assertNoSensitiveWorkloadStatusText(t, stored)
 
-	got, err := db.GetWorkload("wl-sensitive")
+	got, err := db.GetWorkload("wl-legacy-read")
 	if err != nil {
 		t.Fatalf("GetWorkload: %v", err)
 	}
 	if got.RemoteConfigStatus == nil {
 		t.Fatalf("expected remote config status")
 	}
+	want := models.SanitizeRemoteConfigErrorMessage(raw)
+	if got.RemoteConfigStatus.ErrorMessage != want {
+		t.Fatalf("error_message = %q, want %q", got.RemoteConfigStatus.ErrorMessage, want)
+	}
 	assertNoSensitiveWorkloadStatusText(t, got.RemoteConfigStatus.ErrorMessage)
-	if !strings.Contains(got.RemoteConfigStatus.ErrorMessage, "redacted") {
-		t.Fatalf("error_message should explain redaction: %q", got.RemoteConfigStatus.ErrorMessage)
+	if got.RemoteConfigStatus.Status != "failed" || got.RemoteConfigStatus.ConfigHash != "hash-a" || !got.RemoteConfigStatus.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("status metadata was corrupted: %+v", got.RemoteConfigStatus)
 	}
 }
 
@@ -177,10 +249,21 @@ func TestMigrateSanitizesLegacyRemoteConfigStatusesAtRest(t *testing.T) {
 
 func assertNoSensitiveWorkloadStatusText(t *testing.T, text string) {
 	t.Helper()
-	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
+	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "Bearer SECRET_TOKEN", "eyJhbGci", "super-secret", "super-secret-token", "tenant-a", "tenant-a.internal", "4318", "4317", "/v1/traces", "hunter2", "credentials", "password=", "username=", "endpoint:", "config snippet", "exporters:", "headers:"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("remote config status leaked forbidden marker %q", forbidden)
 		}
+	}
+}
+
+func assertStoredRemoteConfigStatusErrorMessage(t *testing.T, stored, want string) {
+	t.Helper()
+	var status map[string]any
+	if err := json.Unmarshal([]byte(stored), &status); err != nil {
+		t.Fatalf("unmarshal stored remote_config_status: %v", err)
+	}
+	if got := status["error_message"]; got != want {
+		t.Fatalf("stored error_message = %q, want %q", got, want)
 	}
 }
 
