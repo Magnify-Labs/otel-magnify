@@ -110,12 +110,31 @@ export interface EventsStats {
   churn_rate_per_hour: number
 }
 
+export type ConfigKind = 'saved' | 'template' | 'draft' | 'known_good'
+
+export interface ConfigVariable {
+  name: string
+  label: string
+  type: string
+  required: boolean
+  description?: string
+  placeholder?: string
+}
+
 export interface Config {
   id: string
   name: string
   content: string
   created_at: string
   created_by: string
+  kind?: ConfigKind | string
+  status?: 'ready' | 'draft' | string
+  category?: string
+  stack?: string
+  description?: string
+  variables?: ConfigVariable[]
+  tags?: string[]
+  built_in?: boolean
 }
 
 export interface Alert {

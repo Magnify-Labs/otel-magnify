@@ -318,5 +318,81 @@
     "admin": {
       "sso": "SSO providers"
     }
+  },
+  "configs": {
+    "title": "Config Library",
+    "subtitle": "Saved configs, templates, drafts, and known-good references in one safe workspace.",
+    "new_button": "New config",
+    "loading": "Loading configs…",
+    "empty": "No configs or templates available yet.",
+    "concepts_aria": "Config Library concepts",
+    "concepts": {
+      "saved": {
+        "title": "Saved configs",
+        "body": "Operator-created configs ready to reuse or push."
+      },
+      "template": {
+        "title": "Templates",
+        "body": "Safe stack starters with placeholders instead of secret values."
+      },
+      "draft": {
+        "title": "Drafts",
+        "body": "In-progress configs seeded from blank YAML or a template."
+      },
+      "known_good": {
+        "title": "Known-good references",
+        "body": "Stable revisions that can guide rollback and recovery."
+      }
+    },
+    "filter": {
+      "label": "Config Library filters",
+      "all": "All",
+      "saved": "Saved configs",
+      "template": "Templates",
+      "draft": "Drafts",
+      "known_good": "Known-good references"
+    },
+    "form": {
+      "header": "Create config",
+      "template_header": "Create draft from template",
+      "name": "Name",
+      "name_placeholder": "prod collector baseline",
+      "content": "YAML content",
+      "draft_from": "Draft from",
+      "secret_help": "Use placeholders such as ${OTLP_AUTH_HEADER}; do not paste plaintext secrets.",
+      "saving": "Saving…",
+      "submit": "Save draft config"
+    },
+    "templates": {
+      "title": "Templates",
+      "subtitle": "Built-in starter configs grouped by stack. Variables show the expected placeholders only.",
+      "variables": "Template variables",
+      "required": "required",
+      "built_in": "built-in",
+      "no_description": "No description provided.",
+      "no_variables": "No variables advertised for this template.",
+      "use": "Use template",
+      "use_aria": "Use template"
+    },
+    "saved": {
+      "title": "Saved configs and references",
+      "subtitle": "Older rows without library metadata are treated as saved configs."
+    },
+    "kind": {
+      "saved": "saved",
+      "template": "template",
+      "draft": "draft",
+      "known_good": "known-good"
+    },
+    "table": {
+      "name": "Name",
+      "kind": "Kind",
+      "category": "Category",
+      "created_by": "Created by",
+      "created_at": "Created at",
+      "id": "ID",
+      "none": "—",
+      "system": "system"
+    }
   }
 }
