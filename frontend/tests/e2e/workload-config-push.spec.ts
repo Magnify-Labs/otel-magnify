@@ -127,6 +127,58 @@ test.beforeEach(async ({ loggedInPage: page }) => {
   await mockConfigsList(page, [])
 })
 
+const PUSH_STATUS_LABEL_CASES = [
+  ['pending', 'Pending'],
+  ['validated', 'Validated'],
+  ['submitted', 'Submitted'],
+  ['sent', 'Sent via OpAMP'],
+  ['applying', 'Applying'],
+  ['applied', '✓ Applied'],
+  ['failed', '✗ Failed'],
+  ['rollback_started', 'Rolling back'],
+  ['rollback_applied', 'Rolled back'],
+  ['rollback_failed', 'Rollback failed'],
+] as const
+
+test('push status labels render every backend status', async ({ loggedInPage: page }) => {
+  let currentStatus: (typeof PUSH_STATUS_LABEL_CASES)[number][0] = 'pending'
+  await mockWorkload(page, {
+    get current_config_push() {
+      return {
+        push_id: `push_${currentStatus}`,
+        workload_id: WORKLOAD_ID,
+        config_id: 'feedfacefeedface',
+        config_hash: 'feedfacefeedface',
+        status: currentStatus,
+        submitted_at: '2026-06-30T10:12:00Z',
+        sent_at: '2026-06-30T10:12:01Z',
+        updated_at: '2026-06-30T10:12:05Z',
+        target_count: 1,
+        applied_count: currentStatus === 'applied' || currentStatus === 'rollback_applied' ? 1 : 0,
+        failed_count: currentStatus === 'failed' || currentStatus === 'rollback_failed' ? 1 : 0,
+        pending_count:
+          currentStatus === 'applied' ||
+          currentStatus === 'failed' ||
+          currentStatus.startsWith('rollback_')
+            ? 0
+            : 1,
+      }
+    },
+  })
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await page.goto('/login')
+  await page.evaluate(() => localStorage.setItem('token', 'test.token.stub'))
+
+  for (const [status, label] of PUSH_STATUS_LABEL_CASES) {
+    currentStatus = status
+    await page.goto('/login')
+    await page.evaluate(() => localStorage.setItem('token', 'test.token.stub'))
+    await page.goto(`/workloads/${WORKLOAD_ID}`)
+    await expect(page.locator('.push-banner-label')).toHaveText(label)
+  }
+})
+
 test('edit button enables YAML editing (regression)', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -488,6 +540,9 @@ test('push timeline renders aggregate progress and per-instance details', async 
           required: true,
           status: 'no_status',
           config_hash: 'feedfacefeedface',
+          error_cause: 'apply_timeout',
+          error_message: 'No OpAMP status after 30s',
+          timed_out: true,
         },
       ],
     },
@@ -512,8 +567,10 @@ test('push timeline renders aggregate progress and per-instance details', async 
   await page.getByRole('button', { name: 'View instance details' }).click()
   await expect(page.locator('.push-instance-table tbody tr')).toHaveCount(3)
   await expect(page.locator('.push-instance-table')).toContainText('inst-a')
+  await expect(page.locator('.push-timeout-banner')).toContainText('No OpAMP status after 30s')
   await expect(page.locator('.push-instance-table')).toContainText('otel-c')
   await expect(page.locator('.push-instance-table')).toContainText('No status yet')
+  await expect(page.locator('.push-instance-table')).toContainText('No OpAMP status after 30s')
 })
 
 test('push status shows the explicit OpAMP timeout message from the API', async ({
@@ -564,6 +621,17 @@ test('remote config errors are grouped by cause with affected instances', async 
       applied_count: 0,
       failed_count: 3,
       pending_count: 0,
+      error_message:
+        'collector failed with authorization: Bearer raw-to...oken and endpoint https://collector.internal/v1/traces',
+      instance_statuses: [
+        {
+          instance_uid: 'inst-a',
+          required: true,
+          status: 'failed',
+          error_cause: 'collector_validation',
+          error_message: 'password: raw-instance-password',
+        },
+      ],
       error_groups: [
         {
           cause: 'collector_validation',
@@ -571,7 +639,8 @@ test('remote config errors are grouped by cause with affected instances', async 
           severity: 'high',
           count: 2,
           affected_instances: ['inst-a', 'inst-b'],
-          sample_message: "unknown exporter 'othttp'",
+          sample_message:
+            "unknown exporter 'othttp' token=raw-group-secret endpoint https://collector.internal/v1/traces",
           sample_path: 'service.pipelines.traces.exporters[0]',
           config_hash: 'badbadbadbad',
           retryable: true,
@@ -598,8 +667,17 @@ test('remote config errors are grouped by cause with affected instances', async 
   await expect(errors).toContainText('Collector rejected the config')
   await expect(errors).toContainText('2 instances')
   await expect(errors).toContainText("unknown exporter 'othttp'")
+  await expect(errors).toContainText('token=[redacted]')
+  await expect(errors).toContainText('[endpoint redacted]')
+  await expect(errors).toContainText('Severity: high')
+  await expect(errors).toContainText('collector_validation')
   await expect(errors).toContainText('inst-a')
   await expect(errors).toContainText('OpAMP delivery failed')
+  await page.getByRole('button', { name: 'View instance details' }).click()
+  await expect(page.locator('body')).not.toContainText('raw-top-secret-token')
+  await expect(page.locator('body')).not.toContainText('raw-group-secret')
+  await expect(page.locator('body')).not.toContainText('raw-instance-password')
+  await expect(page.locator('body')).not.toContainText('https://collector.internal/v1/traces')
 })
 
 test('push failed shows error banner and preserves draft', async ({ loggedInPage: page }) => {
