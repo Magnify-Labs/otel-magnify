@@ -401,6 +401,47 @@ test('failed history candidate is not rollbackable', async ({ loggedInPage: page
   expect(prepareHit).toBe(false)
 })
 
+test('recovery panel rollback opens guided preview instead of legacy default confirm', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, [
+    { ...BASE_HISTORY[0], is_current: true, content_available: true },
+    { ...BASE_HISTORY[1], is_previous: true, content_available: true },
+  ])
+  await mockConfigsList(page)
+
+  let preparedTarget: string | null = null
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/rollback/prepare**`, async (route, request) => {
+    preparedTarget = new URL(request.url()).searchParams.get('target_hash')
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildRollbackPrepare()),
+    })
+  })
+
+  let legacyDefaultRollbackHit = false
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/rollback`, async (route, request) => {
+    if (request.method() === 'POST') {
+      legacyDefaultRollbackHit = true
+      await route.fulfill({ status: 500, body: 'legacy default rollback should not be called' })
+      return
+    }
+    await route.continue()
+  })
+
+  await gotoWorkloadDetail(page)
+  await page.getByRole('button', { name: 'Rollback to Previous' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Guided rollback' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('stable-2026-04')).toBeVisible()
+  await expect.poll(() => preparedTarget).toBe(HASH_OLD)
+  expect(legacyDefaultRollbackHit).toBe(false)
+})
+
 function buildRollbackPrepare(overrides: Record<string, unknown> = {}) {
   return {
     schema_version: 'guided-rollback-prepare.v1',
@@ -616,7 +657,7 @@ test('guided rollback previews diff, warnings, confirmation, and final status re
   await expect(dialog.getByText('admin@e2e.local')).toBeVisible()
   await expect(dialog.getByText('Validation passed with warnings')).toBeVisible()
   await expect(dialog.getByText('datadog/main')).toBeVisible()
-  await expect(dialog.getByText('--- current')).toBeVisible()
+  await expect(dialog.locator('.config-diff-view .cm-content')).toHaveCount(2)
 
   const confirmButton = dialog.getByRole('button', { name: 'Confirm rollback with warnings' })
   await expect(confirmButton).toBeDisabled()
@@ -816,14 +857,23 @@ test('known-good panel renders config states and defaults rollback to Last known
       }),
     }),
   )
-  let rollbackPosted = false
-  await page.route(`**/api/workloads/${WORKLOAD_ID}/rollback`, async (route) => {
-    rollbackPosted = true
+  let preparedTarget: string | null = null
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/rollback/prepare**`, async (route, request) => {
+    preparedTarget = new URL(request.url()).searchParams.get('target_hash')
     await route.fulfill({
-      status: 202,
+      status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ status: 'rollback initiated', config_hash: HASH_OLD, target_kind: 'last_known_good' }),
+      body: JSON.stringify(buildRollbackPrepare()),
     })
+  })
+  let legacyDefaultRollbackHit = false
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/rollback`, async (route, request) => {
+    if (request.method() === 'POST') {
+      legacyDefaultRollbackHit = true
+      await route.fulfill({ status: 500, body: 'legacy default rollback should not be called' })
+      return
+    }
+    await route.continue()
   })
 
   await gotoWorkloadDetail(page)
@@ -839,9 +889,11 @@ test('known-good panel renders config states and defaults rollback to Last known
   await expect(knownGoodRow.getByText('Last known-good')).toBeVisible()
 
   await page.getByRole('button', { name: 'Rollback to Last known-good' }).click()
-  await expect(page.getByRole('dialog', { name: 'Rollback to Last known-good?' })).toBeVisible()
-  await page.getByRole('button', { name: 'Confirm rollback to Last known-good' }).click()
-  await expect.poll(() => rollbackPosted).toBe(true)
+  const dialog = page.getByRole('dialog', { name: 'Guided rollback' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('stable-2026-04')).toBeVisible()
+  await expect.poll(() => preparedTarget).toBe(HASH_OLD)
+  expect(legacyDefaultRollbackHit).toBe(false)
 })
 
 test('mark as known-good confirms replacement and posts precondition', async ({ loggedInPage: page }) => {
