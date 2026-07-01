@@ -109,6 +109,8 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	r.Group(func(r chi.Router) {
 		r.Use(a.Middleware)
 
+		r.Get("/api/config-safety/drift", api.handleListConfigDrift)
+
 		r.Get("/api/workloads", api.handleListWorkloads)
 		r.Get("/api/workloads/version-intelligence", api.handleFleetVersionIntelligence)
 		r.Get("/api/workloads/{id}", api.handleGetWorkload)

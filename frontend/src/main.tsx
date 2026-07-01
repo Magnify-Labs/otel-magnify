@@ -8,6 +8,7 @@ import RootLayout from './App'
 import Layout from './components/layout/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import Dashboard from './pages/Dashboard'
+import ConfigDriftDashboard from './pages/ConfigDriftDashboard'
 import Workloads from './pages/Workloads'
 import WorkloadDetail from './pages/WorkloadDetail'
 import Configs from './pages/Configs'
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
         ),
         children: [
           { path: '/', element: <Dashboard /> },
+          { path: '/config-safety/drift', element: <ConfigDriftDashboard /> },
           { path: '/inventory', element: <Workloads /> },
           { path: '/workloads/:id', element: <WorkloadDetail /> },
           { path: '/configs', element: <Configs /> },

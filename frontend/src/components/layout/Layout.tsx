@@ -53,6 +53,22 @@ function IconConfigs() {
     </svg>
   )
 }
+function IconDrift() {
+  return (
+    <svg
+      className="nav-icon"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2 12h3l2-8 2 8h5" />
+      <path d="M11.5 4.5 14 2m0 0v2.5M14 2h-2.5" />
+    </svg>
+  )
+}
 function IconAlerts() {
   return (
     <svg
@@ -104,6 +120,7 @@ function IconAdmin() {
 const fleetNav = [
   { path: '/', key: 'dashboard', Icon: IconDashboard, end: true },
   { path: '/inventory', key: 'inventory', Icon: IconInventory, end: false },
+  { path: '/config-safety/drift', key: 'config_drift', Icon: IconDrift, end: false },
   { path: '/configs', key: 'configs', Icon: IconConfigs, end: false },
   { path: '/alerts', key: 'alerts', Icon: IconAlerts, end: false },
 ] as const

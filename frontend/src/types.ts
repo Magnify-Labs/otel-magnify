@@ -599,6 +599,59 @@ export interface PushPreview {
   targets: PushPreviewTarget[]
 }
 
+export interface ConfigDriftAction {
+  enabled: boolean
+  reason?: string
+  url?: string
+}
+
+export interface ConfigDriftSummary {
+  total_collectors: number
+  drifted_collectors: number
+  pending_too_long: number
+  missing_effective_config: number
+  remote_config_unsupported: number
+  outdated_versions: number
+  unknown_incomplete_components: number
+  heterogeneous_groups: number
+}
+
+export type ConfigDriftStatus =
+  | 'in_sync'
+  | 'drifted'
+  | 'pending_too_long'
+  | 'missing_effective_config'
+  | 'remote_config_unsupported'
+  | 'heterogeneous_effective_config'
+
+export interface ConfigDriftItem {
+  workload_id: string
+  collector: string
+  env: string
+  version: string
+  expected_config_hash?: string
+  effective_config_hash?: string
+  effective_config_hashes?: string[]
+  drift_status: ConfigDriftStatus | string
+  drift_reasons?: string[]
+  last_push?: WorkloadConfig
+  last_push_age_seconds?: number
+  pending_too_long: boolean
+  accepts_remote_config: boolean
+  missing_effective_config: boolean
+  unknown_incomplete_components: boolean
+  group_heterogeneous_config: boolean
+  has_config_drift_alert: boolean
+  has_version_outdated_alert: boolean
+  actions: Record<string, ConfigDriftAction>
+}
+
+export interface ConfigDriftDashboard {
+  generated_at: string
+  summary: ConfigDriftSummary
+  items: ConfigDriftItem[]
+}
+
 export interface Group {
   id: string
   name: string

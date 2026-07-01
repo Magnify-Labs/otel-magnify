@@ -1,0 +1,110 @@
+.config-drift-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.config-drift-summary-card {
+  min-height: 92px;
+}
+
+.config-drift-panel {
+  overflow: hidden;
+}
+
+.config-drift-error {
+  color: var(--red);
+  margin-top: 0;
+}
+
+.config-drift-table-wrap {
+  overflow-x: auto;
+}
+
+.config-drift-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.config-drift-table th,
+.config-drift-table td {
+  border-top: 1px solid var(--border);
+  padding: 0.85rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.config-drift-table th {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.config-drift-muted {
+  display: block;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
+}
+
+.config-drift-hash {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.config-drift-badge,
+.config-drift-chip {
+  border-radius: 999px;
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  margin: 0 0.35rem 0.35rem 0;
+  padding: 0.25rem 0.5rem;
+}
+
+.config-drift-badge-success {
+  background: rgba(61, 220, 151, 0.12);
+  color: var(--green);
+}
+
+.config-drift-badge-warning,
+.config-drift-chip {
+  background: rgba(251, 191, 36, 0.14);
+  color: var(--amber);
+}
+
+.config-drift-badge-danger {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--red);
+}
+
+.config-drift-actions {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  max-width: 360px;
+}
+
+.config-drift-action-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.config-drift-action {
+  padding: 0.45rem 0.65rem;
+  white-space: nowrap;
+}
+
+.config-drift-action-reason {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  max-width: 160px;
+}

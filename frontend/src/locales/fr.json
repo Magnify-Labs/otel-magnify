@@ -10,7 +10,8 @@
       "configs": "Configurations",
       "alerts": "Alertes",
       "profile": "Profil",
-      "administration": "Administration"
+      "administration": "Administration",
+      "config_drift": "Drift config"
     },
     "footer": {
       "live": "LIVE"
@@ -49,6 +50,22 @@
     },
     "alerts": {
       "empty": "Aucune alerte active"
+    },
+    "config_safety": {
+      "title": "Statut de sécurité des configs",
+      "hint": "Config distante sûre sur les collecteurs supervisés",
+      "loading": "Chargement sécurité config…",
+      "error": "Impossible de charger le statut de sécurité config.",
+      "supervised_collectors": "Collecteurs supervisés",
+      "last_7d_pushes": "Pushes sur 7j",
+      "cta": "Voir les workloads supervisés",
+      "drift_cta": "Ouvrir le dashboard de drift",
+      "status": {
+        "ready": "Validation, diff, push sécurisé et rollback sont disponibles sur les pages détail workload.",
+        "empty": "Aucun collecteur supervisé ne remonte encore de config distante.",
+        "failed": "Au moins un collecteur n’a pas appliqué la config distante.",
+        "applying": "Un changement de config distante est en cours."
+      }
     }
   },
   "workloads": {
@@ -614,6 +631,60 @@
       "id": "ID",
       "none": "—",
       "system": "système"
+    }
+  },
+  "config_drift": {
+    "title": "Dashboard de drift flotte",
+    "subtitle": "Suivre config attendue vs effective, pushes bloqués, collecteurs non supportés, versions obsolètes, composants incomplets et groupes hétérogènes.",
+    "summary_aria": "Résumé drift config",
+    "table_title": "Détails du drift collecteur",
+    "table_hint": "Les contrôles désactivés expliquent ce qui manque au lieu d’exposer des actions risquées.",
+    "error": "Impossible de charger le dashboard de drift config.",
+    "action_unavailable": "Action indisponible.",
+    "outdated": "Obsolète",
+    "summary": {
+      "total_collectors": "Collecteurs totaux",
+      "drifted_collectors": "Collecteurs en drift",
+      "pending_too_long": "Push trop long",
+      "missing_effective_config": "Config effective manquante",
+      "remote_config_unsupported": "Config distante non supportée",
+      "outdated_versions": "Versions obsolètes",
+      "unknown_incomplete_components": "Composants inconnus",
+      "heterogeneous_groups": "Groupes hétérogènes"
+    },
+    "columns": {
+      "collector": "Collecteur",
+      "env": "Env",
+      "version": "Version",
+      "expected": "Config attendue",
+      "effective": "Config effective",
+      "drift": "Drift",
+      "last_push": "Dernier push",
+      "action": "Action"
+    },
+    "actions": {
+      "view_diff": "Voir diff",
+      "validate_current": "Valider courant",
+      "push_expected": "Pousser attendu",
+      "rollback": "Restaurer",
+      "mark_ignored": "Ignorer"
+    },
+    "status": {
+      "in_sync": "Synchronisé",
+      "drifted": "Drift",
+      "pending_too_long": "Push trop long",
+      "missing_effective_config": "Config effective manquante",
+      "remote_config_unsupported": "Config distante non supportée",
+      "heterogeneous_effective_config": "Config effective hétérogène"
+    },
+    "action_reasons": {
+      "diff_requires_config_content": "La vue diff nécessite un contenu de config récupérable pour les hashes attendu et effectif.",
+      "validate_from_workload_detail": "Les lignes du dashboard exposent seulement les hashes de config ; validez la config actuelle depuis l’éditeur du détail workload.",
+      "review_expected_before_push": "Le contenu de la config attendue doit être vérifié depuis le détail workload avant le push.",
+      "rollback_from_workload_detail": "Le rollback doit être préparé depuis le détail workload pour afficher l’historique et les confirmations.",
+      "ignore_not_implemented": "La persistance de l’ignoré n’est pas encore implémentée.",
+      "remote_config_unsupported": "La config distante n’est pas supportée par ce collector.",
+      "push_pending_too_long": "Un push de config est déjà en attente depuis trop longtemps ; vérifiez le statut avant de réessayer."
     }
   }
 }
