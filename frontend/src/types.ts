@@ -137,6 +137,11 @@ export interface WorkloadConfig {
   pushed_by?: string
   content?: string
   label?: string
+  is_current?: boolean
+  is_previous?: boolean
+  is_last_known_good?: boolean
+  is_failed_candidate?: boolean
+  content_available?: boolean
   push_id?: string
   submitted_at?: string
   sent_at?: string
@@ -152,6 +157,30 @@ export interface WorkloadConfig {
   failed_count?: number
   pending_count?: number
   error_groups?: WorkloadConfigErrorGroup[]
+}
+
+
+export interface WorkloadKnownGoodConfig {
+  workload_id: string
+  config_id: string
+  marked_at: string
+  marked_by?: string
+  source_applied_at?: string
+  replaced_config_id?: string
+  replace_reason?: string
+  content_available: boolean
+}
+
+export interface MarkKnownGoodResponse {
+  changed: boolean
+  replaced_config_id?: string
+  known_good: WorkloadKnownGoodConfig
+}
+
+export interface DefaultRollbackResponse {
+  status: string
+  config_hash: string
+  target_kind: 'last_known_good' | 'previous' | string
 }
 
 export type RollbackValidationStatus = 'valid' | 'valid_with_warnings' | 'invalid' | 'unavailable'

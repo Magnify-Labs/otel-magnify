@@ -2146,3 +2146,125 @@ code {
     flex-direction: column;
   }
 }
+
+/* ── Known-good config recovery UX ── */
+.config-recovery-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 1rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.config-recovery-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.config-recovery-help,
+.config-state-meta,
+.config-state-detail,
+.config-confirm-detail {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.config-recovery-help,
+.config-confirm-detail {
+  margin-top: 0.25rem;
+}
+
+.config-state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.75rem;
+}
+
+.config-state-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-height: 7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 0.75rem;
+}
+
+.config-state-card-danger {
+  border-color: rgba(248, 113, 113, 0.36);
+  background: var(--red-dim);
+}
+
+.config-state-title {
+  color: var(--text-hi);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.config-state-card code {
+  width: fit-content;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+}
+
+.config-recovery-error {
+  margin-top: 0.75rem;
+}
+
+.modal-body {
+  padding: 1rem;
+}
+
+.modal-actions {
+  padding: 0 1rem 1rem;
+}
+
+.history-state-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.history-state-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 0.12rem 0.42rem;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.history-state-current {
+  color: var(--green);
+  border-color: rgba(52, 211, 153, 0.32);
+  background: var(--green-dim);
+}
+
+.history-state-previous,
+.history-state-last-known-good {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--accent-dim);
+}
+
+.history-state-failed-candidate {
+  color: var(--red);
+  border-color: rgba(248, 113, 113, 0.36);
+  background: var(--red-dim);
+}

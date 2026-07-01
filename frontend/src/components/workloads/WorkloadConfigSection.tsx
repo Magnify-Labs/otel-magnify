@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { configsAPI, workloadsAPI } from '../../api/client'
 import { DOCS_BASE_URL } from '../../constants'
 import YamlEditor from '../config/YamlEditor'
@@ -9,6 +9,7 @@ import ConfigDiffView from './ConfigDiffView'
 import PushHistoryTable from './PushHistoryTable'
 import ConfigSafetySection from './ConfigSafetySection'
 import { useStore } from '../../store'
+import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
 import type {
   ValidationCheck,
@@ -16,6 +17,7 @@ import type {
   ValidationResult,
   Workload,
   WorkloadConfig,
+  WorkloadKnownGoodConfig,
 } from '../../types'
 
 interface Props {
@@ -26,10 +28,152 @@ type Tab = 'edit' | 'diff'
 
 const PUSH_TIMEOUT_MS = 30_000
 
+function shortHash(hash?: string) {
+  return hash ? hash.substring(0, 8) : '—'
+}
+
+function isNotFoundError(err: unknown) {
+  return axios.isAxiosError(err) && err.response?.status === 404
+}
+
+function formatDate(value?: string) {
+  return value ? new Date(value).toLocaleString() : '—'
+}
+
+function contentIsAvailable(row?: Pick<WorkloadConfig, 'content' | 'content_available'> | null) {
+  if (!row) return false
+  return row.content_available ?? !!row.content
+}
+
+interface RecoveryPanelProps {
+  history: WorkloadConfig[]
+  knownGood?: WorkloadKnownGoodConfig
+  knownGoodMissing: boolean
+  knownGoodError?: unknown
+  loading: boolean
+  rollbackPending: boolean
+  rollbackError: boolean
+  canRollback: boolean
+  onRollback: (kind: 'last_known_good' | 'previous') => void
+}
+
+function ConfigRecoveryPanel({
+  history,
+  knownGood,
+  knownGoodMissing,
+  knownGoodError,
+  loading,
+  rollbackPending,
+  rollbackError,
+  canRollback,
+  onRollback,
+}: RecoveryPanelProps) {
+  const current = history.find((row) => row.is_current)
+  const previous = history.find((row) => row.is_previous)
+  const lastKnownGoodRow = history.find((row) => row.is_last_known_good)
+  const failedCandidate = history.find((row) => row.is_failed_candidate)
+  const hasKnownGood = !!knownGood || !!lastKnownGoodRow
+  const knownGoodHash = knownGood?.config_id ?? lastKnownGoodRow?.config_id
+  const knownGoodAvailable = knownGood?.content_available ?? contentIsAvailable(lastKnownGoodRow)
+  const previousAvailable = contentIsAvailable(previous)
+  const rollbackTarget = hasKnownGood && knownGoodAvailable ? 'last_known_good' : previousAvailable ? 'previous' : null
+  const rollbackLabel = rollbackTarget === 'last_known_good' ? 'Rollback to Last known-good' : 'Rollback to Previous'
+  const disableReason = !canRollback
+    ? 'Requires workload:push_config permission'
+    : hasKnownGood && !knownGoodAvailable
+      ? 'Last known-good content unavailable. Mark another applied revision before rollback.'
+      : 'No Last known-good or Previous config is available for rollback.'
+
+  return (
+    <section className="config-recovery-panel" role="region" aria-label="Configuration recovery states">
+      <div className="config-recovery-header">
+        <div>
+          <p className="section-title">Configuration recovery states</p>
+          <p className="config-recovery-help">
+            Review the effective recovery target before pushing risky Collector changes.
+          </p>
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={() => rollbackTarget && onRollback(rollbackTarget)}
+          disabled={!canRollback || !rollbackTarget || rollbackPending || loading}
+          title={canRollback && rollbackTarget ? rollbackLabel : disableReason}
+        >
+          {rollbackPending ? 'Rolling back…' : rollbackLabel}
+        </button>
+      </div>
+      {loading ? (
+        <div className="loading">Loading recovery states...</div>
+      ) : (
+        <div className="config-state-grid">
+          <ConfigStateCard title="Current" hash={current?.config_id} meta={current?.status ?? 'No current config'} />
+          <ConfigStateCard
+            title="Previous"
+            hash={previous?.config_id}
+            meta={previous ? formatDate(previous.applied_at) : 'None yet'}
+          />
+          <ConfigStateCard
+            title="Last known-good"
+            hash={knownGoodHash}
+            meta={
+              hasKnownGood
+                ? knownGoodAvailable
+                  ? `${knownGood?.marked_by ?? 'Unknown marker'} · ${formatDate(knownGood?.marked_at)}`
+                  : 'Content unavailable'
+                : knownGoodMissing
+                  ? 'Last known-good: None'
+                  : 'Not loaded'
+            }
+            detail={!hasKnownGood ? 'Rollback will use Previous until a known-good revision is marked.' : undefined}
+            tone={hasKnownGood && !knownGoodAvailable ? 'danger' : 'default'}
+          />
+          {failedCandidate && (
+            <ConfigStateCard
+              title="Failed candidate"
+              hash={failedCandidate.config_id}
+              meta={failedCandidate.error_message || 'Candidate failed'}
+              tone="danger"
+            />
+          )}
+        </div>
+      )}
+      {!!knownGoodError && !knownGoodMissing && (
+        <div className="error-text config-recovery-error">Failed to load Last known-good configuration.</div>
+      )}
+      {rollbackError && <div className="error-text config-recovery-error">Rollback failed.</div>}
+    </section>
+  )
+}
+
+function ConfigStateCard({
+  title,
+  hash,
+  meta,
+  detail,
+  tone = 'default',
+}: {
+  title: string
+  hash?: string
+  meta: string
+  detail?: string
+  tone?: 'default' | 'danger'
+}) {
+  return (
+    <div className={`config-state-card config-state-card-${tone}`}>
+      <span className="config-state-title">{title}</span>
+      <code>{shortHash(hash)}</code>
+      <span className="config-state-meta">{meta}</span>
+      {detail && <span className="config-state-detail">{detail}</span>}
+    </div>
+  )
+}
+
 export default function WorkloadConfigSection({ workload }: Props) {
   const configStatus = useStore((s) => s.configStatus[workload.id])
   const rollback = useStore((s) => s.lastRollback[workload.id])
   const clearRollback = useStore((s) => s.clearAutoRollback)
+  const me = useStore((s) => s.me)
+  const queryClient = useQueryClient()
 
   const [editMode, setEditMode] = useState(false)
   const [tab, setTab] = useState<Tab>('edit')
@@ -40,6 +184,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
   const [selectedConfigId, setSelectedConfigId] = useState('')
+  const [confirmDefaultRollback, setConfirmDefaultRollback] = useState<
+    'last_known_good' | 'previous' | null
+  >(null)
 
   const {
     data: config,
@@ -54,6 +201,34 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const { data: savedConfigs, isError: configsListError } = useQuery({
     queryKey: ['configs'],
     queryFn: configsAPI.list,
+  })
+
+
+  const { data: history = [], isLoading: historyLoading } = useQuery({
+    queryKey: ['workload-config-history', workload.id],
+    queryFn: () => workloadsAPI.getConfigHistory(workload.id),
+    enabled: workload.type === 'collector',
+  })
+
+  const {
+    data: knownGood,
+    isLoading: knownGoodLoading,
+    isError: knownGoodIsError,
+    error: knownGoodError,
+  } = useQuery({
+    queryKey: ['workload-known-good', workload.id],
+    queryFn: () => workloadsAPI.getKnownGood(workload.id),
+    enabled: workload.type === 'collector',
+    retry: false,
+  })
+
+  const defaultRollbackMutation = useMutation({
+    mutationFn: () => workloadsAPI.rollbackDefault(workload.id),
+    onSuccess: () => {
+      setConfirmDefaultRollback(null)
+      queryClient.invalidateQueries({ queryKey: ['workload-config-history', workload.id] })
+      queryClient.invalidateQueries({ queryKey: ['workload', workload.id] })
+    },
   })
 
   const activeContent = config?.content ?? ''
@@ -178,6 +353,69 @@ export default function WorkloadConfigSection({ workload }: Props) {
     validation !== null &&
     validation.valid === true
 
+  const canRollback = hasPerm(me?.groups, 'workload:push_config')
+  const knownGoodMissing = knownGoodIsError && isNotFoundError(knownGoodError)
+  const recoveryPanel = (
+    <ConfigRecoveryPanel
+      history={history}
+      knownGood={knownGood}
+      knownGoodMissing={knownGoodMissing}
+      knownGoodError={knownGoodError}
+      loading={historyLoading || knownGoodLoading}
+      rollbackPending={defaultRollbackMutation.isPending}
+      rollbackError={defaultRollbackMutation.isError}
+      canRollback={canRollback}
+      onRollback={setConfirmDefaultRollback}
+    />
+  )
+
+  const defaultRollbackConfirm = confirmDefaultRollback ? (
+    <div className="modal-backdrop" onClick={() => setConfirmDefaultRollback(null)}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={
+          confirmDefaultRollback === 'last_known_good'
+            ? 'Rollback to Last known-good?'
+            : 'Rollback to Previous?'
+        }
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <span>
+            {confirmDefaultRollback === 'last_known_good'
+              ? 'Rollback to Last known-good?'
+              : 'Rollback to Previous?'}
+          </span>
+        </div>
+        <p className="modal-body">
+          otel-magnify will push the selected recovery target to this workload.
+        </p>
+        <div className="btn-row modal-actions">
+          <button
+            className="btn btn-primary"
+            onClick={() => defaultRollbackMutation.mutate()}
+            disabled={defaultRollbackMutation.isPending}
+          >
+            {defaultRollbackMutation.isPending
+              ? 'Rolling back…'
+              : confirmDefaultRollback === 'last_known_good'
+                ? 'Confirm rollback to Last known-good'
+                : 'Confirm rollback to Previous'}
+          </button>
+          <button
+            className="btn"
+            onClick={() => setConfirmDefaultRollback(null)}
+            disabled={defaultRollbackMutation.isPending}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
   const safetySection = (
     <ConfigSafetySection
       workload={workload}
@@ -220,6 +458,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
     return (
       <>
         {safetySection}
+        {recoveryPanel}
+        {defaultRollbackConfirm}
         <p className="section-title">Configuration</p>
         {hasConfig && isLoading ? (
           <div className="loading">Loading configuration...</div>
@@ -341,6 +581,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
     return (
       <>
         {safetySection}
+        {recoveryPanel}
+        {defaultRollbackConfirm}
         <p className="section-title">Configuration</p>
         {applySelector}
         {editMode ? (
@@ -365,6 +607,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
     return (
       <>
         {safetySection}
+        {recoveryPanel}
+        {defaultRollbackConfirm}
         <p className="section-title">Configuration</p>
         <div className="loading">Loading configuration...</div>
       </>
@@ -374,6 +618,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
     return (
       <>
         {safetySection}
+        {recoveryPanel}
+        {defaultRollbackConfirm}
         <p className="section-title">Configuration</p>
         <div className="error-text">Failed to load configuration</div>
       </>
@@ -383,6 +629,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
   return (
     <>
       {safetySection}
+      {recoveryPanel}
+      {defaultRollbackConfirm}
       <p className="section-title">Configuration</p>
       {applySelector}
 
