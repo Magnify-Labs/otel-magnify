@@ -91,6 +91,37 @@ func authedPost(t *testing.T, url, body string) *http.Request {
 	return req
 }
 
+const sensitiveOpAMPErrorFixture = "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+
+func assertResponseDoesNotLeakSensitiveOpAMPError(t *testing.T, body string) {
+	t.Helper()
+	for _, leaked := range []string{"SECRET_TOKEN", "tenant-a.internal", "authorization=Bearer"} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("response leaked %q: %s", leaked, body)
+		}
+	}
+	if !strings.Contains(body, models.SanitizeRemoteConfigErrorMessage(sensitiveOpAMPErrorFixture)) {
+		t.Fatalf("response did not contain sanitized error message: %s", body)
+	}
+}
+
+func assertLatestWorkloadConfigErrorIsSanitized(t *testing.T, db ext.Store, workloadID string) {
+	t.Helper()
+	history, err := db.GetWorkloadConfigHistory(workloadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) == 0 {
+		t.Fatalf("expected workload config history for %s", workloadID)
+	}
+	if history[0].Status != "failed" {
+		t.Fatalf("latest workload config status = %q, want failed", history[0].Status)
+	}
+	if history[0].ErrorMessage != models.SanitizeRemoteConfigErrorMessage(sensitiveOpAMPErrorFixture) {
+		t.Fatalf("latest workload config error = %q", history[0].ErrorMessage)
+	}
+}
+
 // --- List / Get ---
 
 func TestListWorkloads_Empty(t *testing.T) {
@@ -410,6 +441,66 @@ service:
 	if len(fake.pushed) != 1 || fake.pushed[0].WorkloadID != "w1" || fake.pushed[0].Target != "" {
 		t.Fatalf("push not recorded correctly: %+v", fake.pushed)
 	}
+}
+
+func TestPushWorkloadConfig_OpAMPFailureResponseDoesNotLeakRawError(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	fake.err = errors.New(sensitiveOpAMPErrorFixture)
+	_ = db.UpsertWorkload(models.Workload{
+		ID: "w1", Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+		AcceptsRemoteConfig: true,
+	})
+
+	req := authedPost(t, "/api/workloads/w1/config", validRollbackYAML)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502, body=%s", rec.Code, rec.Body.String())
+	}
+	assertResponseDoesNotLeakSensitiveOpAMPError(t, rec.Body.String())
+	assertLatestWorkloadConfigErrorIsSanitized(t, db, "w1")
+}
+
+func TestRollbackWorkloadDefault_OpAMPFailureResponseDoesNotLeakRawError(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	fake.err = errors.New(sensitiveOpAMPErrorFixture)
+
+	now := time.Now().UTC()
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "w1", Type: "collector", Status: "connected",
+		LastSeenAt: now, Labels: models.Labels{}, ActiveConfigHash: "current",
+		AcceptsRemoteConfig: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, cfg := range []models.Config{
+		{ID: "previous", Name: "previous", Content: validRollbackYAML, CreatedAt: now.Add(-2 * time.Hour)},
+		{ID: "current", Name: "current", Content: validRollbackYAML, CreatedAt: now.Add(-time.Hour)},
+	} {
+		if err := db.CreateConfig(cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, wc := range []models.WorkloadConfig{
+		{WorkloadID: "w1", ConfigID: "previous", AppliedAt: now.Add(-2 * time.Hour), Status: models.PushStatusApplied},
+		{WorkloadID: "w1", ConfigID: "current", AppliedAt: now.Add(-time.Hour), Status: models.PushStatusApplied},
+	} {
+		if err := db.RecordWorkloadConfig(wc); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/rollback", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502, body=%s", rec.Code, rec.Body.String())
+	}
+	assertResponseDoesNotLeakSensitiveOpAMPError(t, rec.Body.String())
+	assertLatestWorkloadConfigErrorIsSanitized(t, db, "w1")
 }
 
 func TestPushWorkloadConfig_RejectsWhenRemoteConfigNotAccepted(t *testing.T) {

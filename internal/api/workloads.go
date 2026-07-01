@@ -195,11 +195,13 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 	// The frontend should call /validate first for UX feedback; this blocks
 	// API-level bypass.
 	var available *models.AvailableComponents
-	if wl.AvailableComponents != nil {
+	if err == nil && wl.AvailableComponents != nil {
 		available = wl.AvailableComponents
 	}
 	runtimeOpts := validator.RuntimeOptionsFromEnv()
-	runtimeOpts.TargetVersion = wl.Version
+	if err == nil {
+		runtimeOpts.TargetVersion = wl.Version
+	}
 	if runtimeOpts.TargetVersion != "" {
 		runtimeOpts.TargetVersionSource = "workload"
 	}
@@ -245,8 +247,9 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.opamp.PushConfig(r.Context(), workloadID, body, ""); err != nil {
-		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, models.PushStatusFailed, err.Error())
-		respondError(w, 502, err.Error())
+		sanitized := models.SanitizeRemoteConfigErrorMessage(err.Error())
+		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, models.PushStatusFailed, sanitized)
+		respondError(w, 502, sanitized)
 		return
 	}
 	_ = a.db.MarkWorkloadConfigSent(workloadID, hash, time.Now().UTC())
@@ -651,15 +654,18 @@ func (a *API) handleRollbackWorkloadDefault(w http.ResponseWriter, r *http.Reque
 	if info := ext.UserInfoFromContext(r.Context()); info != nil {
 		pushedBy = info.Email
 	}
-	if err := a.db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: workloadID, ConfigID: target.Config.ConfigID, Status: "pending", PushedBy: pushedBy}); err != nil {
+	submittedAt := time.Now().UTC()
+	if err := a.db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: workloadID, ConfigID: target.Config.ConfigID, AppliedAt: submittedAt, SubmittedAt: submittedAt, Status: models.PushStatusSubmitted, PushedBy: pushedBy, InstanceStatuses: initialPushInstanceStatuses(target.Config.ConfigID, submittedAt, a.opamp.Instances(workloadID))}); err != nil {
 		respondError(w, 500, "failed to record push")
 		return
 	}
 	if err := a.opamp.PushConfig(r.Context(), workloadID, body, ""); err != nil {
-		_ = a.db.UpdateWorkloadConfigStatus(workloadID, target.Config.ConfigID, "failed", err.Error())
-		respondError(w, 502, err.Error())
+		sanitized := models.SanitizeRemoteConfigErrorMessage(err.Error())
+		_ = a.db.UpdateWorkloadConfigStatus(workloadID, target.Config.ConfigID, models.PushStatusFailed, sanitized)
+		respondError(w, 502, sanitized)
 		return
 	}
+	_ = a.db.MarkWorkloadConfigSent(workloadID, target.Config.ConfigID, time.Now().UTC())
 	detail := auditDetail(map[string]any{
 		"result":       "initiated",
 		"target_hash":  target.Config.ConfigID,
@@ -667,7 +673,7 @@ func (a *API) handleRollbackWorkloadDefault(w http.ResponseWriter, r *http.Reque
 		"source_hash":  excludeHash,
 		"pushed_by":    pushedBy,
 		"side_effect":  "opamp_push_sent",
-		"submitted_at": time.Now().UTC(),
+		"submitted_at": submittedAt,
 	})
 	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, detail); err != nil {
 		respondAuditUnavailable(w, sideEffectApplied)
@@ -743,7 +749,7 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 	body := []byte(wc.Content)
 
 	var available *models.AvailableComponents
-	if wl.AvailableComponents != nil {
+	if err == nil && wl.AvailableComponents != nil {
 		available = wl.AvailableComponents
 	}
 	// Re-validate against the workload's *current* AvailableComponents
@@ -789,8 +795,9 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := a.opamp.PushConfig(r.Context(), workloadID, body, ""); err != nil {
-		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, models.PushStatusFailed, err.Error())
-		respondRollbackError(w, 502, err.Error(), "push_failed", true, "applied", nil)
+		sanitized := models.SanitizeRemoteConfigErrorMessage(err.Error())
+		_ = a.db.UpdateWorkloadConfigStatus(workloadID, hash, models.PushStatusFailed, sanitized)
+		respondRollbackError(w, 502, sanitized, "push_failed", true, "applied", nil)
 		return
 	}
 	_ = a.db.MarkWorkloadConfigSent(workloadID, hash, time.Now().UTC())
