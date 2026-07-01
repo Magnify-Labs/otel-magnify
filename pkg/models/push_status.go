@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -52,6 +53,7 @@ type WorkloadConfigInstanceStatus struct {
 	UpdatedAt    time.Time `json:"updated_at,omitempty"`
 	ErrorCause   string    `json:"error_cause,omitempty"`
 	ErrorMessage string    `json:"error_message,omitempty"`
+	TimedOut     bool      `json:"timed_out,omitempty"`
 }
 
 // WorkloadConfigErrorGroup summarizes repeated remote config errors by cause.
@@ -92,14 +94,31 @@ func (wc *WorkloadConfig) HydratePushStatus(now time.Time) {
 
 	wc.TargetCount = len(wc.InstanceStatuses)
 	wc.AppliedCount, wc.FailedCount, wc.PendingCount = 0, 0, 0
+	wc.TimedOutCount, wc.NoStatusCount = 0, 0
 	hasRemoteStatus := false
 	hasApplyingOrApplied := false
 	allApplied := wc.TargetCount > 0
+	wc.ErrorMessage = SanitizeRemoteConfigErrorMessage(wc.ErrorMessage)
 	for i := range wc.InstanceStatuses {
 		st := canonicalInstanceStatus(wc.InstanceStatuses[i].Status)
 		wc.InstanceStatuses[i].Status = st
+		wc.InstanceStatuses[i].TimedOut = false
 		if wc.InstanceStatuses[i].ConfigHash == "" {
 			wc.InstanceStatuses[i].ConfigHash = wc.ConfigID
+		}
+		if wc.InstanceStatuses[i].ErrorMessage != "" {
+			if wc.InstanceStatuses[i].ErrorCause == "" {
+				wc.InstanceStatuses[i].ErrorCause = normalizeRemoteConfigErrorCause("", wc.InstanceStatuses[i].ErrorMessage)
+			}
+			wc.InstanceStatuses[i].ErrorMessage = SanitizeRemoteConfigErrorMessage(wc.InstanceStatuses[i].ErrorMessage)
+		}
+		if wc.OpAMPStatusTimeoutAt != nil && !now.Before(*wc.OpAMPStatusTimeoutAt) && wc.InstanceStatuses[i].Required && (st == PushStatusSent || st == InstanceStatusNoStatus) {
+			st = InstanceStatusNoStatus
+			wc.InstanceStatuses[i].Status = st
+			wc.InstanceStatuses[i].TimedOut = true
+			wc.InstanceStatuses[i].ErrorCause = "apply_timeout"
+			wc.InstanceStatuses[i].ErrorMessage = OpAMPStatusTimeoutMessage
+			wc.TimedOutCount++
 		}
 		switch st {
 		case PushStatusApplied:
@@ -116,6 +135,9 @@ func (wc *WorkloadConfig) HydratePushStatus(now time.Time) {
 			allApplied = false
 			hasRemoteStatus = true
 		default:
+			if st == InstanceStatusNoStatus {
+				wc.NoStatusCount++
+			}
 			wc.PendingCount++
 			allApplied = false
 		}
@@ -136,7 +158,7 @@ func (wc *WorkloadConfig) HydratePushStatus(now time.Time) {
 
 	wc.TimedOutWaitingForOpAMPStatus = false
 	wc.TimeoutMessage = ""
-	if wc.OpAMPStatusTimeoutAt != nil && !now.Before(*wc.OpAMPStatusTimeoutAt) && !hasRemoteStatus && !isTerminalPushStatus(wc.Status) {
+	if wc.TimedOutCount > 0 || (wc.OpAMPStatusTimeoutAt != nil && !now.Before(*wc.OpAMPStatusTimeoutAt) && !hasRemoteStatus && !isTerminalPushStatus(wc.Status)) {
 		wc.TimedOutWaitingForOpAMPStatus = true
 		wc.TimeoutMessage = OpAMPStatusTimeoutMessage
 	}
@@ -158,7 +180,11 @@ func (wc WorkloadConfig) buildTimeline() []WorkloadConfigTimelineEntry {
 		add(PushStatusSent, *wc.SentAt, "", false)
 	}
 	if wc.TimedOutWaitingForOpAMPStatus && wc.OpAMPStatusTimeoutAt != nil {
-		add(wc.Status, *wc.OpAMPStatusTimeoutAt, OpAMPStatusTimeoutMessage, true)
+		state := wc.Status
+		if wc.TimedOutCount > 0 {
+			state = InstanceStatusNoStatus
+		}
+		add(state, *wc.OpAMPStatusTimeoutAt, OpAMPStatusTimeoutMessage, true)
 	}
 	for _, inst := range wc.InstanceStatuses {
 		if inst.UpdatedAt.IsZero() || inst.Status == PushStatusSent || inst.Status == InstanceStatusNoStatus {
@@ -215,7 +241,7 @@ func buildWorkloadConfigErrorGroups(wc WorkloadConfig) []WorkloadConfigErrorGrou
 			g.AffectedInstances = append(g.AffectedInstances, instance)
 		}
 		if g.SampleMessage == "" {
-			g.SampleMessage = msg
+			g.SampleMessage = SanitizeRemoteConfigErrorMessage(msg)
 		}
 		if !at.IsZero() && (g.FirstSeenAt.IsZero() || at.Before(g.FirstSeenAt)) {
 			g.FirstSeenAt = at
@@ -247,6 +273,36 @@ func buildWorkloadConfigErrorGroups(wc WorkloadConfig) []WorkloadConfigErrorGrou
 		return out[i].Cause < out[j].Cause
 	})
 	return out
+}
+
+// SanitizeRemoteConfigErrorMessage converts arbitrary collector/agent-provided
+// text into a stable, length-capped summary safe for storage and APIs. Raw
+// RemoteConfigStatus.error_message may include YAML snippets, endpoints,
+// headers, tokens, tenant names, or policy details; callers must not persist or
+// expose it directly.
+func SanitizeRemoteConfigErrorMessage(msg string) string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return ""
+	}
+	if msg == "Remote config error details redacted" {
+		return msg
+	}
+	for _, cause := range []string{"collector_validation", "opamp_send_failed", "apply_timeout", "capability_mismatch", "permission_or_policy", "rollback_unavailable", "unknown"} {
+		if msg == remoteConfigErrorTitle(cause) {
+			return msg
+		}
+	}
+	cause := normalizeRemoteConfigErrorCause("", msg)
+	summary := remoteConfigErrorTitle(cause)
+	if cause == "unknown" {
+		summary = "Remote config error details redacted"
+	}
+	if utf8.RuneCountInString(summary) > 96 {
+		r := []rune(summary)
+		summary = string(r[:96])
+	}
+	return summary
 }
 
 func normalizeRemoteConfigErrorCause(cause, msg string) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,7 +199,7 @@ func TestOnMessage_RemoteConfigStatusFailed_AutoRollback(t *testing.T) {
 			bRow = &hist[i]
 		}
 	}
-	if bRow == nil || bRow.Status != "failed" || bRow.ErrorMessage != "unknown exporter 'othttp'" {
+	if bRow == nil || bRow.Status != "failed" || bRow.ErrorMessage != models.SanitizeRemoteConfigErrorMessage("unknown exporter 'othttp'") {
 		t.Fatalf("B row not updated to failed: %+v", bRow)
 	}
 	if len(pushes) != 1 || string(pushes[0].yaml) != "good-yaml" {
@@ -256,6 +257,94 @@ func TestOnMessage_RemoteConfigStatusFailed_NoRollbackTarget(t *testing.T) {
 		t.Fatalf("expected no rollback notification")
 	}
 }
+
+func TestOnMessage_RemoteConfigStatusFailed_RedactsErrorBeforePersistBroadcastAndRollback(t *testing.T) {
+	s, db, n := newTestServer(t)
+
+	uid := make([]byte, 16)
+	uid[0] = 0xDD
+	uidHex := hex.EncodeToString(uid)
+	wlID := fingerprintUIDHex(uidHex)
+	raw := "collector failed: exporters.otlp.headers.authorization=Bearer SECRET_TOKEN endpoint=https://tenant-a.internal:4317"
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID: wlID, Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+	}); err != nil {
+		t.Fatalf("seed workload: %v", err)
+	}
+	_ = db.CreateConfig(models.Config{ID: "aaaaaaaa", Name: "A", Content: "good-yaml", CreatedAt: time.Now().UTC().Add(-time.Hour), CreatedBy: "u"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: wlID, ConfigID: "aaaaaaaa", Status: "applied", AppliedAt: time.Now().UTC().Add(-time.Hour)})
+	_ = db.CreateConfig(models.Config{ID: "dddddddd", Name: "D", Content: "bad-yaml", CreatedAt: time.Now().UTC(), CreatedBy: "u"})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: wlID, ConfigID: "dddddddd", Status: "pending"})
+
+	s.onMessage(context.TODO(), nil, &protobufs.AgentToServer{
+		InstanceUid: uid,
+		AgentDescription: &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{
+				{Key: "service.name", Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "otelcol-contrib"}}},
+			},
+		},
+	})
+	s.pushFn = func(string, []byte, string) error { return nil }
+
+	hash, _ := hex.DecodeString("dddddddd")
+	s.onMessage(context.TODO(), nil, &protobufs.AgentToServer{
+		InstanceUid: uid,
+		RemoteConfigStatus: &protobufs.RemoteConfigStatus{
+			LastRemoteConfigHash: hash,
+			Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
+			ErrorMessage:         raw,
+		},
+	})
+
+	for _, forbidden := range []string{"SECRET_TOKEN", "tenant-a.internal", "authorization=Bearer"} {
+		assertNoOpAMPTestLeak(t, forbidden, db, n, wlID)
+	}
+	if len(n.statuses) != 1 || n.statuses[0].status.ErrorMessage == "" {
+		t.Fatalf("expected redacted status broadcast, got %+v", n.statuses)
+	}
+	if len(n.rollbacks) != 1 || n.rollbacks[0].reason == "" {
+		t.Fatalf("expected redacted rollback reason, got %+v", n.rollbacks)
+	}
+}
+
+func assertNoOpAMPTestLeak(t *testing.T, forbidden string, db *store.DB, n *fakeNotifier, wlID string) {
+	t.Helper()
+	hist, err := db.GetWorkloadConfigHistory(wlID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range hist {
+		if containsRemoteSecret(row.ErrorMessage, forbidden) {
+			t.Fatalf("history error_message leaked %q: %+v", forbidden, row)
+		}
+		for _, inst := range row.InstanceStatuses {
+			if containsRemoteSecret(inst.ErrorMessage, forbidden) {
+				t.Fatalf("instance error_message leaked %q: %+v", forbidden, inst)
+			}
+		}
+	}
+	wl, err := db.GetWorkload(wlID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wl.RemoteConfigStatus != nil && containsRemoteSecret(wl.RemoteConfigStatus.ErrorMessage, forbidden) {
+		t.Fatalf("workload remote status leaked %q: %+v", forbidden, wl.RemoteConfigStatus)
+	}
+	for _, status := range n.statuses {
+		if containsRemoteSecret(status.status.ErrorMessage, forbidden) {
+			t.Fatalf("broadcast status leaked %q: %+v", forbidden, status.status)
+		}
+	}
+	for _, rb := range n.rollbacks {
+		if containsRemoteSecret(rb.reason, forbidden) {
+			t.Fatalf("rollback reason leaked %q: %+v", forbidden, rb)
+		}
+	}
+}
+
+func containsRemoteSecret(s, forbidden string) bool { return strings.Contains(s, forbidden) }
 
 func TestOnMessage_AcceptsRemoteConfigCapabilityPersisted(t *testing.T) {
 	s, db, _ := newTestServer(t)

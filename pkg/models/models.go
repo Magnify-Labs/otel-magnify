@@ -140,6 +140,8 @@ type WorkloadConfig struct {
 	AppliedCount                  int                            `json:"applied_count"`
 	FailedCount                   int                            `json:"failed_count"`
 	PendingCount                  int                            `json:"pending_count"`
+	TimedOutCount                 int                            `json:"timed_out_count"`
+	NoStatusCount                 int                            `json:"no_status_count"`
 	ErrorGroups                   []WorkloadConfigErrorGroup     `json:"error_groups,omitempty"`
 
 	// Derived state labels for config history UX and rollback semantics.
