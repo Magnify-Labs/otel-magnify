@@ -87,5 +87,8 @@ func (d *DB) Migrate() error {
 	if _, err := provider.Up(context.Background()); err != nil {
 		return fmt.Errorf("goose up: %w", err)
 	}
+	if err := d.sanitizeLegacyRemoteConfigStatuses(); err != nil {
+		return err
+	}
 	return nil
 }

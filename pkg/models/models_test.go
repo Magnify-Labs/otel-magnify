@@ -274,10 +274,10 @@ func assertRemoteConfigStatusJSONErrorMessage(t *testing.T, payload []byte, want
 	t.Helper()
 	var decoded map[string]any
 	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatalf("Unmarshal encoded status: %v; json=%s", err, payload)
+		t.Fatalf("Unmarshal encoded status: %v", err)
 	}
 	if got := decoded["error_message"]; got != want {
-		t.Fatalf("error_message = %q, want %q; json=%s", got, want, payload)
+		t.Fatalf("error_message = %q, want %q", got, want)
 	}
 	assertNoSensitiveRemoteStatusText(t, string(payload))
 }
@@ -286,7 +286,7 @@ func assertNoSensitiveRemoteStatusText(t *testing.T, text string) {
 	t.Helper()
 	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "Bearer SECRET_TOKEN", "eyJhbGci", "super-secret", "super-secret-token", "tenant-a", "tenant-a.internal", "4318", "4317", "/v1/traces", "hunter2", "credentials", "password=", "username=", "endpoint:", "config snippet", "exporters:", "headers:"} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("text leaked %q: %s", forbidden, text)
+			t.Fatalf("text leaked forbidden marker %q", forbidden)
 		}
 	}
 }

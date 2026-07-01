@@ -195,10 +195,10 @@ func assertNoSensitiveWSPayload(t *testing.T, body string) {
 	t.Helper()
 	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
 		if strings.Contains(body, forbidden) {
-			t.Fatalf("payload leaked %q: %s", forbidden, body)
+			t.Fatalf("payload leaked forbidden marker %q", forbidden)
 		}
 	}
 	if !strings.Contains(body, "redacted") {
-		t.Fatalf("payload should explain redacted details: %s", body)
+		t.Fatalf("payload should explain redacted details")
 	}
 }

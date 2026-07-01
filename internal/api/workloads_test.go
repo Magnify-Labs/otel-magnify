@@ -165,7 +165,7 @@ func TestGetWorkload_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("status = %d", rec.Code)
 	}
 	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
 	var w models.Workload
@@ -184,7 +184,7 @@ func TestListWorkloads_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("status = %d", rec.Code)
 	}
 	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
 	var items []models.Workload
@@ -216,11 +216,11 @@ func assertNoSensitiveRemoteConfigStatusLeak(t *testing.T, body string) {
 	t.Helper()
 	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
 		if strings.Contains(body, forbidden) {
-			t.Fatalf("response leaked %q: %s", forbidden, body)
+			t.Fatalf("response leaked forbidden marker %q", forbidden)
 		}
 	}
 	if !strings.Contains(body, "redacted") {
-		t.Fatalf("response should explain redacted remote status details: %s", body)
+		t.Fatalf("response should explain redacted remote status details")
 	}
 }
 
@@ -237,7 +237,7 @@ func assertRemoteConfigStatusSanitized(t *testing.T, status *models.RemoteConfig
 	}
 	const want = "Remote config error details redacted"
 	if status.ErrorMessage != want {
-		t.Fatalf("remote_config_status.error_message = %q, want %q", status.ErrorMessage, want)
+		t.Fatalf("remote_config_status.error_message did not match sanitized summary")
 	}
 }
 
@@ -965,7 +965,7 @@ func TestRollbackStatusRedactsRawConfigAndRemoteErrors(t *testing.T) {
 	body := rec.Body.String()
 	for _, forbidden := range []string{"history_row", "remote_config_status", "content", "secret_exporter", "backend secret detail", "remote secret detail"} {
 		if strings.Contains(body, forbidden) {
-			t.Fatalf("status response leaked %q in %s", forbidden, body)
+			t.Fatalf("status response leaked forbidden marker %q", forbidden)
 		}
 	}
 	var report map[string]any
