@@ -76,8 +76,11 @@ func (d *DB) UpdateWorkloadConfigStatus(workloadID, configID, status, errorMessa
 func (d *DB) UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUID, status, errorMessage string, updatedAt time.Time) error {
 	errorMessage = models.SanitizeRemoteConfigErrorMessage(errorMessage)
 	wc, err := d.GetLatestWorkloadConfigByHash(workloadID, configID)
-	if err != nil || wc == nil {
+	if err != nil {
 		return err
+	}
+	if wc == nil {
+		return d.UpdateCanaryTargetStatus(workloadID, configID, instanceUID, status, updatedAt)
 	}
 	if updatedAt.IsZero() {
 		updatedAt = time.Now().UTC()
@@ -117,7 +120,10 @@ func (d *DB) UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUI
 		  )`,
 		wc.Status, nullIfEmpty(errorMessage), string(instancesJSON), workloadID, configID, workloadID, configID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return d.UpdateCanaryTargetStatus(workloadID, configID, instanceUID, status, updatedAt)
 }
 
 // GetLatestPendingWorkloadConfig returns the most recent still-in-flight push for the workload, or (nil, nil) if there is none.
