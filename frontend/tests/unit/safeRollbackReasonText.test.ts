@@ -49,3 +49,20 @@ test('redacts tenant-like identifiers and bare host endpoints in rollback reason
   assert.match(rendered, /redacted tenant/)
   assert.match(rendered, /redacted endpoint/)
 })
+
+test('parses bare host endpoints without regex backtracking on long dotted non-matches', () => {
+  const longDottedNonMatch = `${Array.from({ length: 400 }, (_, index) => `segment-${index}`).join('.')}::not-a-port`
+  const rendered = safeRollbackReasonText(`rollback retry saw ${longDottedNonMatch}`)
+
+  assert.equal(rendered.includes('redacted endpoint'), false)
+  assert.equal(rendered.startsWith('rollback retry saw segment-0.segment-1'), true)
+})
+
+test('redacts bare host endpoints with path suffixes in rollback reasons', () => {
+  const rendered = safeRollbackReasonText(
+    'rollback failed calling collector-prod-eu:4317/v1/traces',
+  )
+
+  assert.equal(rendered.includes('collector-prod-eu:4317'), false)
+  assert.match(rendered, /redacted endpoint/)
+})
