@@ -10,6 +10,7 @@
     "format": "prettier --write 'src/**/*.{ts,tsx,css,json}' '*.{ts,json,md}'",
     "format:check": "prettier --check 'src/**/*.{ts,tsx,css,json}' '*.{ts,json,md}'",
     "preview": "vite preview",
+    "test:unit": "node --experimental-strip-types --test 'tests/unit/**/*.test.ts'",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:real": "playwright test --config=playwright.real.config.ts"

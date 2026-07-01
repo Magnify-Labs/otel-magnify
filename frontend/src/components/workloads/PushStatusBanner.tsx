@@ -8,7 +8,7 @@ import type {
   WorkloadConfigInstanceStatus,
   WorkloadConfigTimelineEntry,
 } from '../../types'
-import { safeRemoteErrorText } from '../../lib/safeRemoteErrorText'
+import { safeRemoteErrorText, safeRollbackReasonText } from '../../lib/safeRemoteErrorText'
 
 interface Props {
   status?: RemoteConfigStatus
@@ -23,7 +23,7 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
   const [detailsOpen, setDetailsOpen] = useState(false)
   const visiblePush = push ?? statusToPush(status)
   const timedOut = hasTimedOutRequiredTarget(visiblePush)
-  const rollbackReason = safeRemoteErrorText(rollback?.reason)
+  const rollbackReason = safeRollbackReasonText(rollback?.reason)
 
   return (
     <div className="push-status-panel" aria-label="Config push status">
