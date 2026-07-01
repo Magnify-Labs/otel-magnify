@@ -318,5 +318,81 @@
     "admin": {
       "sso": "Fournisseurs SSO"
     }
+  },
+  "configs": {
+    "title": "Config Library",
+    "subtitle": "Configs sauvegardées, templates, brouillons et références known-good dans un espace sûr.",
+    "new_button": "Nouvelle config",
+    "loading": "Chargement des configs…",
+    "empty": "Aucune config ni template disponible.",
+    "concepts_aria": "Concepts de la Config Library",
+    "concepts": {
+      "saved": {
+        "title": "Configs sauvegardées",
+        "body": "Configs créées par les opérateurs, prêtes à réutiliser ou pousser."
+      },
+      "template": {
+        "title": "Templates",
+        "body": "Bases par stack avec placeholders plutôt que valeurs secrètes."
+      },
+      "draft": {
+        "title": "Brouillons",
+        "body": "Configs en préparation depuis un YAML vide ou un template."
+      },
+      "known_good": {
+        "title": "Références known-good",
+        "body": "Révisions stables pour guider rollback et récupération."
+      }
+    },
+    "filter": {
+      "label": "Filtres de Config Library",
+      "all": "Tout",
+      "saved": "Configs sauvegardées",
+      "template": "Templates",
+      "draft": "Brouillons",
+      "known_good": "Références known-good"
+    },
+    "form": {
+      "header": "Créer une config",
+      "template_header": "Créer un brouillon depuis un template",
+      "name": "Nom",
+      "name_placeholder": "baseline collecteur prod",
+      "content": "Contenu YAML",
+      "draft_from": "Brouillon depuis",
+      "secret_help": "Utilisez des placeholders comme ${OTLP_AUTH_HEADER} ; ne collez pas de secrets en clair.",
+      "saving": "Enregistrement…",
+      "submit": "Enregistrer le brouillon"
+    },
+    "templates": {
+      "title": "Templates",
+      "subtitle": "Configs de départ intégrées, groupées par stack. Les variables affichent uniquement les placeholders attendus.",
+      "variables": "Variables du template",
+      "required": "requis",
+      "built_in": "intégré",
+      "no_description": "Aucune description fournie.",
+      "no_variables": "Aucune variable annoncée pour ce template.",
+      "use": "Utiliser le template",
+      "use_aria": "Utiliser le template"
+    },
+    "saved": {
+      "title": "Configs sauvegardées et références",
+      "subtitle": "Les anciennes lignes sans metadata de library sont traitées comme configs sauvegardées."
+    },
+    "kind": {
+      "saved": "sauvegardée",
+      "template": "template",
+      "draft": "brouillon",
+      "known_good": "known-good"
+    },
+    "table": {
+      "name": "Nom",
+      "kind": "Type",
+      "category": "Catégorie",
+      "created_by": "Créée par",
+      "created_at": "Créée le",
+      "id": "ID",
+      "none": "—",
+      "system": "système"
+    }
   }
 }

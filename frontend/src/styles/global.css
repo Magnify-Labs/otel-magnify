@@ -1710,6 +1710,236 @@ code {
   gap: 0.5rem;
 }
 
+.configs-library-header {
+  align-items: flex-start;
+}
+
+.configs-library-subtitle,
+.configs-section-header p,
+.configs-form-help,
+.configs-muted-copy {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.configs-library-concepts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.configs-concept-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.configs-concept-card:hover,
+.configs-concept-card-active {
+  border-color: var(--gold);
+  background: var(--gold-dim);
+}
+
+.configs-concept-count {
+  display: block;
+  font-family: var(--mono);
+  font-size: 1.4rem;
+  color: var(--text-hi);
+}
+
+.configs-concept-title {
+  display: block;
+  margin-top: 0.3rem;
+  font-weight: 700;
+  color: var(--text-hi);
+}
+
+.configs-concept-copy {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.configs-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.configs-filter-tab {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.configs-filter-tab-active,
+.configs-filter-tab:hover {
+  color: var(--text-hi);
+  border-color: var(--gold);
+  background: var(--gold-dim);
+}
+
+.configs-editor-field {
+  margin-bottom: 0;
+}
+
+.configs-library-layout {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.configs-library-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.configs-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.configs-section-header h2,
+.configs-template-card h3 {
+  margin: 0;
+  color: var(--text-hi);
+}
+
+.configs-section-count {
+  align-self: flex-start;
+  font-family: var(--mono);
+  color: var(--gold);
+}
+
+.configs-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.configs-template-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  padding: 1rem;
+}
+
+.configs-template-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.configs-template-heading p {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.83rem;
+  line-height: 1.45;
+}
+
+.configs-template-meta,
+.configs-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.configs-template-meta span,
+.configs-tag,
+.configs-kind-pill {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.18rem 0.45rem;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.configs-variable-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.configs-variable {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(130px, auto);
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem;
+  background: var(--surface);
+}
+
+.configs-variable-name {
+  color: var(--text-hi);
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.configs-variable-required {
+  margin-left: 0.4rem;
+  color: var(--gold);
+  font-size: 0.7rem;
+}
+
+.configs-template-use {
+  margin-top: auto;
+  justify-content: center;
+}
+
+.configs-table-wrap {
+  overflow-x: auto;
+}
+
+.configs-library-table {
+  margin: 0;
+}
+
+.configs-name-cell,
+.configs-mono-cell,
+.configs-date-cell {
+  font-family: var(--mono);
+}
+
+.configs-name-cell {
+  color: var(--text-hi);
+}
+
+.configs-mono-cell {
+  font-size: 0.8rem;
+}
+
+.configs-date-cell {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
 /* ── CodeMirror theme override ── */
 .cm-editor {
   background: var(--bg) !important;
