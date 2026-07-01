@@ -156,6 +156,61 @@ func TestGetWorkload_NotFound(t *testing.T) {
 	}
 }
 
+func TestGetWorkload_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	seedLegacyRemoteConfigStatus(t, db, "w-legacy")
+
+	req := authedRequest(t, "GET", "/api/workloads/w-legacy")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
+}
+
+func TestListWorkloads_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	seedLegacyRemoteConfigStatus(t, db, "w-legacy")
+
+	req := authedRequest(t, "GET", "/api/workloads")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
+}
+
+func seedLegacyRemoteConfigStatus(t *testing.T, db ext.Store, workloadID string) {
+	t.Helper()
+	if err := db.UpsertWorkload(models.Workload{ID: workloadID, DisplayName: "legacy", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}}); err != nil {
+		t.Fatalf("UpsertWorkload: %v", err)
+	}
+	sqlDB, ok := db.(*store.DB)
+	if !ok {
+		t.Fatalf("test store is %T, want *store.DB", db)
+	}
+	raw := `{"status":"failed","config_hash":"hash-a","error_message":"collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces","updated_at":"1970-01-01T00:00:00Z"}`
+	if _, err := sqlDB.Exec(`UPDATE workloads SET remote_config_status = ? WHERE id = ?`, raw, workloadID); err != nil {
+		t.Fatalf("seed legacy remote_config_status: %v", err)
+	}
+}
+
+func assertNoSensitiveRemoteConfigStatusLeak(t *testing.T, body string) {
+	t.Helper()
+	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("response leaked %q: %s", forbidden, body)
+		}
+	}
+	if !strings.Contains(body, "redacted") {
+		t.Fatalf("response should explain redacted remote status details: %s", body)
+	}
+}
+
 // --- Instances ---
 
 func TestListWorkloadInstances_FromRegistry(t *testing.T) {

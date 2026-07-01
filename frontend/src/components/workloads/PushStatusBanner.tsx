@@ -22,6 +22,7 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
   const [detailsOpen, setDetailsOpen] = useState(false)
   const visiblePush = push ?? statusToPush(status)
   const timedOut = hasTimedOutRequiredTarget(visiblePush)
+  const rollbackReason = safeRemoteErrorText(rollback?.reason)
 
   return (
     <div className="push-status-panel" aria-label="Config push status">
@@ -107,7 +108,7 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
               </button>
             )}
           </div>
-          {rollback.reason && <pre className="push-banner-error">{rollback.reason}</pre>}
+          {rollbackReason && <pre className="push-banner-error">{rollbackReason}</pre>}
         </div>
       )}
     </div>
@@ -392,18 +393,43 @@ function severityLabel(severity: string): string {
   return `Severity: ${severity}`
 }
 
-function safeRemoteErrorText(value: string): string {
-  const normalized = value
-    .replace(/bearer\s+[a-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
-    .replace(
-      /(token|password|passwd|secret|authorization|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,
-      '$1=[redacted]',
+function safeRemoteErrorText(value?: string): string {
+  const text = value?.trim()
+  if (!text) return ''
+  if (remoteErrorLooksSensitive(text)) {
+    return 'Remote config error details redacted'
+  }
+  const compact = text.split(/\s+/).join(' ')
+  if (compact.length > 160) return `${compact.slice(0, 157)}…`
+  return compact
+}
+
+function remoteErrorLooksSensitive(value: string): boolean {
+  const lower = value.toLowerCase()
+  if (value.includes('\n') || value.includes('\r')) return true
+  if (lower.includes('://')) return true
+  if (
+    lower.includes('authorization=') ||
+    lower.includes('authorization:') ||
+    lower.includes('bearer ') ||
+    lower.includes('secret_token') ||
+    lower.includes('secret-token') ||
+    lower.includes('token=') ||
+    lower.includes('token:') ||
+    lower.includes('password=') ||
+    lower.includes('password:') ||
+    lower.includes('api_key') ||
+    lower.includes('api-key')
+  ) {
+    return true
+  }
+  return lower
+    .split(/\s+/)
+    .some((part) =>
+      ['.internal', '.local', '.corp', '.lan', '.svc', '.cluster'].some((suffix) =>
+        part.includes(suffix),
+      ),
     )
-    .replace(/https?:\/\/[^\s'"]+/gi, '[endpoint redacted]')
-    .replace(/otelcol[^\n]{80,}/gi, 'collector details redacted')
-    .trim()
-  if (normalized.length > 160) return `${normalized.slice(0, 157)}…`
-  return normalized
 }
 
 function formatInstanceCount(count: number): string {

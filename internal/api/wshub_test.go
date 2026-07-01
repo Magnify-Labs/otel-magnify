@@ -44,6 +44,30 @@ func TestBroadcastWorkloadUpdatePayload(t *testing.T) {
 	}
 }
 
+func TestBroadcastWorkloadUpdate_RedactsSensitiveRemoteConfigStatus(t *testing.T) {
+	h := NewHub()
+	go h.Run()
+	defer h.Stop()
+	c := hookClient(h)
+
+	h.BroadcastWorkloadUpdate(models.Workload{
+		ID: "w1",
+		RemoteConfigStatus: &models.RemoteConfigStatus{
+			Status:       "failed",
+			ConfigHash:   "abc",
+			ErrorMessage: "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces",
+			UpdatedAt:    time.Unix(0, 0).UTC(),
+		},
+	}, 2, 1)
+
+	select {
+	case raw := <-c.send:
+		assertNoSensitiveWSPayload(t, string(raw))
+	case <-time.After(time.Second):
+		t.Fatal("no broadcast received")
+	}
+}
+
 func TestBroadcastWorkloadEventPayload(t *testing.T) {
 	h := NewHub()
 	go h.Run()
@@ -92,7 +116,7 @@ func TestBroadcastConfigStatus_SerializesEvent(t *testing.T) {
 			t.Fatalf("unexpected event: %s", string(b))
 		}
 		st := ev["status"].(map[string]any)
-		if st["status"] != "failed" || st["error_message"] != "boom" {
+		if st["status"] != "failed" || st["error_message"] != models.SanitizeRemoteConfigErrorMessage("boom") {
 			t.Fatalf("status payload: %+v", st)
 		}
 	case <-time.After(time.Second):
@@ -120,5 +144,61 @@ func TestBroadcastAutoRollback_SerializesEvent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no broadcast")
+	}
+}
+
+func TestBroadcastConfigStatus_RedactsSensitiveErrorMessage(t *testing.T) {
+	h := NewHub()
+	go h.Run()
+	defer h.Stop()
+
+	ch := make(chan []byte, 1)
+	h.mu.Lock()
+	h.clients[&wsClient{send: ch}] = true
+	h.mu.Unlock()
+
+	h.BroadcastConfigStatus("workload-1", models.RemoteConfigStatus{
+		Status:       "failed",
+		ConfigHash:   "abc",
+		ErrorMessage: "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces",
+		UpdatedAt:    time.Unix(0, 0).UTC(),
+	})
+
+	select {
+	case b := <-ch:
+		assertNoSensitiveWSPayload(t, string(b))
+	case <-time.After(time.Second):
+		t.Fatal("no broadcast received")
+	}
+}
+
+func TestBroadcastAutoRollback_RedactsSensitiveReason(t *testing.T) {
+	h := NewHub()
+	go h.Run()
+	defer h.Stop()
+
+	ch := make(chan []byte, 1)
+	h.mu.Lock()
+	h.clients[&wsClient{send: ch}] = true
+	h.mu.Unlock()
+
+	h.BroadcastAutoRollback("workload-1", "bbbbbbbb", "aaaaaaaa", "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces", "last_known_good")
+	select {
+	case b := <-ch:
+		assertNoSensitiveWSPayload(t, string(b))
+	case <-time.After(time.Second):
+		t.Fatal("no broadcast")
+	}
+}
+
+func assertNoSensitiveWSPayload(t *testing.T, body string) {
+	t.Helper()
+	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("payload leaked %q: %s", forbidden, body)
+		}
+	}
+	if !strings.Contains(body, "redacted") {
+		t.Fatalf("payload should explain redacted details: %s", body)
 	}
 }

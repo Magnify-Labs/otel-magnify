@@ -721,6 +721,72 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   await expect(page.locator('.cm-content').first()).toContainText('# touched')
 })
 
+test('push and rollback banners redact sensitive remote error text', async ({ loggedInPage: page }) => {
+  const rawError = 'collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces'
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) =>
+    route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'config push initiated', config_hash: 'deadbeefdeadbeef' }),
+    }),
+  )
+
+  await page.goto('/')
+  await page.evaluate(() => localStorage.setItem('token', 'test.token.stub'))
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.locator('.cm-content').first().click()
+  await page.keyboard.type(' # sensitive-redaction')
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await expect(page.locator('.validation-ok')).toBeVisible()
+  await page.getByRole('button', { name: 'Push' }).click()
+
+  await page.evaluate((errorMessage) => {
+    const evt = {
+      type: 'workload_config_status',
+      workload_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      status: {
+        status: 'failed',
+        config_hash: 'deadbeefdeadbeef',
+        error_message: errorMessage,
+        updated_at: new Date().toISOString(),
+      },
+    }
+    ;(window as unknown as { __testWsInject?: (ev: unknown) => void }).__testWsInject?.(evt)
+  }, rawError)
+
+  const failedError = page.locator('.push-banner-failed .push-banner-error')
+  await expect(failedError).toContainText('Remote config error details redacted')
+  await expect(failedError).not.toContainText('SECRET_TOKEN')
+  await expect(failedError).not.toContainText('abc123')
+  await expect(failedError).not.toContainText('super-secret')
+  await expect(failedError).not.toContainText('tenant-a.internal')
+  await expect(failedError).not.toContainText('/v1/traces')
+
+  await page.evaluate((reason) => {
+    const evt = {
+      type: 'auto_rollback_applied',
+      workload_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      from_hash: 'deadbeefdeadbeef',
+      to_hash: 'abc123abc123',
+      reason,
+    }
+    ;(window as unknown as { __testWsInject?: (ev: unknown) => void }).__testWsInject?.(evt)
+  }, rawError)
+
+  const rollbackError = page.locator('.push-banner-rollback .push-banner-error')
+  await expect(rollbackError).toContainText('Remote config error details redacted')
+  await expect(rollbackError).not.toContainText('SECRET_TOKEN')
+  await expect(rollbackError).not.toContainText('abc123')
+  await expect(rollbackError).not.toContainText('super-secret')
+  await expect(rollbackError).not.toContainText('tenant-a.internal')
+  await expect(rollbackError).not.toContainText('/v1/traces')
+})
+
 test('push applied closes edit mode, clears draft, shows applied banner', async ({
   loggedInPage: page,
 }) => {

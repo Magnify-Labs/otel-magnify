@@ -82,6 +82,7 @@ func (h *Hub) Stop() {
 
 // BroadcastConfigStatus fans out a remote config status update.
 func (h *Hub) BroadcastConfigStatus(workloadID string, status models.RemoteConfigStatus) {
+	status = status.Sanitized()
 	event := map[string]any{
 		"type":        "workload_config_status",
 		"workload_id": workloadID,
@@ -102,7 +103,7 @@ func (h *Hub) BroadcastAutoRollback(workloadID, fromHash, toHash, reason, target
 		"workload_id": workloadID,
 		"from_hash":   fromHash,
 		"to_hash":     toHash,
-		"reason":      reason,
+		"reason":      models.SanitizeRemoteConfigErrorMessage(reason),
 		"target_kind": targetKind,
 	}
 	data, err := json.Marshal(event)
@@ -115,6 +116,10 @@ func (h *Hub) BroadcastAutoRollback(workloadID, fromHash, toHash, reason, target
 
 // BroadcastWorkloadUpdate fans out a workload state change plus live-instance counts.
 func (h *Hub) BroadcastWorkloadUpdate(w models.Workload, connectedInstances, driftedInstances int) {
+	if w.RemoteConfigStatus != nil {
+		status := w.RemoteConfigStatus.Sanitized()
+		w.RemoteConfigStatus = &status
+	}
 	event := map[string]any{
 		"type":                     "workload_update",
 		"workload":                 w,
