@@ -168,23 +168,25 @@ func TestSanitizeRemoteConfigErrorMessageCanonicalRollbackContract(t *testing.T)
 }
 
 func TestRemoteConfigStatusModelBoundariesUseRollbackSanitizerContract(t *testing.T) {
-	want := "Remote config error details redacted"
 	tests := []struct {
 		name string
 		raw  string
+		want string
 	}{
-		{name: "raw secret token", raw: "collector failed: SECRET_TOKEN=abc123"},
-		{name: "internal tenant endpoint", raw: "endpoint=https://tenant-a.internal:4318/v1/traces"},
-		{name: "authorization bearer header", raw: "authorization=Bearer eyJhbGciOiJIUzI1NiJ9.super-secret"},
-		{name: "lowercase bearer token", raw: "bearer super-secret-token"},
-		{name: "tenant identifier", raw: "remote config failed for tenant tenant-a"},
-		{name: "credentials", raw: "credentials username=tenant-a password=hunter2"},
-		{name: "config snippet", raw: "config snippet: exporters:\n  otlp:\n    endpoint: https://tenant-a.internal:4317\n    headers:\n      authorization: Bearer SECRET_TOKEN"},
+		{name: "raw secret token redacts details", raw: "collector failed: SECRET_TOKEN=abc123", want: "Remote config error details redacted"},
+		{name: "internal tenant endpoint redacts details", raw: "endpoint=https://tenant-a.internal:4318/v1/traces", want: "Remote config error details redacted"},
+		{name: "authorization bearer header redacts details", raw: "authorization=Bearer eyJhbG...cret", want: "Remote config error details redacted"},
+		{name: "lowercase bearer token redacts details", raw: "bearer super-secret-token", want: "Remote config error details redacted"},
+		{name: "tenant identifier redacts details", raw: "remote config failed for tenant tenant-a", want: "Remote config error details redacted"},
+		{name: "credentials redact details", raw: "credentials username=tenant-a password=hunter2", want: "Remote config error details redacted"},
+		{name: "config snippet redacts details", raw: "config snippet: exporters:\n  otlp:\n    endpoint: https://tenant-a.internal:4317\n    headers:\n      authorization: Bearer ***", want: "Remote config error details redacted"},
+		{name: "invalid component preserves collector validation context", raw: "invalid component in config snippet: exporters.otlp.headers.authorization=Bearer SECRET_TOKEN endpoint=https://tenant-a.internal:4317", want: "Collector rejected the config"},
+		{name: "policy refused preserves policy context", raw: "policy refused tenant tenant-a credentials username=tenant-a password=hunter2 authorization=Bearer SECRET_TOKEN", want: "Agent policy rejected the config"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertRemoteConfigStatusModelBoundariesSanitize(t, tt.raw, want)
+			assertRemoteConfigStatusModelBoundariesSanitize(t, tt.raw, tt.want)
 		})
 	}
 }
@@ -206,11 +208,24 @@ func assertRemoteConfigStatusModelBoundariesSanitize(t *testing.T, raw, want str
 		assertRemoteConfigStatusJSONErrorMessage(t, []byte(encoded), want)
 	})
 
-	t.Run("Scan", func(t *testing.T) {
+	t.Run("ScanString", func(t *testing.T) {
 		legacy := remoteConfigStatusLegacyJSONFixture(t, raw)
 
 		var status RemoteConfigStatus
 		if err := status.Scan(string(legacy)); err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		if status.ErrorMessage != want {
+			t.Fatalf("ErrorMessage = %q, want %q", status.ErrorMessage, want)
+		}
+		assertNoSensitiveRemoteStatusText(t, status.ErrorMessage)
+	})
+
+	t.Run("ScanBytes", func(t *testing.T) {
+		legacy := remoteConfigStatusLegacyJSONFixture(t, raw)
+
+		var status RemoteConfigStatus
+		if err := status.Scan(legacy); err != nil {
 			t.Fatalf("Scan: %v", err)
 		}
 		if status.ErrorMessage != want {
