@@ -60,6 +60,16 @@ function mockHistory(page: Page, rows: unknown[]) {
   )
 }
 
+function mockKnownGoodMissing(page: Page) {
+  return page.route(`**/api/workloads/${WORKLOAD_ID}/known-good`, (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'known-good config not found' }),
+    }),
+  )
+}
+
 function mockValidate(page: Page, result: Record<string, unknown> & { valid: boolean }) {
   return page.route(`**/api/workloads/${WORKLOAD_ID}/config/validate`, (route) =>
     route.fulfill({
@@ -126,6 +136,7 @@ const VALIDATION_CHECKS_SUCCESS = [
 
 test.beforeEach(async ({ loggedInPage: page }) => {
   await mockConfigsList(page, [])
+  await mockKnownGoodMissing(page)
 })
 
 const PUSH_STATUS_LABEL_CASES = [
@@ -168,13 +179,9 @@ test('push status labels render every backend status', async ({ loggedInPage: pa
   })
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
-  await page.goto('/login')
-  await page.evaluate(() => localStorage.setItem('token', 'test.token.stub'))
-
   for (const [status, label] of PUSH_STATUS_LABEL_CASES) {
     currentStatus = status
     await page.goto('/login')
-    await page.evaluate(() => localStorage.setItem('token', 'test.token.stub'))
     await page.goto(`/workloads/${WORKLOAD_ID}`)
     await expect(page.locator('.push-banner-label')).toHaveText(label)
   }
@@ -223,7 +230,7 @@ test('config safety explains the supervised collector flow before the editor', a
   await expect(safety).toContainText('History available')
 
   const safetyTop = await safety.boundingBox()
-  const configTop = await page.locator('.section-title', { hasText: 'Configuration' }).boundingBox()
+  const configTop = await page.getByText('Configuration', { exact: true }).boundingBox()
   expect(safetyTop?.y).toBeLessThan(configTop?.y ?? Number.POSITIVE_INFINITY)
 })
 
@@ -668,7 +675,7 @@ test('remote config errors are grouped by cause with affected instances', async 
   await expect(errors).toContainText('Collector rejected the config')
   await expect(errors).toContainText('2 instances')
   await expect(errors).toContainText("unknown exporter 'othttp'")
-  await expect(errors).toContainText('credential/endpoint details redacted')
+  await expect(errors).toContainText('redacted credential; redacted endpoint')
   await expect(errors).toContainText('Severity: high')
   await expect(errors).toContainText('collector_validation')
   await expect(errors).toContainText('inst-a')
@@ -857,22 +864,8 @@ test('history refreshes when WS workload_config_status arrives from another sess
   await mockWorkload(page)
   await mockConfig(page, 'a: 1\n')
 
-  let call = 0
+  let rows: unknown[] = []
   await page.route(`**/api/workloads/${WORKLOAD_ID}/configs`, (route) => {
-    call += 1
-    const rows =
-      call === 1
-        ? []
-        : [
-            {
-              workload_id: WORKLOAD_ID,
-              config_id: 'ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-              applied_at: new Date().toISOString(),
-              status: 'applied',
-              pushed_by: 'other@user',
-              error_message: '',
-            },
-          ]
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -885,6 +878,16 @@ test('history refreshes when WS workload_config_status arrives from another sess
   await expect(page.locator('.history-table')).toHaveCount(0)
 
   // Simulate a config applied event from another session (not our local push)
+  rows = [
+    {
+      workload_id: WORKLOAD_ID,
+      config_id: 'ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      applied_at: new Date().toISOString(),
+      status: 'applied',
+      pushed_by: 'other@user',
+      error_message: '',
+    },
+  ]
   await page.evaluate((workloadId) => {
     const evt = {
       type: 'workload_config_status',
