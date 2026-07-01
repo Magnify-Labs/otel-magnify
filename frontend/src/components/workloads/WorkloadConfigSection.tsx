@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { configsAPI, workloadsAPI } from '../../api/client'
 import { DOCS_BASE_URL } from '../../constants'
 import YamlEditor from '../config/YamlEditor'
@@ -8,6 +8,7 @@ import PushStatusBanner from './PushStatusBanner'
 import ConfigDiffView from './ConfigDiffView'
 import PushHistoryTable from './PushHistoryTable'
 import ConfigSafetySection from './ConfigSafetySection'
+import GuidedRollbackDialog from './GuidedRollbackDialog'
 import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
@@ -51,10 +52,8 @@ interface RecoveryPanelProps {
   knownGoodMissing: boolean
   knownGoodError?: unknown
   loading: boolean
-  rollbackPending: boolean
-  rollbackError: boolean
   canRollback: boolean
-  onRollback: (kind: 'last_known_good' | 'previous') => void
+  onRollback: (target: WorkloadConfig) => void
 }
 
 function ConfigRecoveryPanel({
@@ -63,8 +62,6 @@ function ConfigRecoveryPanel({
   knownGoodMissing,
   knownGoodError,
   loading,
-  rollbackPending,
-  rollbackError,
   canRollback,
   onRollback,
 }: RecoveryPanelProps) {
@@ -76,10 +73,26 @@ function ConfigRecoveryPanel({
   const knownGoodHash = knownGood?.config_id ?? lastKnownGoodRow?.config_id
   const knownGoodAvailable = knownGood?.content_available ?? contentIsAvailable(lastKnownGoodRow)
   const previousAvailable = contentIsAvailable(previous)
-  const rollbackTarget =
-    hasKnownGood && knownGoodAvailable ? 'last_known_good' : previousAvailable ? 'previous' : null
+  const knownGoodTarget =
+    hasKnownGood && knownGoodAvailable
+      ? (lastKnownGoodRow ??
+        (knownGood
+          ? ({
+              workload_id: knownGood.workload_id,
+              config_id: knownGood.config_id,
+              applied_at: knownGood.source_applied_at ?? knownGood.marked_at,
+              status: 'applied',
+              pushed_by: knownGood.marked_by,
+              label: 'Last known-good',
+              is_last_known_good: true,
+              content_available: knownGood.content_available,
+            } satisfies WorkloadConfig)
+          : null))
+      : null
+  const rollbackTarget = knownGoodTarget ?? (previousAvailable ? previous : null)
+  const rollbackKind = knownGoodTarget ? 'last_known_good' : previousAvailable ? 'previous' : null
   const rollbackLabel =
-    rollbackTarget === 'last_known_good' ? 'Rollback to Last known-good' : 'Rollback to Previous'
+    rollbackKind === 'last_known_good' ? 'Rollback to Last known-good' : 'Rollback to Previous'
   const disableReason = !canRollback
     ? 'Requires workload:push_config permission'
     : hasKnownGood && !knownGoodAvailable
@@ -102,10 +115,10 @@ function ConfigRecoveryPanel({
         <button
           className="btn btn-primary"
           onClick={() => rollbackTarget && onRollback(rollbackTarget)}
-          disabled={!canRollback || !rollbackTarget || rollbackPending || loading}
+          disabled={!canRollback || !rollbackTarget || loading}
           title={canRollback && rollbackTarget ? rollbackLabel : disableReason}
         >
-          {rollbackPending ? 'Rolling back…' : rollbackLabel}
+          {rollbackLabel}
         </button>
       </div>
       {loading ? (
@@ -156,7 +169,6 @@ function ConfigRecoveryPanel({
           Failed to load Last known-good configuration.
         </div>
       )}
-      {rollbackError && <div className="error-text config-recovery-error">Rollback failed.</div>}
     </section>
   )
 }
@@ -189,7 +201,6 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const rollback = useStore((s) => s.lastRollback[workload.id])
   const clearRollback = useStore((s) => s.clearAutoRollback)
   const me = useStore((s) => s.me)
-  const queryClient = useQueryClient()
 
   const [editMode, setEditMode] = useState(false)
   const [tab, setTab] = useState<Tab>('edit')
@@ -200,9 +211,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
   const [selectedConfigId, setSelectedConfigId] = useState('')
-  const [confirmDefaultRollback, setConfirmDefaultRollback] = useState<
-    'last_known_good' | 'previous' | null
-  >(null)
+  const [defaultRollbackTarget, setDefaultRollbackTarget] = useState<WorkloadConfig | null>(null)
 
   const {
     data: config,
@@ -235,15 +244,6 @@ export default function WorkloadConfigSection({ workload }: Props) {
     queryFn: () => workloadsAPI.getKnownGood(workload.id),
     enabled: workload.type === 'collector',
     retry: false,
-  })
-
-  const defaultRollbackMutation = useMutation({
-    mutationFn: () => workloadsAPI.rollbackDefault(workload.id),
-    onSuccess: () => {
-      setConfirmDefaultRollback(null)
-      queryClient.invalidateQueries({ queryKey: ['workload-config-history', workload.id] })
-      queryClient.invalidateQueries({ queryKey: ['workload', workload.id] })
-    },
   })
 
   const activeContent = config?.content ?? ''
@@ -377,58 +377,17 @@ export default function WorkloadConfigSection({ workload }: Props) {
       knownGoodMissing={knownGoodMissing}
       knownGoodError={knownGoodError}
       loading={historyLoading || knownGoodLoading}
-      rollbackPending={defaultRollbackMutation.isPending}
-      rollbackError={defaultRollbackMutation.isError}
       canRollback={canRollback}
-      onRollback={setConfirmDefaultRollback}
+      onRollback={setDefaultRollbackTarget}
     />
   )
 
-  const defaultRollbackConfirm = confirmDefaultRollback ? (
-    <div className="modal-backdrop" onClick={() => setConfirmDefaultRollback(null)}>
-      <div
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={
-          confirmDefaultRollback === 'last_known_good'
-            ? 'Rollback to Last known-good?'
-            : 'Rollback to Previous?'
-        }
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <span>
-            {confirmDefaultRollback === 'last_known_good'
-              ? 'Rollback to Last known-good?'
-              : 'Rollback to Previous?'}
-          </span>
-        </div>
-        <p className="modal-body">
-          otel-magnify will push the selected recovery target to this workload.
-        </p>
-        <div className="btn-row modal-actions">
-          <button
-            className="btn btn-primary"
-            onClick={() => defaultRollbackMutation.mutate()}
-            disabled={defaultRollbackMutation.isPending}
-          >
-            {defaultRollbackMutation.isPending
-              ? 'Rolling back…'
-              : confirmDefaultRollback === 'last_known_good'
-                ? 'Confirm rollback to Last known-good'
-                : 'Confirm rollback to Previous'}
-          </button>
-          <button
-            className="btn"
-            onClick={() => setConfirmDefaultRollback(null)}
-            disabled={defaultRollbackMutation.isPending}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+  const defaultRollbackDialog = defaultRollbackTarget ? (
+    <GuidedRollbackDialog
+      workloadId={workload.id}
+      target={defaultRollbackTarget}
+      onClose={() => setDefaultRollbackTarget(null)}
+    />
   ) : null
 
   const safetySection = (
@@ -474,7 +433,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <>
         {safetySection}
         {recoveryPanel}
-        {defaultRollbackConfirm}
+        {defaultRollbackDialog}
         <p className="section-title">Configuration</p>
         {hasConfig && isLoading ? (
           <div className="loading">Loading configuration...</div>
@@ -597,7 +556,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <>
         {safetySection}
         {recoveryPanel}
-        {defaultRollbackConfirm}
+        {defaultRollbackDialog}
         <p className="section-title">Configuration</p>
         {applySelector}
         {editMode ? (
@@ -623,7 +582,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <>
         {safetySection}
         {recoveryPanel}
-        {defaultRollbackConfirm}
+        {defaultRollbackDialog}
         <p className="section-title">Configuration</p>
         <div className="loading">Loading configuration...</div>
       </>
@@ -634,7 +593,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <>
         {safetySection}
         {recoveryPanel}
-        {defaultRollbackConfirm}
+        {defaultRollbackDialog}
         <p className="section-title">Configuration</p>
         <div className="error-text">Failed to load configuration</div>
       </>
@@ -645,7 +604,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     <>
       {safetySection}
       {recoveryPanel}
-      {defaultRollbackConfirm}
+      {defaultRollbackDialog}
       <p className="section-title">Configuration</p>
       {applySelector}
 
