@@ -727,7 +727,7 @@ test('push and rollback banners redact sensitive remote error text', () => {
 
   const rendered = safeRemoteErrorText(rawError)
 
-  expect(rendered).toBe('Remote config error credential/endpoint/tenant details redacted')
+  expect(rendered).toBe('redacted credential; redacted endpoint; redacted tenant')
   expect(rendered).not.toContain('SECRET_TOKEN')
   expect(rendered).not.toContain('authorization=Bearer')
   expect(rendered).not.toContain('abc123')
@@ -743,7 +743,7 @@ test('rollback reasons keep a safe short cause while redacting legacy remote det
   const rendered = safeRemoteErrorText(rawReason)
 
   expect(rendered).toBe(
-    "unknown exporter 'othttp' — credential/endpoint/tenant/config details redacted",
+    "unknown exporter 'othttp' — redacted credential; redacted endpoint; redacted tenant; configuration error",
   )
   expect(rendered).not.toContain('SECRET_TOKEN')
   expect(rendered).not.toContain('authorization=Bearer')
@@ -760,11 +760,25 @@ test('rollback reasons do not preserve sensitive unknown component names as caus
 
   const rendered = safeRemoteErrorText(rawReason)
 
-  expect(rendered).toBe('Remote config error credential/endpoint/tenant details redacted')
+  expect(rendered).toBe('redacted credential; redacted endpoint; redacted tenant')
   expect(rendered).not.toContain('tenant-a.internal')
   expect(rendered).not.toContain('authorization=Bearer')
   expect(rendered).not.toContain('super-secret')
   expect(rendered).not.toContain('/v1/traces')
+})
+
+test('rollback reasons map config snippets and tenant identifiers to concise safe labels', () => {
+  const rawReason =
+    'tenant-a failed rollback validation: service:\n  pipelines:\n    traces:\n      exporters: [otlp]\nexporters:\n  otlp:\n    endpoint: tenant-a.internal:4317'
+
+  const rendered = safeRemoteErrorText(rawReason)
+
+  expect(rendered).toBe('redacted endpoint; redacted tenant; configuration error')
+  expect(rendered).not.toContain('tenant-a')
+  expect(rendered).not.toContain('tenant-a.internal')
+  expect(rendered).not.toContain('service:')
+  expect(rendered).not.toContain('exporters:')
+  expect(rendered).not.toContain('otlp')
 })
 
 test('push applied closes edit mode, clears draft, shows applied banner', async ({

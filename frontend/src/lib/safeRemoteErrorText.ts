@@ -14,16 +14,16 @@ function sensitiveRemoteErrorLabel(
   value: string,
   sensitivity: Set<RemoteErrorSensitivity>,
 ): string {
-  const safeCause = safeRemoteErrorCause(value)
-  const reasons = [
-    sensitivity.has('credential') ? 'credential' : undefined,
-    sensitivity.has('endpoint') ? 'endpoint' : undefined,
-    sensitivity.has('tenant') ? 'tenant' : undefined,
-    sensitivity.has('config') ? 'config' : undefined,
+  const safeCause = safeRemoteErrorCause(value, sensitivity)
+  const labels = [
+    sensitivity.has('credential') ? 'redacted credential' : undefined,
+    sensitivity.has('endpoint') ? 'redacted endpoint' : undefined,
+    sensitivity.has('tenant') ? 'redacted tenant' : undefined,
+    sensitivity.has('config') ? 'configuration error' : undefined,
   ].filter(Boolean)
-  const detail = reasons.length > 0 ? `${reasons.join('/')} details redacted` : 'details redacted'
+  const detail = labels.length > 0 ? labels.join('; ') : 'details redacted'
 
-  return safeCause ? `${safeCause} — ${detail}` : `Remote config error ${detail}`
+  return safeCause ? `${safeCause} — ${detail}` : detail
 }
 
 type RemoteErrorSensitivity = 'credential' | 'endpoint' | 'tenant' | 'config'
@@ -39,7 +39,7 @@ function classifyRemoteErrorSensitivity(value: string): Set<RemoteErrorSensitivi
   return sensitivity
 }
 
-function safeRemoteErrorCause(value: string): string {
+function safeRemoteErrorCause(value: string, sensitivity: Set<RemoteErrorSensitivity>): string {
   const compact = value.split(/\s+/).join(' ')
   const unknownComponent = compact.match(
     /\bunknown\s+(receiver|processor|exporter|extension)\s+['"]?([a-z0-9._/-]+)['"]?/i,
@@ -54,6 +54,7 @@ function safeRemoteErrorCause(value: string): string {
   if (/\bconnection (?:refused|reset|lost)|\bconnect\b/i.test(value)) {
     return 'remote config connection error'
   }
+  if (sensitivity.has('config')) return ''
   if (/\bvalidat(?:e|ion|or)|\brejected\b/i.test(value)) return 'collector validation error'
 
   return ''
