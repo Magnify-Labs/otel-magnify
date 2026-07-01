@@ -157,7 +157,6 @@ export interface WorkloadConfig {
   failed_count?: number
   pending_count?: number
   error_groups?: WorkloadConfigErrorGroup[]
-  content_available?: boolean
 }
 
 export interface WorkloadKnownGoodConfig {

@@ -359,7 +359,9 @@ test('viewer cannot initiate rollback or known-good history actions', async ({ l
 
   await expect(rollbackButton).toBeDisabled()
   await expect(rollbackButton).toHaveAttribute('title', 'Requires workload:push_config permission')
-  await expect(olderRow.getByRole('button', { name: /Mark as known-good|Clear known-good/ })).toHaveCount(0)
+  const knownGoodButton = olderRow.getByRole('button', { name: /Mark as known-good|Clear known-good/ })
+  await expect(knownGoodButton).toBeDisabled()
+  await expect(knownGoodButton).toHaveAttribute('title', 'Requires workload:push_config permission')
   expect(prepareHit).toBe(false)
 })
 

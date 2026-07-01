@@ -1517,6 +1517,11 @@ h4 {
 .rollback-finding-warning strong {
   color: #e0b15a;
 }
+.rollback-raw-diff-warning {
+  margin-bottom: 0.5rem;
+  color: var(--amber, #e0b15a);
+  font-size: 0.82rem;
+}
 .rollback-raw-diff {
   max-height: 180px;
   overflow: auto;

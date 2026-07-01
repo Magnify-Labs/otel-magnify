@@ -263,14 +263,19 @@ export default function GuidedRollbackDialog({ workloadId, target, onClose }: Pr
 
             <section className="rollback-panel" aria-label="Current to target diff">
               <h3>Current-to-target diff</h3>
-              {prepare.diff.raw_diff?.text ? (
-                <pre className="rollback-raw-diff">{prepare.diff.raw_diff.text}</pre>
-              ) : null}
               {canRenderMergeDiff ? (
                 <ConfigDiffView
                   oldYaml={diffInputs.current_yaml!}
                   newYaml={diffInputs.target_yaml!}
                 />
+              ) : prepare.diff.raw_diff?.text ? (
+                <>
+                  <div className="rollback-raw-diff-warning">
+                    Semantic redacted diff is unavailable. Raw fallback diff may include sensitive
+                    values; review only when necessary.
+                  </div>
+                  <pre className="rollback-raw-diff">{prepare.diff.raw_diff.text}</pre>
+                </>
               ) : (
                 <div className="empty-state">
                   {prepare.diff.message ?? 'Diff preview is unavailable for this target.'}
