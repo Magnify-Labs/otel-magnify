@@ -168,6 +168,11 @@ func TestGetWorkload_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
 	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
+	var w models.Workload
+	if err := json.NewDecoder(rec.Body).Decode(&w); err != nil {
+		t.Fatalf("decode workload: %v", err)
+	}
+	assertRemoteConfigStatusSanitized(t, w.RemoteConfigStatus)
 }
 
 func TestListWorkloads_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
@@ -182,6 +187,14 @@ func TestListWorkloads_RedactsLegacyRemoteConfigStatusError(t *testing.T) {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
 	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
+	var items []models.Workload
+	if err := json.NewDecoder(rec.Body).Decode(&items); err != nil {
+		t.Fatalf("decode workloads: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len = %d, want 1", len(items))
+	}
+	assertRemoteConfigStatusSanitized(t, items[0].RemoteConfigStatus)
 }
 
 func seedLegacyRemoteConfigStatus(t *testing.T, db ext.Store, workloadID string) {
@@ -208,6 +221,23 @@ func assertNoSensitiveRemoteConfigStatusLeak(t *testing.T, body string) {
 	}
 	if !strings.Contains(body, "redacted") {
 		t.Fatalf("response should explain redacted remote status details: %s", body)
+	}
+}
+
+func assertRemoteConfigStatusSanitized(t *testing.T, status *models.RemoteConfigStatus) {
+	t.Helper()
+	if status == nil {
+		t.Fatal("remote_config_status is nil")
+	}
+	if status.Status != "failed" {
+		t.Fatalf("remote_config_status.status = %q, want failed", status.Status)
+	}
+	if status.ConfigHash != "hash-a" {
+		t.Fatalf("remote_config_status.config_hash = %q, want hash-a", status.ConfigHash)
+	}
+	const want = "Remote config error details redacted"
+	if status.ErrorMessage != want {
+		t.Fatalf("remote_config_status.error_message = %q, want %q", status.ErrorMessage, want)
 	}
 }
 
