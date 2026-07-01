@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
+	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
 	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
@@ -304,6 +306,244 @@ func (a *API) handleValidateWorkloadConfig(w http.ResponseWriter, r *http.Reques
 	runtimeOpts.TargetVersion = targetVersion
 	runtimeOpts.TargetVersionSource = versionSource
 	respondJSON(w, 200, validator.ValidateWithRuntime(r.Context(), body, available, runtimeOpts))
+}
+
+func (a *API) handlePlanWorkloadConfig(w http.ResponseWriter, r *http.Request) {
+	workloadID := chi.URLParam(r, "id")
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		respondError(w, 400, "failed to read body")
+		return
+	}
+	//nolint:errcheck // deferred cleanup of fully-read request body; net/http server also closes it
+	defer r.Body.Close()
+
+	plan, err := a.buildConfigApplicationPlan(r.Context(), workloadID, body)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, 404, "workload not found")
+			return
+		}
+		respondError(w, 500, "failed to build config application plan")
+		return
+	}
+	respondJSON(w, http.StatusOK, plan)
+}
+
+func (a *API) handleExportWorkloadConfigPlan(w http.ResponseWriter, r *http.Request) {
+	workloadID := chi.URLParam(r, "id")
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		respondError(w, 400, "failed to read body")
+		return
+	}
+	//nolint:errcheck // deferred cleanup of fully-read request body; net/http server also closes it
+	defer r.Body.Close()
+
+	plan, err := a.buildConfigApplicationPlan(r.Context(), workloadID, body)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, 404, "workload not found")
+			return
+		}
+		respondError(w, 500, "failed to build config application plan")
+		return
+	}
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	if format == "" || format == "json" {
+		respondJSON(w, http.StatusOK, plan)
+		return
+	}
+	if format != "markdown" && format != "md" {
+		respondError(w, 400, "unsupported export format")
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="config-safety-plan.md"`)
+	_, _ = w.Write([]byte(renderConfigApplicationPlanMarkdown(plan)))
+}
+
+func (a *API) buildConfigApplicationPlan(ctx context.Context, workloadID string, body []byte) (models.ConfigApplicationPlan, error) {
+	wl, err := a.db.GetWorkload(workloadID)
+	if err != nil {
+		return models.ConfigApplicationPlan{}, err
+	}
+	sum := sha256.Sum256(body)
+	plan := models.ConfigApplicationPlan{
+		SchemaVersion: "config_application_plan.v1",
+		WorkloadID:    workloadID,
+		ConfigHash:    hex.EncodeToString(sum[:]),
+		Targets:       []models.ConfigApplicationPlanTarget{},
+		HardFailures:  []string{},
+		Export: models.ConfigApplicationPlanExport{
+			Supported:        true,
+			Formats:          []string{"json", "markdown"},
+			JSONEndpoint:     fmt.Sprintf("/api/workloads/%s/config/plan/export?format=json", workloadID),
+			MarkdownEndpoint: fmt.Sprintf("/api/workloads/%s/config/plan/export?format=markdown", workloadID),
+			PersistedRollout: "not_persisted",
+		},
+	}
+	if len(body) == 0 {
+		plan.HardFailures = append(plan.HardFailures, "empty_config")
+	}
+
+	target := a.buildConfigApplicationPlanTarget(ctx, wl, body)
+	plan.Targets = append(plan.Targets, target)
+	plan.Summary.TargetCount = len(plan.Targets)
+	for _, target := range plan.Targets {
+		if target.Type == "collector" {
+			plan.Summary.CollectorTargetCount++
+		}
+		if target.AcceptsRemoteConfig {
+			plan.Summary.RemoteConfigCapableCount++
+		}
+		if target.ReadOnly {
+			plan.Summary.ReadOnlyCount++
+		}
+		switch target.ValidationStatus {
+		case "ok":
+			plan.Summary.ValidationOKCount++
+		case "failed":
+			plan.Summary.ValidationFailedCount++
+		}
+		plan.Summary.ComponentsMissingCount += target.ComponentsMissingCount
+		plan.Summary.HighRiskChangeCount += target.HighRiskChangeCount
+		if target.Excluded {
+			plan.Summary.ExcludedCount++
+		}
+	}
+	if len(plan.Targets) == 0 || plan.Summary.ExcludedCount == len(plan.Targets) {
+		plan.HardFailures = appendIfMissing(plan.HardFailures, "all_targets_excluded")
+	}
+	if plan.Summary.ValidationFailedCount > 0 {
+		plan.HardFailures = appendIfMissing(plan.HardFailures, "validation_failed")
+	}
+	plan.CanPush = len(plan.HardFailures) == 0
+	plan.ApplyAllowed = plan.CanPush
+	return plan, nil
+}
+
+func (a *API) buildConfigApplicationPlanTarget(ctx context.Context, wl models.Workload, body []byte) models.ConfigApplicationPlanTarget {
+	target := models.ConfigApplicationPlanTarget{
+		WorkloadID:          wl.ID,
+		DisplayName:         wl.DisplayName,
+		Type:                wl.Type,
+		AcceptsRemoteConfig: wl.AcceptsRemoteConfig,
+		ReadOnly:            !wl.AcceptsRemoteConfig,
+		ExclusionReasons:    []string{},
+		HardFailures:        []string{},
+		ValidationErrors:    []string{},
+		ActiveConfigHash:    wl.ActiveConfigHash,
+	}
+	if wl.Type != "collector" {
+		target.ExclusionReasons = append(target.ExclusionReasons, "non_collector")
+	}
+	if target.ReadOnly {
+		target.ExclusionReasons = append(target.ExclusionReasons, "read_only")
+		target.HardFailures = append(target.HardFailures, "read_only")
+	}
+
+	runtimeOpts := runtimeOptionsForWorkload(wl)
+	validation := validator.ValidateWithRuntime(ctx, body, wl.AvailableComponents, runtimeOpts)
+	if validation.Valid {
+		target.ValidationStatus = "ok"
+	} else {
+		target.ValidationStatus = "failed"
+		target.ExclusionReasons = append(target.ExclusionReasons, "validation_failed")
+		target.HardFailures = append(target.HardFailures, "validation_failed")
+	}
+	for _, validationErr := range validation.Errors {
+		target.ValidationErrors = append(target.ValidationErrors, validationErr.Code)
+	}
+	target.ComponentsMissingCount = countMissingComponents(validation)
+
+	active, activeAvailable := a.activeConfigContent(wl)
+	if activeAvailable {
+		diff := oteldiff.Compare([]byte(active.Content), body)
+		for _, item := range diff.RiskItems {
+			if item.Risk == oteldiff.RiskHigh {
+				target.HighRiskChangeCount++
+			}
+		}
+	} else {
+		target.ActiveConfigUnavailable = true
+	}
+
+	if len(target.ExclusionReasons) > 0 {
+		target.Excluded = true
+	}
+	return target
+}
+
+func (a *API) activeConfigContent(wl models.Workload) (*models.WorkloadConfig, bool) {
+	if wl.ActiveConfigHash != "" {
+		if wc, err := a.db.GetWorkloadConfigByHash(wl.ID, wl.ActiveConfigHash); err == nil && wc != nil && wc.Content != "" {
+			return wc, true
+		}
+	}
+	if wc, err := a.db.GetLastAppliedWorkloadConfig(wl.ID); err == nil && wc != nil && wc.Content != "" {
+		return wc, true
+	}
+	return nil, false
+}
+
+// countMissingComponents relies on the validator's component_not_installed
+// code. The string fallback keeps the plan useful if an older validator only
+// exposes human-readable messages for unavailable components.
+func countMissingComponents(result validator.Result) int {
+	count := 0
+	for _, err := range result.Errors {
+		if err.Code == "component_not_installed" || strings.Contains(strings.ToLower(err.Message), "not installed") {
+			count++
+		}
+	}
+	return count
+}
+
+func appendIfMissing(items []string, item string) []string {
+	for _, existing := range items {
+		if existing == item {
+			return items
+		}
+	}
+	return append(items, item)
+}
+
+func renderConfigApplicationPlanMarkdown(plan models.ConfigApplicationPlan) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Config Safety Plan\n\n")
+	fmt.Fprintf(&b, "Schema version: %s\n\n", plan.SchemaVersion)
+	fmt.Fprintf(&b, "Workload: %s\n\n", plan.WorkloadID)
+	fmt.Fprintf(&b, "Config hash: %s\n\n", plan.ConfigHash)
+	fmt.Fprintf(&b, "Can push: %t\n\n", plan.CanPush)
+	fmt.Fprintf(&b, "Apply allowed: %t\n\n", plan.ApplyAllowed)
+	fmt.Fprintf(&b, "Persisted rollout: not implemented\n\n")
+	fmt.Fprintf(&b, "## Summary\n\n")
+	fmt.Fprintf(&b, "- Targets: %d\n", plan.Summary.TargetCount)
+	fmt.Fprintf(&b, "- Collectors: %d\n", plan.Summary.CollectorTargetCount)
+	fmt.Fprintf(&b, "- Remote-config capable: %d\n", plan.Summary.RemoteConfigCapableCount)
+	fmt.Fprintf(&b, "- Read-only: %d\n", plan.Summary.ReadOnlyCount)
+	fmt.Fprintf(&b, "- Validation OK: %d\n", plan.Summary.ValidationOKCount)
+	fmt.Fprintf(&b, "- Validation failed: %d\n", plan.Summary.ValidationFailedCount)
+	fmt.Fprintf(&b, "- Components missing: %d\n", plan.Summary.ComponentsMissingCount)
+	fmt.Fprintf(&b, "- High-risk changes: %d\n", plan.Summary.HighRiskChangeCount)
+	fmt.Fprintf(&b, "- Excluded: %d\n\n", plan.Summary.ExcludedCount)
+	fmt.Fprintf(&b, "## Targets\n\n")
+	for _, target := range plan.Targets {
+		name := target.DisplayName
+		if name == "" {
+			name = target.WorkloadID
+		}
+		fmt.Fprintf(&b, "- %s (%s): validation=%s, read_only=%t, excluded=%t, high_risk_changes=%d\n", name, target.WorkloadID, target.ValidationStatus, target.ReadOnly, target.Excluded, target.HighRiskChangeCount)
+	}
+	if len(plan.HardFailures) > 0 {
+		fmt.Fprintf(&b, "\n## Hard failures\n\n")
+		for _, failure := range plan.HardFailures {
+			fmt.Fprintf(&b, "- %s\n", failure)
+		}
+	}
+	fmt.Fprintf(&b, "\n> Persisted rollout: not implemented in v1; export is deterministic JSON/Markdown for now.\n")
+	return b.String()
 }
 
 func (a *API) handleGetWorkloadConfigHistory(w http.ResponseWriter, r *http.Request) {
