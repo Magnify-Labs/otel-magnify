@@ -27,11 +27,32 @@ type configDiffRequest struct {
 	TargetYAML string `json:"target_yaml"`
 }
 
-func (a *API) handleListConfigs(w http.ResponseWriter, _ *http.Request) {
-	configs, err := a.db.ListConfigs()
+func (a *API) handleListConfigs(w http.ResponseWriter, r *http.Request) {
+	savedConfigs, err := a.db.ListConfigs()
 	if err != nil {
 		respondError(w, 500, "failed to list configs")
 		return
+	}
+
+	kind := r.URL.Query().Get("kind")
+	category := r.URL.Query().Get("category")
+	stack := r.URL.Query().Get("stack")
+	configs := make([]models.Config, 0, len(savedConfigs)+len(builtInConfigTemplates()))
+	for _, cfg := range savedConfigs {
+		if cfg.Kind == "" {
+			cfg.Kind = models.ConfigKindSaved
+		}
+		if cfg.Status == "" {
+			cfg.Status = models.ConfigStatusReady
+		}
+		if configMatchesLibraryFilters(cfg, kind, category, stack) {
+			configs = append(configs, cfg)
+		}
+	}
+	for _, cfg := range builtInConfigTemplates() {
+		if configMatchesLibraryFilters(cfg, kind, category, stack) {
+			configs = append(configs, cfg)
+		}
 	}
 	respondJSON(w, 200, configs)
 }
@@ -73,6 +94,8 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 		Content:   req.Content,
 		CreatedAt: time.Now().UTC(),
 		CreatedBy: createdBy,
+		Kind:      models.ConfigKindSaved,
+		Status:    models.ConfigStatusReady,
 	}
 
 	if err := a.db.CreateConfig(cfg); err != nil {
@@ -88,6 +111,10 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if cfg, ok := findBuiltInConfigTemplate(id); ok {
+		respondJSON(w, 200, cfg)
+		return
+	}
 	cfg, err := a.db.GetConfig(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -96,6 +123,12 @@ func (a *API) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		respondError(w, 500, "failed to get config")
 		return
+	}
+	if cfg.Kind == "" {
+		cfg.Kind = models.ConfigKindSaved
+	}
+	if cfg.Status == "" {
+		cfg.Status = models.ConfigStatusReady
 	}
 	respondJSON(w, 200, cfg)
 }

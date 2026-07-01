@@ -62,3 +62,38 @@ func TestListConfigs(t *testing.T) {
 		t.Errorf("len = %d, want 3", len(configs))
 	}
 }
+
+func TestCreateConfig_PersistsLibraryMetadata(t *testing.T) {
+	db := newTestDB(t)
+
+	cfg := models.Config{
+		ID:          "saved-with-meta",
+		Name:        "Saved with metadata",
+		Content:     "receivers:\n  otlp: {}",
+		CreatedAt:   time.Now().UTC().Truncate(time.Second),
+		CreatedBy:   "admin@test.com",
+		Kind:        models.ConfigKindDraft,
+		Status:      models.ConfigStatusDraft,
+		Category:    "custom",
+		Stack:       "kubernetes",
+		Description: "draft collector config",
+		Variables: []models.ConfigVariable{
+			{Name: "endpoint", Label: "Endpoint", Type: "string", Required: true},
+		},
+		Tags: []string{"draft", "collector"},
+	}
+	if err := db.CreateConfig(cfg); err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+
+	got, err := db.GetConfig(cfg.ID)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if got.Kind != models.ConfigKindDraft || got.Status != models.ConfigStatusDraft || got.Category != "custom" || got.Stack != "kubernetes" || got.Description != "draft collector config" {
+		t.Fatalf("metadata mismatch: %+v", got)
+	}
+	if len(got.Variables) != 1 || got.Variables[0].Name != "endpoint" || len(got.Tags) != 2 || got.Tags[0] != "draft" {
+		t.Fatalf("JSON metadata mismatch: variables=%+v tags=%+v", got.Variables, got.Tags)
+	}
+}

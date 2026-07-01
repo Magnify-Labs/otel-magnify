@@ -1,0 +1,17 @@
+-- +goose Up
+ALTER TABLE configs ADD COLUMN kind TEXT NOT NULL DEFAULT 'saved';
+ALTER TABLE configs ADD COLUMN status TEXT NOT NULL DEFAULT 'ready';
+ALTER TABLE configs ADD COLUMN category TEXT NOT NULL DEFAULT '';
+ALTER TABLE configs ADD COLUMN stack TEXT NOT NULL DEFAULT '';
+ALTER TABLE configs ADD COLUMN description TEXT NOT NULL DEFAULT '';
+ALTER TABLE configs ADD COLUMN variables TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE configs ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+
+-- +goose Down
+ALTER TABLE configs DROP COLUMN tags;
+ALTER TABLE configs DROP COLUMN variables;
+ALTER TABLE configs DROP COLUMN description;
+ALTER TABLE configs DROP COLUMN stack;
+ALTER TABLE configs DROP COLUMN category;
+ALTER TABLE configs DROP COLUMN status;
+ALTER TABLE configs DROP COLUMN kind;
