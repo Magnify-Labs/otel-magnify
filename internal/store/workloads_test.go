@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,53 @@ func TestUpsertAndGetWorkload(t *testing.T) {
 	}
 	if got.FingerprintSource != "k8s" || got.FingerprintKeys["namespace"] != "obs" {
 		t.Fatalf("unexpected: %+v", got)
+	}
+}
+
+func TestUpsertWorkloadSanitizesRemoteConfigStatusBeforeStorage(t *testing.T) {
+	db := newTestDB(t)
+	raw := "collector failed: SECRET_TOKEN=abc123 authorization=Bearer super-secret endpoint=https://tenant-a.internal:4318/v1/traces"
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID:         "wl-sensitive",
+		Type:       "collector",
+		Status:     "connected",
+		LastSeenAt: time.Now().UTC(),
+		RemoteConfigStatus: &models.RemoteConfigStatus{
+			Status:       "failed",
+			ConfigHash:   "hash-a",
+			ErrorMessage: raw,
+			UpdatedAt:    time.Unix(0, 0).UTC(),
+		},
+	}); err != nil {
+		t.Fatalf("UpsertWorkload: %v", err)
+	}
+
+	var stored string
+	if err := db.QueryRow(`SELECT remote_config_status FROM workloads WHERE id = ?`, "wl-sensitive").Scan(&stored); err != nil {
+		t.Fatalf("query stored remote_config_status: %v", err)
+	}
+	assertNoSensitiveWorkloadStatusText(t, stored)
+
+	got, err := db.GetWorkload("wl-sensitive")
+	if err != nil {
+		t.Fatalf("GetWorkload: %v", err)
+	}
+	if got.RemoteConfigStatus == nil {
+		t.Fatalf("expected remote config status")
+	}
+	assertNoSensitiveWorkloadStatusText(t, got.RemoteConfigStatus.ErrorMessage)
+	if !strings.Contains(got.RemoteConfigStatus.ErrorMessage, "redacted") {
+		t.Fatalf("error_message should explain redaction: %q", got.RemoteConfigStatus.ErrorMessage)
+	}
+}
+
+func assertNoSensitiveWorkloadStatusText(t *testing.T, text string) {
+	t.Helper()
+	for _, forbidden := range []string{"SECRET_TOKEN", "abc123", "authorization=Bearer", "super-secret", "tenant-a.internal", "4318", "/v1/traces"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("remote config status leaked %q: %s", forbidden, text)
+		}
 	}
 }
 
