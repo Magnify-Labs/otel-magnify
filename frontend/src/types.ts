@@ -32,6 +32,7 @@ export interface WorkloadConfigInstanceStatus {
   updated_at?: string
   error_cause?: string
   error_message?: string
+  timed_out?: boolean
 }
 
 export interface WorkloadConfigErrorGroup {

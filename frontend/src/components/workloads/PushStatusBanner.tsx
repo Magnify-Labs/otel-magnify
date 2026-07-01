@@ -21,6 +21,7 @@ const CANONICAL_STATES: PushStatus[] = ['validated', 'submitted', 'sent', 'apply
 export default function PushStatusBanner({ status, push, rollback, onDismissRollback }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const visiblePush = push ?? statusToPush(status)
+  const timedOut = hasTimedOutRequiredTarget(visiblePush)
 
   return (
     <div className="push-status-panel" aria-label="Config push status">
@@ -52,7 +53,7 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
             {visiblePush.push_id && <code>{visiblePush.push_id}</code>}
           </div>
 
-          {visiblePush.timed_out_waiting_for_opamp_status && (
+          {timedOut && (
             <div className="push-timeout-banner" role="status">
               <strong>{visiblePush.timeout_message || 'No OpAMP status after 30s'}</strong>
               <span>
@@ -64,8 +65,10 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
 
           <Timeline push={visiblePush} />
 
-          {visiblePush.error_message && (
-            <pre className="push-banner-error">{visiblePush.error_message}</pre>
+          {visiblePush.error_message && !visiblePush.error_groups?.length && (
+            <pre className="push-banner-error">
+              {safeRemoteErrorText(visiblePush.error_message)}
+            </pre>
           )}
           {visiblePush.error_groups && visiblePush.error_groups.length > 0 && (
             <ErrorGroups groups={visiblePush.error_groups} />
@@ -146,8 +149,12 @@ function ErrorGroups({ groups }: { groups: WorkloadConfigErrorGroup[] }) {
           <div className="push-error-group-header">
             <strong>{group.title || group.cause}</strong>
             <span>{formatInstanceCount(group.count)}</span>
+            <span className="push-error-severity">{severityLabel(group.severity)}</span>
+            <code className="push-error-cause">{group.cause}</code>
           </div>
-          {group.sample_message && <pre className="push-error-sample">{group.sample_message}</pre>}
+          {group.sample_message && (
+            <pre className="push-error-sample">{safeRemoteErrorText(group.sample_message)}</pre>
+          )}
           {group.sample_path && <code className="push-error-path">{group.sample_path}</code>}
           {group.affected_instances && group.affected_instances.length > 0 && (
             <div className="push-affected-instances">
@@ -191,11 +198,23 @@ function InstanceTable({ instances }: { instances: WorkloadConfigInstanceStatus[
             </td>
             <td>{instance.updated_at ? formatDateTime(instance.updated_at) : '—'}</td>
             <td>{instance.config_hash ? <code>{shortHash(instance.config_hash)}</code> : '—'}</td>
-            <td>{instance.error_message || instance.error_cause || '—'}</td>
+            <td>{instanceErrorLabel(instance)}</td>
           </tr>
         ))}
       </tbody>
     </table>
+  )
+}
+
+function hasTimedOutRequiredTarget(push?: WorkloadConfig): boolean {
+  if (!push) return false
+  if (push.timed_out_waiting_for_opamp_status) return true
+  return (push.instance_statuses ?? []).some(
+    (instance) =>
+      instance.required !== false &&
+      (instance.timed_out ||
+        instance.error_message === 'No OpAMP status after 30s' ||
+        (instance.status === 'no_status' && push.timeout_message === 'No OpAMP status after 30s')),
   )
 }
 
@@ -257,6 +276,8 @@ function aggregateCopy(push: WorkloadConfig): string {
     return parts.join(' · ')
   }
   switch (push.status) {
+    case 'pending':
+      return 'Push is pending submission.'
     case 'submitted':
       return 'Request accepted. Waiting for OpAMP delivery.'
     case 'sent':
@@ -309,7 +330,7 @@ function label(s: PushStatus): string {
     case 'rollback_failed':
       return 'Rollback failed'
     case 'pending':
-      return 'Submitted'
+      return 'Pending'
   }
 }
 
@@ -336,6 +357,53 @@ function instanceStatusLabel(status: string): string {
     default:
       return status || 'Unknown'
   }
+}
+
+function instanceErrorLabel(instance: WorkloadConfigInstanceStatus): string {
+  if (instance.timed_out || instance.error_message === 'No OpAMP status after 30s') {
+    return 'No OpAMP status after 30s'
+  }
+  if (instance.error_cause) return errorCauseLabel(instance.error_cause)
+  if (instance.error_message) return safeRemoteErrorText(instance.error_message)
+  return '—'
+}
+
+function errorCauseLabel(cause: string): string {
+  switch (cause) {
+    case 'collector_validation':
+      return 'Collector rejected the config'
+    case 'opamp_send_failed':
+      return 'OpAMP delivery failed'
+    case 'apply_timeout':
+      return 'No OpAMP status after 30s'
+    case 'capability_mismatch':
+      return 'Collector capability mismatch'
+    case 'permission_or_policy':
+      return 'Permission or policy blocked the config'
+    case 'rollback_unavailable':
+      return 'Rollback status unavailable'
+    default:
+      return 'Remote config error details redacted'
+  }
+}
+
+function severityLabel(severity: string): string {
+  if (!severity) return 'Severity: medium'
+  return `Severity: ${severity}`
+}
+
+function safeRemoteErrorText(value: string): string {
+  const normalized = value
+    .replace(/bearer\s+[a-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(
+      /(token|password|passwd|secret|authorization|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,
+      '$1=[redacted]',
+    )
+    .replace(/https?:\/\/[^\s'"]+/gi, '[endpoint redacted]')
+    .replace(/otelcol[^\n]{80,}/gi, 'collector details redacted')
+    .trim()
+  if (normalized.length > 160) return `${normalized.slice(0, 157)}…`
+  return normalized
 }
 
 function formatInstanceCount(count: number): string {
