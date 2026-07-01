@@ -223,6 +223,22 @@ func TestRollbackWorkloadConfig_RecordsPendingPushAndPushesContent(t *testing.T)
 	}
 }
 
+func TestRollbackWorkloadConfig_OpAMPFailureResponseDoesNotLeakRawError(t *testing.T) {
+	db, router, fake, _ := newAuditTestAPI(t)
+	fake.err = errors.New(sensitiveOpAMPErrorFixture)
+	seedHistory(t, db, "w1", "hash-a", validRollbackYAML)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/workloads/w1/configs/hash-a/rollback", "", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502, body=%s", rec.Code, rec.Body.String())
+	}
+	assertResponseDoesNotLeakSensitiveOpAMPError(t, rec.Body.String())
+	assertLatestWorkloadConfigErrorIsSanitized(t, db, "w1")
+}
+
 func TestRollbackWorkloadConfig_404OnUnknownHash(t *testing.T) {
 	db, router, _, _ := newAuditTestAPI(t)
 	if err := db.UpsertWorkload(models.Workload{
