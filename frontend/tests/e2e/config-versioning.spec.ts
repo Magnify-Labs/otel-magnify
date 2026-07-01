@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, mockMe } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -140,6 +140,13 @@ const HIGH_OTEL_DIFF = {
 }
 
 function mockWorkload(page: Page) {
+  void page.route(`**/api/workloads/${WORKLOAD_ID}/known-good`, (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'known-good config not found' }),
+    }),
+  )
   return page.route(`**/api/workloads/${WORKLOAD_ID}`, (route) =>
     route.fulfill({
       status: 200,
@@ -206,7 +213,7 @@ function mockConfigsList(page: Page) {
   )
 }
 
-async function gotoWorkloadDetail(page: Page) {
+async function gotoWorkloadDetail(page: Page, role: 'editor' | 'viewer' = 'editor') {
   // Seed auth on the app origin through a stable document before hitting the
   // protected route; this keeps the spec independent from login submission.
   await page.route('**/api/auth/methods', (route) =>
@@ -225,31 +232,17 @@ async function gotoWorkloadDetail(page: Page) {
       }),
     }),
   )
-  await page.route('**/api/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        id: 'u-test',
-        email: 'test@example.com',
-        groups: [
-          {
-            id: 'grp_system_viewer',
-            name: 'viewer',
-            role: 'viewer',
-            is_system: true,
-            created_at: new Date().toISOString(),
-          },
-        ],
-        preferences: {
-          user_id: 'u-test',
-          theme: 'system',
-          language: 'en',
-          updated_at: new Date().toISOString(),
-        },
-      }),
-    }),
-  )
+  await mockMe(page, {
+    groups: [
+      {
+        id: `grp_system_${role}`,
+        name: role,
+        role,
+        is_system: true,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  })
   await page.goto('/login', { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => localStorage.setItem('token', 'test.token.stub'))
   await page.goto(`/workloads/${WORKLOAD_ID}`)
@@ -295,7 +288,7 @@ test('label can be set inline via double-click', async ({ loggedInPage: page }) 
   })
 
   await gotoWorkloadDetail(page)
-  await expect(page.getByText('Push history')).toBeVisible()
+  await expect(page.getByText('Push history', { exact: true })).toBeVisible()
 
   // The newest row has no label yet — double-click its label cell to edit.
   const newestRow = page.locator('.history-table tbody tr').first()
@@ -335,6 +328,9 @@ test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page
         content: YAML_NEW,
       }),
     }),
+  )
+  await page.route('**/api/configs/diff', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(HIGH_OTEL_DIFF) }),
   )
 
   await gotoWorkloadDetail(page)
@@ -580,6 +576,7 @@ test('guided rollback blocks invalid targets and reports prepare failures', asyn
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, BASE_HISTORY)
+  await mockConfigsList(page)
 
   await page.route(
     `**/api/workloads/${WORKLOAD_ID}/rollback/prepare?target_hash=${HASH_OLD}`,
@@ -674,6 +671,7 @@ test('compare dialog renders enriched OTel diff without leaking redacted secrets
   await mockWorkload(page)
   await mockActiveConfig(page)
   await mockHistory(page, BASE_HISTORY)
+  await mockConfigsList(page)
 
   await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/${HASH_OLD}`, (route) =>
     route.fulfill({
@@ -698,7 +696,7 @@ test('compare dialog renders enriched OTel diff without leaking redacted secrets
     })
   })
 
-  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await gotoWorkloadDetail(page)
   await page.getByRole('button', { name: 'Compare revisions' }).click()
 
   await expect(page.getByRole('heading', { name: 'OTel impact summary' })).toBeVisible()
@@ -714,4 +712,147 @@ test('compare dialog renders enriched OTel diff without leaking redacted secrets
   await expect(page.getByText('••••masked••••').first()).toBeVisible()
   await expect(page.getByText('Raw YAML diff may contain sensitive values.')).toBeVisible()
   await expect(page.getByText(SECRET_LITERAL)).toHaveCount(0)
+})
+
+test('known-good panel renders config states and defaults rollback to Last known-good', async ({ loggedInPage: page }) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, [
+    {
+      ...BASE_HISTORY[0],
+      is_current: true,
+      content_available: true,
+    },
+    {
+      ...BASE_HISTORY[1],
+      is_previous: true,
+      is_last_known_good: true,
+      content_available: true,
+    },
+    {
+      workload_id: WORKLOAD_ID,
+      config_id: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      applied_at: '2026-05-08T12:05:00Z',
+      status: 'failed',
+      pushed_by: 'admin@e2e.local',
+      error_message: 'collector rejected config',
+      is_failed_candidate: true,
+      content_available: true,
+      content: YAML_NEW,
+    },
+  ])
+  await mockConfigsList(page)
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/known-good`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        workload_id: WORKLOAD_ID,
+        config_id: HASH_OLD,
+        marked_at: '2026-05-01T10:00:00Z',
+        marked_by: 'admin@e2e.local',
+        source_applied_at: '2026-05-01T09:00:00Z',
+        content_available: true,
+      }),
+    }),
+  )
+  let rollbackPosted = false
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/rollback`, async (route) => {
+    rollbackPosted = true
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'rollback initiated', config_hash: HASH_OLD, target_kind: 'last_known_good' }),
+    })
+  })
+
+  await gotoWorkloadDetail(page)
+
+  await expect(page.getByRole('region', { name: 'Configuration recovery states' })).toBeVisible()
+  await expect(page.getByText('Current').first()).toBeVisible()
+  await expect(page.getByText('Previous').first()).toBeVisible()
+  await expect(page.getByText('Last known-good').first()).toBeVisible()
+  await expect(page.getByText('Failed candidate').first()).toBeVisible()
+
+  const knownGoodRow = page.locator('.history-table tbody tr').filter({ hasText: HASH_OLD.substring(0, 8) })
+  await expect(knownGoodRow.getByText('Previous')).toBeVisible()
+  await expect(knownGoodRow.getByText('Last known-good')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Rollback to Last known-good' }).click()
+  await expect(page.getByRole('dialog', { name: 'Rollback to Last known-good?' })).toBeVisible()
+  await page.getByRole('button', { name: 'Confirm rollback to Last known-good' }).click()
+  await expect.poll(() => rollbackPosted).toBe(true)
+})
+
+test('mark as known-good confirms replacement and posts precondition', async ({ loggedInPage: page }) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, [
+    { ...BASE_HISTORY[0], is_current: true, content_available: true },
+    { ...BASE_HISTORY[1], is_previous: true, is_last_known_good: true, content_available: true },
+  ])
+  await mockConfigsList(page)
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/known-good`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        workload_id: WORKLOAD_ID,
+        config_id: HASH_OLD,
+        marked_at: '2026-05-01T10:00:00Z',
+        marked_by: 'admin@e2e.local',
+        content_available: true,
+      }),
+    }),
+  )
+
+  let posted: unknown = null
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/*/known-good`, async (route, request) => {
+    posted = request.postDataJSON()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        changed: true,
+        replaced_config_id: HASH_OLD,
+        known_good: { workload_id: WORKLOAD_ID, config_id: HASH_NEW, marked_at: new Date().toISOString(), content_available: true },
+      }),
+    })
+  })
+
+  await gotoWorkloadDetail(page)
+  const currentRow = page.locator('.history-table tbody tr').filter({ hasText: HASH_NEW.substring(0, 8) })
+  await currentRow.getByRole('button', { name: 'Mark as known-good' }).click()
+  await expect(page.getByRole('dialog', { name: 'Mark this revision as Last known-good?' })).toBeVisible()
+  await expect(page.getByText(`This replaces ${HASH_OLD.substring(0, 8)} as Last known-good.`)).toBeVisible()
+  await page.getByRole('button', { name: 'Mark as Last known-good' }).click()
+
+  await expect.poll(() => posted).not.toBeNull()
+  expect(posted).toMatchObject({ if_current_known_good: HASH_OLD })
+})
+
+test('known-good empty fallback uses Previous and viewer cannot mark revisions', async ({ loggedInPage: page }) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, [
+    { ...BASE_HISTORY[0], is_current: true, content_available: true },
+    { ...BASE_HISTORY[1], is_previous: true, content_available: true },
+  ])
+  await mockConfigsList(page)
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/known-good`, (route) =>
+    route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'known-good config not found' }) }),
+  )
+
+  await gotoWorkloadDetail(page, 'viewer')
+
+  await expect(page.getByText('Last known-good: None')).toBeVisible()
+  await expect(page.getByText('Rollback will use Previous until a known-good revision is marked.')).toBeVisible()
+  const defaultRollback = page.getByRole('button', { name: 'Rollback to Previous' })
+  await expect(defaultRollback).toBeDisabled()
+  await expect(defaultRollback).toHaveAttribute('title', 'Requires workload:push_config permission')
+  await expect(page.getByRole('button', { name: 'Mark as known-good' }).first()).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Mark as known-good' }).first()).toHaveAttribute(
+    'title',
+    'Requires workload:push_config permission',
+  )
 })

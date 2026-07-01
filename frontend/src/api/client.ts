@@ -7,6 +7,9 @@ import type {
   Config,
   Alert,
   WorkloadConfig,
+  WorkloadKnownGoodConfig,
+  MarkKnownGoodResponse,
+  DefaultRollbackResponse,
   ValidationResult,
   PushActivityPoint,
   MeResponse,
@@ -88,6 +91,21 @@ export const workloadsAPI = {
     api.get<WorkloadConfig[]>(`/workloads/${id}/configs`).then((r) => r.data ?? []),
   getConfigByHash: (id: string, hash: string) =>
     api.get<WorkloadConfig>(`/workloads/${id}/configs/${hash}`).then((r) => r.data),
+  getKnownGood: (id: string) =>
+    api.get<WorkloadKnownGoodConfig>(`/workloads/${id}/known-good`).then((r) => r.data),
+  markKnownGood: (
+    id: string,
+    hash: string,
+    options: { replaceReason?: string; ifCurrentKnownGood?: string; force?: boolean } = {},
+  ) =>
+    api
+      .post<MarkKnownGoodResponse>(`/workloads/${id}/configs/${hash}/known-good`, {
+        replace_reason: options.replaceReason ?? '',
+        if_current_known_good: options.ifCurrentKnownGood,
+        force: options.force ?? false,
+      })
+      .then((r) => r.data),
+  clearKnownGood: (id: string) => api.delete(`/workloads/${id}/known-good`),
   setConfigLabel: (id: string, hash: string, label: string) =>
     api
       .post<{ label: string }>(`/workloads/${id}/configs/${hash}/label`, { label })
@@ -102,6 +120,8 @@ export const workloadsAPI = {
     api
       .post<RollbackActionResponse>(`/workloads/${id}/configs/${hash}/rollback`)
       .then((r) => r.data),
+  rollbackDefault: (id: string) =>
+    api.post<DefaultRollbackResponse>(`/workloads/${id}/rollback`).then((r) => r.data),
   getRollbackStatus: (id: string, requestId: string) =>
     api
       .get<RollbackStatusReport>(`/workloads/${id}/rollback/status`, {
