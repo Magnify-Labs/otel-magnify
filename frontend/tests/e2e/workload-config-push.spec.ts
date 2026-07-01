@@ -135,6 +135,7 @@ test('edit button enables YAML editing (regression)', async ({ loggedInPage: pag
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit' }).click()
+  await expect(page.getByRole('button', { name: 'Validate for this collector' })).toBeVisible()
 
   // The draft editor is the second `.cm-content` after Edit is clicked? Actually
   // when entering edit mode, only the draft editor remains (readOnly one unmounts).
@@ -254,7 +255,7 @@ test('validate exposes errors and blocks push', async ({ loggedInPage: page }) =
   await page.getByRole('button', { name: 'Edit' }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type('bad: yaml')
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   await expect(page.locator('.validation-errors')).toContainText('undefined_component')
   // Push stays disabled
@@ -272,7 +273,7 @@ test('valid config unlocks push button', async ({ loggedInPage: page }) => {
   await page.locator('.cm-content').first().click()
   await page.keyboard.press('End')
   await page.keyboard.type(' # touched')
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   await expect(page.locator('.validation-ok')).toContainText('valid')
   await expect(page.getByRole('button', { name: 'Push' })).toBeEnabled()
@@ -294,7 +295,7 @@ test('validation details show separated static component and runtime checks', as
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit' }).click()
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   const details = page.locator('.validation-details')
   await expect(details).toContainText('Validation passed')
@@ -374,7 +375,7 @@ test('validation details separate non-blocking warnings from blocking errors', a
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit' }).click()
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   const details = page.locator('.validation-details')
   await expect(details).toContainText('Blocking errors')
@@ -431,7 +432,7 @@ test('validation details explain when otelcol runtime check is skipped', async (
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit' }).click()
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   const details = page.locator('.validation-details')
   await expect(details).toContainText('Validation passed with warnings')
@@ -618,7 +619,7 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   await page.getByRole('button', { name: 'Edit' }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type(' # touched')
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await expect(page.locator('.validation-ok')).toBeVisible()
   await page.getByRole('button', { name: 'Push' }).click()
 
@@ -661,7 +662,7 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   await page.getByRole('button', { name: 'Edit' }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type(' # applied-flow')
-  await page.getByRole('button', { name: 'Validate' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await expect(page.locator('.validation-ok')).toBeVisible()
   await page.getByRole('button', { name: 'Push' }).click()
 
@@ -684,7 +685,7 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
 
   // Edit mode closed — the editor toolbar buttons are gone, the Edit entry-point is back
   await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Validate' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Validate for this collector' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible()
 
   // Banner reflects the applied status

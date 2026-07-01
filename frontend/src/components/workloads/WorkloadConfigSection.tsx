@@ -278,7 +278,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
           onClick={() => validateMutation.mutate()}
           disabled={!draftYaml || validateMutation.isPending || !!pendingHash}
         >
-          {validateMutation.isPending ? 'Validating...' : 'Validate'}
+          {validateMutation.isPending ? 'Validating...' : 'Validate for this collector'}
         </button>
         <button
           className="btn btn-primary"
