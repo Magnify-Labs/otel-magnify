@@ -18,6 +18,7 @@ const (
 	ExportReports   Permission = "reports:export"
 	ArchiveWorkload Permission = "workload:archive"
 	DeleteWorkload  Permission = "workload:delete"
+	ViewAudit       Permission = "audit:view"
 	ManageUsers     Permission = "users:manage"    // réservé Spec B
 	ManageSettings  Permission = "settings:manage" // réservé Spec C
 )

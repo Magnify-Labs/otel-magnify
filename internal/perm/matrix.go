@@ -25,6 +25,7 @@ var matrix = map[string]map[Permission]bool{
 		ExportReports:   true,
 		ArchiveWorkload: true,
 		DeleteWorkload:  true,
+		ViewAudit:       true,
 		ManageUsers:     true,
 		ManageSettings:  true,
 	},
