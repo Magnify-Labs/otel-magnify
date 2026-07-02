@@ -10,8 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -65,15 +65,14 @@ func importGitConfig(ctx context.Context, req gitImportRequest) (gitImportResult
 	if err := runGit(ctx, dir, "init", "--quiet"); err != nil {
 		return gitImportResult{}, err
 	}
-	if err := runGit(ctx, dir, "remote", "add", "origin", req.GitURL); err != nil {
-		return gitImportResult{}, err
-	}
-
 	ref := strings.TrimSpace(req.GitRef)
 	if ref == "" {
 		ref = "HEAD"
 	}
-	if err := runGit(ctx, dir, "fetch", "--depth=1", "origin", "--", ref); err != nil {
+	if err := appendGitRemoteConfig(dir, req.GitURL, ref); err != nil {
+		return gitImportResult{}, err
+	}
+	if err := runGit(ctx, dir, "fetch", "--depth=1", "origin"); err != nil {
 		return gitImportResult{}, err
 	}
 	commitBytes, err := gitOutput(ctx, dir, "rev-parse", "FETCH_HEAD")
@@ -84,23 +83,21 @@ func importGitConfig(ctx context.Context, req gitImportRequest) (gitImportResult
 	if !gitCommitSHARegexp.MatchString(commitSHA) {
 		return gitImportResult{}, fmt.Errorf("resolved invalid commit SHA %q", commitSHA)
 	}
-
-	object := commitSHA + ":" + req.GitPath
-	sizeBytes, err := gitOutput(ctx, dir, "cat-file", "-s", object)
-	if err != nil {
+	if err := runGit(ctx, dir, "checkout", "--detach", "--quiet", "FETCH_HEAD"); err != nil {
 		return gitImportResult{}, err
 	}
-	size, err := strconv.ParseInt(strings.TrimSpace(string(sizeBytes)), 10, 64)
+
+	filePath := filepath.Join(dir, filepath.FromSlash(req.GitPath))
+	info, err := os.Stat(filePath)
 	if err != nil {
-		return gitImportResult{}, fmt.Errorf("parse git object size: %w", err)
+		return gitImportResult{}, fmt.Errorf("stat git file: %w", err)
 	}
-	if size > gitFileSizeLimit {
+	if info.Size() > gitFileSizeLimit {
 		return gitImportResult{}, errGitFileTooLarge
 	}
-
-	content, err := gitOutput(ctx, dir, "show", object)
+	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return gitImportResult{}, err
+		return gitImportResult{}, fmt.Errorf("read git file: %w", err)
 	}
 	if len(content) > gitFileSizeLimit {
 		return gitImportResult{}, errGitFileTooLarge
@@ -114,6 +111,20 @@ func importGitConfig(ctx context.Context, req gitImportRequest) (gitImportResult
 		GitProvider: gitProviderFromURL(sanitized),
 		ImportedAt:  time.Now().UTC(),
 	}, nil
+}
+
+func appendGitRemoteConfig(dir, gitURL, ref string) error {
+	configPath := filepath.Join(dir, ".git", "config")
+	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("open git config: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	_, err = fmt.Fprintf(f, "\n[remote \"origin\"]\n\turl = %s\n\tfetch = +%s:refs/remotes/origin/hermes-import\n", gitURL, ref)
+	if err != nil {
+		return fmt.Errorf("write git config: %w", err)
+	}
+	return nil
 }
 
 func validateGitImportRequest(req gitImportRequest) error {
@@ -171,6 +182,9 @@ func validateGitRef(ref string) error {
 
 func gitURLHost(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
+	if trimmed != raw || strings.ContainsAny(trimmed, "\x00\r\n\t ") {
+		return "", fmt.Errorf("%w: URL must not contain whitespace or control characters", errUnsafeGitURL)
+	}
 	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "./") || strings.HasPrefix(trimmed, "../") {
 		return "", fmt.Errorf("%w: local paths are not allowed", errUnsafeGitURL)
 	}
@@ -191,9 +205,6 @@ func gitURLHost(raw string) (string, error) {
 	}
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", errUnsafeGitURL, err)
-	}
-	if u.Host == "" {
-		return "", fmt.Errorf("%w: absolute http(s) or ssh Git URL required", errUnsafeGitURL)
 	}
 	return "", fmt.Errorf("%w: absolute http(s) or ssh Git URL required", errUnsafeGitURL)
 }
@@ -261,9 +272,7 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 
 func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	args = append([]string{"-c", "http.followRedirects=false"}, args...)
-	// lgtm[go/command-line-injection] git is invoked directly without a shell after URL/ref/path validation and option-like refs are rejected.
-	// codeql[go/command-line-injection] git is invoked directly without a shell; user-controlled URL/ref/path inputs are validated before args are assembled.
-	//nolint:gosec // args are fixed git subcommands assembled after URL/path validation; no shell is invoked.
+	//nolint:gosec // git is invoked directly without a shell and only with fixed internal subcommands.
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
