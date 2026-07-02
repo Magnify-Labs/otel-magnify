@@ -770,6 +770,38 @@ service:
 	}
 }
 
+func TestPushWorkloadConfig_RejectsDisconnectedBeforePushing(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	_ = db.UpsertWorkload(models.Workload{
+		ID: "w-offline", Type: "collector", Status: "disconnected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+		AcceptsRemoteConfig: true,
+	})
+
+	req := authedPost(t, "/api/workloads/w-offline/config", validWorkloadConfig)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["code"] != "workload_not_connected" {
+		t.Fatalf("code = %q", body["code"])
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("disconnected workload should not reach OpAMP, got %+v", fake.pushed)
+	}
+	history, err := db.GetWorkloadConfigHistory("w-offline")
+	if err != nil {
+		t.Fatalf("GetWorkloadConfigHistory: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("disconnected workload should not record history, got %+v", history)
+	}
+}
+
 func TestPushWorkloadConfig_RejectsRuntimeValidationFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake uses POSIX sh")
