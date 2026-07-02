@@ -10,7 +10,10 @@ import RecentAlertsPanel from '../components/dashboard/RecentAlertsPanel'
 import FleetHealthPanel from '../components/dashboard/FleetHealthPanel'
 import DeployedVersionsPanel from '../components/dashboard/DeployedVersionsPanel'
 import ConfigSafetyStatusPanel from '../components/dashboard/ConfigSafetyStatusPanel'
+import FleetVersionIntelligencePanel from '../components/dashboard/FleetVersionIntelligencePanel'
 import '../styles/dashboard.css'
+
+const DEFAULT_RECOMMENDED_COLLECTOR_VERSION = '0.100.0'
 
 export default function Dashboard() {
   const { t } = useTranslation()
@@ -19,6 +22,14 @@ export default function Dashboard() {
     queryFn: () => workloadsAPI.list(),
   })
   const { data: alerts } = useQuery({ queryKey: ['alerts'], queryFn: () => alertsAPI.list(false) })
+  const {
+    data: versionIntelligence,
+    isLoading: isVersionIntelligenceLoading,
+    isError: isVersionIntelligenceError,
+  } = useQuery({
+    queryKey: ['workloads', 'version-intelligence', DEFAULT_RECOMMENDED_COLLECTOR_VERSION],
+    queryFn: () => workloadsAPI.versionIntelligence(DEFAULT_RECOMMENDED_COLLECTOR_VERSION),
+  })
 
   const setWorkloads = useStore((s) => s.setWorkloads)
   const setAlerts = useStore((s) => s.setAlerts)
@@ -80,6 +91,11 @@ export default function Dashboard() {
         <aside className="dashboard-col">
           <FleetHealthPanel workloads={ws} />
           <DeployedVersionsPanel workloads={ws} />
+          <FleetVersionIntelligencePanel
+            intelligence={versionIntelligence}
+            isLoading={isVersionIntelligenceLoading}
+            isError={isVersionIntelligenceError}
+          />
         </aside>
       </section>
     </div>

@@ -269,6 +269,136 @@
   padding: 0.5rem 0;
 }
 
+/* ── Fleet version intelligence ── */
+.version-intelligence-panel .panel-head {
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.version-intelligence-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.version-intelligence-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.version-intelligence-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 1fr) minmax(80px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.version-intelligence-group,
+.version-intelligence-version {
+  color: var(--text-hi);
+  font-weight: 600;
+}
+
+.version-intelligence-meta {
+  color: var(--text-muted);
+}
+
+.version-intelligence-count {
+  color: var(--text);
+}
+
+.version-intelligence-badge,
+.version-intelligence-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.version-status-below {
+  color: var(--amber);
+  background: var(--amber-dim);
+}
+
+.version-status-ok,
+.version-status-above {
+  color: var(--green);
+  background: var(--green-dim);
+}
+
+.version-status-unknown,
+.version-status-muted {
+  color: var(--text-muted);
+  background: var(--surface-3);
+}
+
+.version-intelligence-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.version-intelligence-finding {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem;
+  border: 1px solid var(--amber-dim);
+  border-radius: var(--radius);
+  background: var(--amber-dim);
+}
+
+.version-intelligence-finding-warning {
+  border-color: var(--red-dim);
+  background: var(--red-dim);
+}
+
+.version-intelligence-finding-title {
+  color: var(--text-hi);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.version-intelligence-finding p {
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.version-intelligence-action {
+  max-width: 46%;
+  color: var(--text-hi);
+  background: var(--surface);
+  text-align: center;
+  white-space: normal;
+}
+
+@media (max-width: 640px) {
+  .version-intelligence-row,
+  .version-intelligence-finding {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .version-intelligence-action {
+    max-width: none;
+  }
+}
+
 /* ── Config safety status ── */
 .panel-subtitle {
   margin-top: 0.25rem;
