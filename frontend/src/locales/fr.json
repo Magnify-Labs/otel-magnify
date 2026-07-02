@@ -83,6 +83,17 @@
       "action": {
         "upgrade_collector": "Mettre à niveau vers {{version}}",
         "unsupported_component": "Choisir une config plus ancienne, mettre à niveau le collecteur ou retirer {{component}}."
+      },
+      "recommendations_label": "Recommandations actionnables",
+      "action_label": {
+        "upgrade_collector": "Mettre à niveau le collecteur",
+        "choose_older_config": "Choisir une config plus ancienne",
+        "remove_component": "Retirer ou remplacer le composant"
+      },
+      "recommendation": {
+        "upgrade_collector": "Mettez à niveau le collecteur avant d’appliquer cette config.",
+        "choose_older_config": "Choisissez une config plus ancienne compatible avec les capacités actuelles du collecteur.",
+        "remove_component": "Retirez ou remplacez {{component}} avant d’appliquer cette config."
       }
     },
     "alerts": {

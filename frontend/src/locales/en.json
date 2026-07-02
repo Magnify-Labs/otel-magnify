@@ -83,6 +83,17 @@
       "action": {
         "upgrade_collector": "Upgrade collector to {{version}}",
         "unsupported_component": "Choose an older config, upgrade collector, or remove {{component}}."
+      },
+      "recommendations_label": "Actionable recommendations",
+      "action_label": {
+        "upgrade_collector": "Upgrade collector",
+        "choose_older_config": "Choose older config",
+        "remove_component": "Remove or replace component"
+      },
+      "recommendation": {
+        "upgrade_collector": "Upgrade the collector before applying this config.",
+        "choose_older_config": "Choose an older compatible config for the current collector capabilities.",
+        "remove_component": "Remove or replace {{component}} before applying this config."
       }
     },
     "alerts": {
