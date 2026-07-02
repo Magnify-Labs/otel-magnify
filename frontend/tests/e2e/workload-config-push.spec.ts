@@ -1777,6 +1777,105 @@ test('French scope UX renders translated labels and blocked preview copy', async
   await expect(page.locator('body')).not.toContainText('workloads.config.scope')
 })
 
+test('saved scope selector reports empty and failed group states', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+
+  await expect(page.locator('select.push-saved-group-select option').first()).toHaveText(
+    '— No saved groups available —',
+  )
+  await expect(page.getByRole('button', { name: 'Preview targets' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Preview targets' })).toHaveAttribute(
+    'title',
+    'Select a saved group before previewing targets.',
+  )
+
+  await page.route('**/api/push-groups', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' }),
+  )
+  await page.locator('select.push-scope-mode-select').selectOption('dynamic')
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+
+  await expect(page.locator('select.push-saved-group-select')).toBeDisabled()
+  await expect(page.locator('select.push-saved-group-select option').first()).toHaveText(
+    '— Failed to load groups —',
+  )
+})
+
+test('French saved scope selector reports localized empty and failed group states', async ({
+  loggedInPage: page,
+}) => {
+  await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page, [])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Modifier' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+
+  await expect(page.locator('select.push-saved-group-select option').first()).toHaveText(
+    '— Aucun groupe sauvegardé disponible —',
+  )
+  await expect(page.getByRole('button', { name: 'Prévisualiser les cibles' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Prévisualiser les cibles' })).toHaveAttribute(
+    'title',
+    'Choisissez un groupe sauvegardé avant de prévisualiser les cibles.',
+  )
+
+  await page.route('**/api/push-groups', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' }),
+  )
+  await page.locator('select.push-scope-mode-select').selectOption('dynamic')
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+
+  await expect(page.locator('select.push-saved-group-select')).toBeDisabled()
+  await expect(page.locator('select.push-saved-group-select option').first()).toHaveText(
+    '— Échec du chargement des groupes —',
+  )
+  await expect(page.locator('body')).not.toContainText('workloads.config.scope')
+})
+
+test('saved scope preview failure shows inline error and clears preview panel', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await page.route('**/api/pushes/preview', (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: '{"error":"preview exploded"}',
+    }),
+  )
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+  await page.locator('select.push-saved-group-select').selectOption('payments')
+  await page.getByRole('button', { name: 'Preview targets' }).click()
+
+  await expect(page.locator('.error-text-push')).toContainText('preview exploded')
+  await expect(page.locator('.push-preview-panel')).toHaveCount(0)
+})
+
 test('dynamic push selector posts labels version and capability for safe preview', async ({
   loggedInPage: page,
 }) => {
