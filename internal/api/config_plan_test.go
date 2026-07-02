@@ -194,6 +194,25 @@ func TestPlanWorkloadConfig_ExcludesReadOnlyTargetAndBlocksPush(t *testing.T) {
 	}
 }
 
+func TestPlanWorkloadConfig_ExcludesOfflineTargetAndBlocksPush(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	seedPlanWorkload(t, db, models.Workload{ID: "w-offline", DisplayName: "collector-offline", Type: "collector", Status: "disconnected", AcceptsRemoteConfig: true})
+
+	plan, status, body := postPlan(t, router, "w-offline", planTargetConfig)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", status, body)
+	}
+	if plan.CanPush || plan.ApplyAllowed || plan.Summary.ExcludedCount != 1 {
+		t.Fatalf("offline summary should block push: %+v", plan)
+	}
+	if len(plan.Targets) != 1 || !plan.Targets[0].Excluded || !containsString(plan.Targets[0].ExclusionReasons, "workload_offline") || !containsString(plan.Targets[0].HardFailures, "workload_offline") {
+		t.Fatalf("offline target not excluded: %+v", plan.Targets)
+	}
+	if !containsString(plan.HardFailures, "all_targets_excluded") {
+		t.Fatalf("hard_failures = %+v", plan.HardFailures)
+	}
+}
+
 func TestPlanWorkloadConfig_ValidationFailureBlocksPush(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	seedPlanWorkload(t, db, models.Workload{ID: "w-invalid", DisplayName: "collector-invalid", Type: "collector", AcceptsRemoteConfig: true})

@@ -192,6 +192,13 @@ func (a *API) handlePushWorkloadConfig(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if err == nil && !workloadIsConnected(wl) {
+		respondJSON(w, http.StatusConflict, map[string]string{
+			"error": "workload is not connected",
+			"code":  "workload_not_connected",
+		})
+		return
+	}
 
 	// Safety net: refuse to push a config that fails light validation.
 	// The frontend should call /validate first for UX feedback; this blocks
@@ -442,6 +449,10 @@ func (a *API) buildConfigApplicationPlanTarget(ctx context.Context, wl models.Wo
 		target.ExclusionReasons = append(target.ExclusionReasons, "read_only")
 		target.HardFailures = append(target.HardFailures, "read_only")
 	}
+	if !workloadIsConnected(wl) {
+		target.ExclusionReasons = append(target.ExclusionReasons, "workload_offline")
+		target.HardFailures = append(target.HardFailures, "workload_offline")
+	}
 
 	runtimeOpts := runtimeOptionsForWorkload(wl)
 	validation := validator.ValidateWithRuntime(ctx, body, wl.AvailableComponents, runtimeOpts)
@@ -473,6 +484,10 @@ func (a *API) buildConfigApplicationPlanTarget(ctx context.Context, wl models.Wo
 		target.Excluded = true
 	}
 	return target
+}
+
+func workloadIsConnected(wl models.Workload) bool {
+	return strings.EqualFold(strings.TrimSpace(wl.Status), "connected")
 }
 
 func (a *API) activeConfigContent(wl models.Workload) (*models.WorkloadConfig, bool) {

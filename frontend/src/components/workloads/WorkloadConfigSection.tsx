@@ -1641,6 +1641,8 @@ function humanizePlanReason(reason: string) {
       return 'Empty config'
     case 'non_collector':
       return 'Non-collector target'
+    case 'workload_offline':
+      return 'Workload is not connected'
     default:
       return reason
         .split('_')
