@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -219,6 +221,97 @@ func TestDiffConfigs_RejectsInvalidRequest(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestImportConfigFromGit_PersistsProvenanceAndValidation(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	importedAt := time.Now().UTC().Truncate(time.Second)
+	old := gitImportConfig
+	oldAllowPrivate := allowPrivateGitURLs
+	allowPrivateGitURLs = true
+	gitImportConfig = func(_ context.Context, req gitImportRequest) (gitImportResult, error) {
+		if req.GitURL != "https://token:secret@github.com/acme/collectors.git" {
+			t.Fatalf("GitURL = %q", req.GitURL)
+		}
+		return gitImportResult{
+			Content:     "receivers:\n  otlp:\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      exporters: []\n",
+			CommitSHA:   "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+			GitURL:      "https://github.com/acme/collectors.git",
+			GitProvider: "github",
+			ImportedAt:  importedAt,
+		}, nil
+	}
+	t.Cleanup(func() {
+		gitImportConfig = old
+		allowPrivateGitURLs = oldAllowPrivate
+	})
+
+	body := `{"name":"collector-from-git","git_url":"https://token:secret@github.com/acme/collectors.git","git_ref":"main","git_path":"otel/collector.yaml"}`
+	req := authedRequest(t, "POST", "/api/configs/import/git")
+	req.Body = httptest.NewRequest("POST", "/", bytes.NewBufferString(body)).Body
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != 201 {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Config     models.Config `json:"config"`
+		Validation struct {
+			Valid bool `json:"valid"`
+		} `json:"validation"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Validation.Valid {
+		t.Fatalf("validation = false, response = %s", rec.Body.String())
+	}
+	if resp.Config.SourceType != models.ConfigSourceGit || resp.Config.GitProvider != "github" {
+		t.Fatalf("provenance missing from response: %+v", resp.Config)
+	}
+	if resp.Config.GitURL != "https://github.com/acme/collectors.git" {
+		t.Fatalf("GitURL persisted credentials: %q", resp.Config.GitURL)
+	}
+	if resp.Config.CommitSHA != "abcdefabcdefabcdefabcdefabcdefabcdefabcd" {
+		t.Fatalf("CommitSHA = %q", resp.Config.CommitSHA)
+	}
+	stored, err := db.GetConfig(resp.Config.ID)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if stored.GitURL != "https://github.com/acme/collectors.git" || stored.GitRef != "main" || stored.GitPath != "otel/collector.yaml" {
+		t.Fatalf("stored provenance mismatch: %+v", stored)
+	}
+}
+
+func TestImportConfigFromGit_RejectsUnsafeURLBeforeFetch(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	old := gitImportConfig
+	called := false
+	gitImportConfig = func(context.Context, gitImportRequest) (gitImportResult, error) {
+		called = true
+		return gitImportResult{}, errors.New("fetch should not be called")
+	}
+	t.Cleanup(func() { gitImportConfig = old })
+
+	for _, gitURL := range []string{"file:///tmp/repo", "http://127.0.0.1/repo.git", "http://239.1.2.3/repo.git"} {
+		called = false
+		body := `{"name":"unsafe","git_url":"` + gitURL + `","git_ref":"main","git_path":"otel.yaml"}`
+		req := authedRequest(t, "POST", "/api/configs/import/git")
+		req.Body = httptest.NewRequest("POST", "/", bytes.NewBufferString(body)).Body
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != 400 {
+			t.Fatalf("%s status = %d, body = %s", gitURL, rec.Code, rec.Body.String())
+		}
+		if called {
+			t.Fatalf("fetch called for unsafe URL %s", gitURL)
+		}
 	}
 }
 

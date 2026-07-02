@@ -39,6 +39,52 @@ func TestCreateConfig(t *testing.T) {
 	}
 }
 
+func TestCreateConfig_WithGitProvenance(t *testing.T) {
+	db := newTestDB(t)
+
+	content := "receivers:\n  otlp:\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      exporters: []\n"
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+	importedAt := time.Now().UTC().Truncate(time.Second)
+	cfg := models.Config{
+		ID:          hash,
+		Name:        "git-imported",
+		Content:     content,
+		CreatedAt:   importedAt,
+		CreatedBy:   "admin@test.com",
+		SourceType:  models.ConfigSourceGit,
+		GitURL:      "https://github.com/acme/collectors.git",
+		GitProvider: "github",
+		GitRef:      "main",
+		GitPath:     "otel/collector.yaml",
+		CommitSHA:   "0123456789abcdef0123456789abcdef01234567",
+		ImportedAt:  &importedAt,
+	}
+
+	if err := db.CreateConfig(cfg); err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+
+	got, err := db.GetConfig(hash)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if got.SourceType != models.ConfigSourceGit {
+		t.Errorf("SourceType = %q, want %q", got.SourceType, models.ConfigSourceGit)
+	}
+	if got.GitURL != "https://github.com/acme/collectors.git" {
+		t.Errorf("GitURL = %q", got.GitURL)
+	}
+	if got.GitProvider != "github" || got.GitRef != "main" || got.GitPath != "otel/collector.yaml" {
+		t.Fatalf("git provenance mismatch: %+v", got)
+	}
+	if got.CommitSHA != "0123456789abcdef0123456789abcdef01234567" {
+		t.Errorf("CommitSHA = %q", got.CommitSHA)
+	}
+	if got.ImportedAt == nil || !got.ImportedAt.Equal(importedAt) {
+		t.Errorf("ImportedAt = %v, want %v", got.ImportedAt, importedAt)
+	}
+}
+
 func TestListConfigs(t *testing.T) {
 	db := newTestDB(t)
 

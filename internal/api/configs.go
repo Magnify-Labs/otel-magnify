@@ -13,6 +13,7 @@ import (
 
 	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
+	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -89,13 +90,14 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := models.Config{
-		ID:        hash,
-		Name:      req.Name,
-		Content:   req.Content,
-		CreatedAt: time.Now().UTC(),
-		CreatedBy: createdBy,
-		Kind:      models.ConfigKindSaved,
-		Status:    models.ConfigStatusReady,
+		ID:         hash,
+		Name:       req.Name,
+		Content:    req.Content,
+		CreatedAt:  time.Now().UTC(),
+		CreatedBy:  createdBy,
+		Kind:       models.ConfigKindSaved,
+		Status:     models.ConfigStatusReady,
+		SourceType: models.ConfigSourceManual,
 	}
 
 	if err := a.db.CreateConfig(cfg); err != nil {
@@ -107,6 +109,74 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, 201, cfg)
+}
+
+func (a *API) handleImportConfigFromGit(w http.ResponseWriter, r *http.Request) {
+	var req gitImportRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		respondError(w, 400, "invalid JSON")
+		return
+	}
+	if err := validateGitImportRequest(req); err != nil {
+		respondError(w, 400, err.Error())
+		return
+	}
+
+	result, err := gitImportConfig(r.Context(), req)
+	if err != nil {
+		respondError(w, 400, err.Error())
+		return
+	}
+	validation := validator.Validate([]byte(result.Content), nil)
+	if !validation.Valid {
+		respondJSON(w, 400, map[string]any{
+			"error":      "configuration failed validation",
+			"validation": validation,
+		})
+		return
+	}
+
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(result.Content)))
+	createdBy := ""
+	if info := ext.UserInfoFromContext(r.Context()); info != nil {
+		createdBy = info.Email
+	}
+	importedAt := result.ImportedAt.UTC()
+	if result.GitURL == "" {
+		result.GitURL = sanitizeGitURL(req.GitURL)
+	}
+	if result.GitProvider == "" {
+		result.GitProvider = gitProviderFromURL(result.GitURL)
+	}
+	cfg := models.Config{
+		ID:          hash,
+		Name:        req.Name,
+		Content:     result.Content,
+		CreatedAt:   time.Now().UTC(),
+		CreatedBy:   createdBy,
+		Kind:        models.ConfigKindSaved,
+		Status:      models.ConfigStatusReady,
+		SourceType:  models.ConfigSourceGit,
+		GitURL:      result.GitURL,
+		GitProvider: result.GitProvider,
+		GitRef:      req.GitRef,
+		GitPath:     req.GitPath,
+		CommitSHA:   result.CommitSHA,
+		ImportedAt:  &importedAt,
+	}
+
+	if err := a.db.CreateConfig(cfg); err != nil {
+		respondError(w, 500, "failed to create config")
+		return
+	}
+	if err := audit.Emit(r.Context(), a.audit, "config.import_git", "config", cfg.ID, cfg.CommitSHA); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
+		return
+	}
+	respondJSON(w, 201, map[string]any{
+		"config":     cfg,
+		"validation": validation,
+	})
 }
 
 func (a *API) handleGetConfig(w http.ResponseWriter, r *http.Request) {
