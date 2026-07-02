@@ -48,6 +48,32 @@
       "empty": "Aucune donnée de version",
       "others": "+{{count}} autres"
     },
+    "version_intelligence": {
+      "title": "Intelligence versions flotte",
+      "recommended": "Version Collector recommandée : {{version}}",
+      "no_recommendation": "non configurée",
+      "loading": "Chargement de l’intelligence versions…",
+      "error": "L’intelligence versions est indisponible.",
+      "empty": "Aucune donnée d’intelligence versions pour le moment.",
+      "no_findings": "Aucun collecteur sous la recommandation et aucun composant non supporté détecté.",
+      "matrix_label": "Matrice des versions flotte",
+      "count": "{{count}} workloads",
+      "below_title": "{{name}} exécute {{version}}",
+      "below_reason": "Le collecteur est sous la version recommandée.",
+      "unsupported_title": "{{path}} utilise {{component}} non supporté",
+      "unsupported_reason": "Les capacités du collecteur ne supportent pas ce composant.",
+      "status": {
+        "below_recommended": "Sous recommandation",
+        "at_recommended": "À la recommandation",
+        "above_recommended": "Au-dessus",
+        "unknown": "Inconnu",
+        "not_applicable": "N/A"
+      },
+      "action": {
+        "upgrade_collector": "Mettre à niveau vers {{version}}",
+        "unsupported_component": "Choisir une config plus ancienne, mettre à niveau le collecteur ou retirer {{component}}."
+      }
+    },
     "alerts": {
       "empty": "Aucune alerte active"
     },

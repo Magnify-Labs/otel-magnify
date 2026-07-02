@@ -21,6 +21,21 @@ test.describe('Dashboard', () => {
     await page.route('**/api/workloads*', (route) => route.fulfill({
       status: 200, contentType: 'application/json', body: JSON.stringify(mockWorkloads),
     }))
+    await page.route('**/api/workloads/version-intelligence*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schema_version: 'fleet-version-intelligence.v1',
+          recommended_version: '0.100.0',
+          version_matrix: [],
+          collectors_below_recommended: [],
+          unsupported_config_components: [],
+          invalid_versions: [],
+          recommendations: [],
+        }),
+      }),
+    )
     await page.route('**/api/alerts*', (route) => route.fulfill({
       status: 200, contentType: 'application/json', body: '[]',
     }))
@@ -87,6 +102,97 @@ test.describe('Dashboard', () => {
     await expect(page.locator('.versions-row')).toHaveCount(2)
     await expect(page.locator('.versions-row').first()).toContainText('0.100.0')
     await expect(page.locator('.versions-row').first()).toContainText('2')
+  })
+
+  test('renders fleet version intelligence recommendations', async ({ loggedInPage: page }) => {
+    await page.route('**/api/workloads/version-intelligence*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schema_version: 'fleet-version-intelligence.v1',
+          recommended_version: '0.100.0',
+          version_matrix: [
+            {
+              group: 'payments',
+              type: 'collector',
+              status: 'connected',
+              version: '0.99.0',
+              count: 1,
+              workload_ids: ['w1'],
+            },
+            {
+              group: 'payments',
+              type: 'collector',
+              status: 'connected',
+              version: '0.100.0',
+              count: 2,
+              workload_ids: ['w2', 'w3'],
+            },
+          ],
+          collectors_below_recommended: [
+            {
+              workload_id: 'w1',
+              display_name: 'collector-payments-a',
+              group: 'payments',
+              version: '0.99.0',
+              recommended_version: '0.100.0',
+            },
+          ],
+          unsupported_config_components: [
+            {
+              workload_id: 'w1',
+              display_name: 'collector-payments-a',
+              config_hash: 'cfg_123456',
+              category: 'receivers',
+              component_type: 'kafka',
+              path: 'receivers.kafka',
+              available_hash: 'cap_abc',
+              available_types: ['otlp'],
+            },
+          ],
+          invalid_versions: [],
+          recommendations: [
+            {
+              action: 'upgrade_collector',
+              workload_id: 'w1',
+              reason: 'collector version 0.99.0 is below recommended 0.100.0',
+            },
+            {
+              action: 'choose_older_config',
+              workload_id: 'w1',
+              config_hash: 'cfg_123456',
+              reason: 'current collector capabilities do not support this config component',
+              components: ['kafka'],
+            },
+            {
+              action: 'remove_component',
+              workload_id: 'w1',
+              config_hash: 'cfg_123456',
+              reason: 'remove or replace unsupported component before pushing this config',
+              components: ['kafka'],
+            },
+          ],
+        }),
+      }),
+    )
+
+    await page.goto('/')
+
+    await expect(page.getByRole('heading', { name: 'Fleet version intelligence' })).toBeVisible()
+    await expect(page.getByText('Recommended collector version: 0.100.0')).toBeVisible()
+    await expect(page.locator('.version-intelligence-row')).toHaveCount(2)
+    await expect(page.locator('.version-intelligence-row').first()).toContainText('payments')
+    await expect(page.locator('.version-intelligence-row').first()).toContainText('0.99.0')
+    await expect(page.locator('.version-intelligence-row').first()).toContainText(
+      'Below recommended',
+    )
+    await expect(page.getByText('collector-payments-a is running 0.99.0')).toBeVisible()
+    await expect(page.getByText('Upgrade collector to 0.100.0')).toBeVisible()
+    await expect(page.getByText('receivers.kafka uses unsupported kafka')).toBeVisible()
+    await expect(
+      page.getByText('Choose an older config, upgrade collector, or remove kafka.'),
+    ).toBeVisible()
   })
 
   test('clicking the Collectors stat card navigates to filtered inventory', async ({ loggedInPage: page }) => {

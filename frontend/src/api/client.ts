@@ -30,6 +30,7 @@ import type {
   CanaryStatus,
   CanaryValidationResult,
   ConfigDriftDashboard,
+  FleetVersionIntelligence,
 } from '../types'
 
 declare module 'axios' {
@@ -210,6 +211,12 @@ export const workloadsAPI = {
     api
       .get<RollbackStatusReport>(`/workloads/${id}/rollback/status`, {
         params: { request_id: requestId },
+      })
+      .then((r) => r.data),
+  versionIntelligence: (recommendedVersion?: string) =>
+    api
+      .get<FleetVersionIntelligence>('/workloads/version-intelligence', {
+        params: recommendedVersion ? { recommended_version: recommendedVersion } : undefined,
       })
       .then((r) => r.data),
   delete: (id: string) => api.delete(`/workloads/${id}`),

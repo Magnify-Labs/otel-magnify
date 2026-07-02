@@ -48,6 +48,32 @@
       "empty": "No version data",
       "others": "+{{count}} others"
     },
+    "version_intelligence": {
+      "title": "Fleet version intelligence",
+      "recommended": "Recommended collector version: {{version}}",
+      "no_recommendation": "not configured",
+      "loading": "Loading version intelligence…",
+      "error": "Version intelligence is unavailable.",
+      "empty": "No version intelligence data yet.",
+      "no_findings": "No collectors below recommendation and no unsupported components detected.",
+      "matrix_label": "Fleet version matrix",
+      "count": "{{count}} workloads",
+      "below_title": "{{name}} is running {{version}}",
+      "below_reason": "Collector is below the recommended version.",
+      "unsupported_title": "{{path}} uses unsupported {{component}}",
+      "unsupported_reason": "Collector capabilities do not support this component.",
+      "status": {
+        "below_recommended": "Below recommended",
+        "at_recommended": "At recommended",
+        "above_recommended": "Above recommended",
+        "unknown": "Unknown",
+        "not_applicable": "N/A"
+      },
+      "action": {
+        "upgrade_collector": "Upgrade collector to {{version}}",
+        "unsupported_component": "Choose an older config, upgrade collector, or remove {{component}}."
+      }
+    },
     "alerts": {
       "empty": "No active alerts"
     },

@@ -550,6 +550,72 @@ export interface PushActivityPoint {
   count: number
 }
 
+export type FleetVersionStatus =
+  | 'below_recommended'
+  | 'at_recommended'
+  | 'above_recommended'
+  | 'unknown'
+  | 'not_applicable'
+
+export type FleetVersionRecommendationAction =
+  | 'upgrade_collector'
+  | 'choose_older_config'
+  | 'remove_component'
+
+export interface FleetVersionMatrixEntry {
+  group: string
+  type: Workload['type']
+  status: Workload['status']
+  version: string
+  version_status?: FleetVersionStatus
+  count: number
+  workload_ids: string[]
+}
+
+export interface FleetCollectorVersionFinding {
+  workload_id: string
+  display_name: string
+  group: string
+  version: string
+  recommended_version: string
+}
+
+export interface FleetInvalidVersionFinding {
+  workload_id: string
+  display_name: string
+  version: string
+  reason: string
+}
+
+export interface FleetUnsupportedComponentFinding {
+  workload_id: string
+  display_name: string
+  config_hash: string
+  category: string
+  component_type: string
+  path: string
+  available_hash?: string
+  available_types?: string[]
+}
+
+export interface FleetVersionRecommendation {
+  action: FleetVersionRecommendationAction
+  workload_id?: string
+  config_hash?: string
+  reason: string
+  components?: string[]
+}
+
+export interface FleetVersionIntelligence {
+  schema_version: 'fleet-version-intelligence.v1'
+  recommended_version: string
+  version_matrix: FleetVersionMatrixEntry[]
+  collectors_below_recommended: FleetCollectorVersionFinding[]
+  unsupported_config_components: FleetUnsupportedComponentFinding[]
+  invalid_versions: FleetInvalidVersionFinding[]
+  recommendations: FleetVersionRecommendation[]
+}
+
 export interface PushGroupSelector {
   match_labels?: Record<string, string>
   types?: string[]
