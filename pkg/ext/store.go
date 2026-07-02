@@ -70,6 +70,12 @@ type Store interface {
 	GetWorkloadConfigByHash(workloadID, hash string) (*models.WorkloadConfig, error)
 	GetPushActivity(days int) ([]models.PushActivityPoint, error)
 
+	CreateOrUpdateConfigApprovalRequest(req models.ConfigApprovalRequest) (models.ConfigApprovalRequest, error)
+	GetConfigApprovalRequest(id string) (models.ConfigApprovalRequest, error)
+	ListConfigApprovalRequests(workloadID string) ([]models.ConfigApprovalRequest, error)
+	ApproveConfigApprovalRequest(id, approvedBy, comment string, approvedAt time.Time) (models.ConfigApprovalRequest, error)
+	MarkConfigApprovalRequestPushed(id, configHash, pushComment string, prodDoubleConfirmed, breakGlass bool, breakGlassReason string, pushedAt time.Time) (models.ConfigApprovalRequest, error)
+
 	CreateCanaryStatus(status models.CanaryStatus) error
 	UpdateCanaryStatus(status models.CanaryStatus) error
 	GetCanaryStatus(workloadID, canaryID string) (*models.CanaryStatus, error)

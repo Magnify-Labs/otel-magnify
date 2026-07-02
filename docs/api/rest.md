@@ -14,6 +14,10 @@ All endpoints return JSON. Most expect JSON request bodies; the two config endpo
 | `GET` | `/api/workloads/{id}/events/stats` | Yes | Event counts for the Activity tab sparkline (takes `?window=`). |
 | `GET` | `/api/workloads/{id}/configs` | Yes | Config push history for the workload. |
 | `POST` | `/api/workloads/{id}/config` | Yes | Push a config to the workload. |
+| `GET` | `/api/workloads/{id}/config/approvals` | Yes | List config approval requests for the workload. |
+| `POST` | `/api/workloads/{id}/config/approvals` | Yes | Create or update a validated config approval draft. |
+| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/approve` | Yes | Approve a pending config approval draft. |
+| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/push` | Yes | Push an approved draft, or an audited break-glass draft. |
 | `POST` | `/api/workloads/{id}/config/validate` | Yes | Lightweight server-side validation of a config. |
 | `DELETE` | `/api/workloads/{id}` | Yes | Archive a workload (admin only). |
 | `GET` | `/api/configs` | Yes | List all configs. |
@@ -67,6 +71,78 @@ Response (202 Accepted):
 ```
 
 On validation failure, 400 with `{ "error": "...", "validation_errors": [ ... ] }`. Follow-up push status (`pending` → `applied` | `failed`) arrives via the WebSocket.
+
+### `POST /api/workloads/{id}/config/approvals`
+
+Create or update the single pending approval draft for the same workload and `target_group`. This backend contract lives in community core because it owns the safety gate, persistence, validation, audit, and OpAMP push path; Pro/Enterprise should gate the richer approval UX and any commercial workflow policy with feature flags on top of these shared endpoints.
+
+Request body is JSON:
+
+```json
+{
+  "draft_yaml": "receivers:\n  otlp:\n...",
+  "target_group": "prod-collectors",
+  "target_env": "prod",
+  "comment": "why this config should be reviewed",
+  "prod_confirmation": true
+}
+```
+
+Validation is mandatory here and again before approval/push. Empty or invalid drafts return `400` with `{ "error": "configuration failed validation", "validation_errors": [...] }` (or `empty config draft`). Prod-targeted drafts require `prod_confirmation=true` before the request is saved. Unsupported remote config returns `409` with `code=remote_config_unsupported`.
+
+Response `201 Created` is `ConfigApprovalRequest`:
+
+```json
+{
+  "id": "car_...",
+  "workload_id": "w1",
+  "draft_yaml": "receivers:\n...",
+  "target_group": "prod-collectors",
+  "target_env": "prod",
+  "requester": "operator@example.com",
+  "request_comment": "why this config should be reviewed",
+  "status": "pending",
+  "prod_target": true,
+  "prod_confirmation": true,
+  "prod_double_confirmed": false,
+  "break_glass": false,
+  "created_at": "2026-07-02T20:00:00Z",
+  "updated_at": "2026-07-02T20:00:00Z"
+}
+```
+
+Audit action: `config.approval.request`.
+
+### `GET /api/workloads/{id}/config/approvals`
+
+Returns `200 OK` with an array of `ConfigApprovalRequest`, newest first. Any authenticated user can read it; mutations use the same `PushConfig` permission as direct config pushes.
+
+### `POST /api/workloads/{id}/config/approvals/{approval_id}/approve`
+
+Request body:
+
+```json
+{ "comment": "approved after reviewing the diff" }
+```
+
+Requires a non-empty comment and a still-valid draft. Response `200 OK` is the updated request with `status=approved`, `approved_by`, and `approved_at`. Non-pending approvals return `409` with `code=approval_not_pending`. Audit action: `config.approval.approve`.
+
+### `POST /api/workloads/{id}/config/approvals/{approval_id}/push`
+
+Request body:
+
+```json
+{
+  "comment": "operator confirmation before pushing",
+  "prod_double_confirmed": true,
+  "break_glass": false,
+  "break_glass_reason": ""
+}
+```
+
+Normal push requires `status=approved`; otherwise `409` with `code=approval_required`. Prod-targeted pushes require a non-empty `comment` and `prod_double_confirmed=true`, otherwise `400`. Break-glass push is allowed from a pending request only when `break_glass=true`, `comment` is non-empty, and `break_glass_reason` is non-empty; it emits `config.approval.break_glass_push` instead of the normal `config.approval.push` audit action.
+
+Response `202 Accepted` is the updated request with `status=pushed`, `config_hash`, `push_comment`, `pushed_at`, and break-glass metadata when used. The endpoint reuses the standard validator, remote-config gate, config hash, `RecordWorkloadConfig`, OpAMP `PushConfig`, and audit-unavailable semantics: if audit fails after the push side effect, response is `503` with `{ "error": "audit unavailable", "side_effect_status": "applied" }`.
 
 ### `POST /api/workloads/{id}/config/validate`
 
