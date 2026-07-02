@@ -189,6 +189,7 @@
         "start": "Start canary",
         "close": "Close canary",
         "permission_required": "Requires workload:push_config permission",
+        "safety_plan_required": "Generate a non-blocking Config Safety Plan before starting a canary.",
         "validating": "Validating canary…",
         "validate": "Validate canary targets",
         "push": "Push canary",
@@ -255,6 +256,48 @@
         "errors": {
           "start": "Failed to start canary",
           "action": "Canary action failed"
+        }
+      },
+      "application_plan": {
+        "title": "Config Safety Plan",
+        "ready_help": "Review target eligibility, validation, missing components, and risk before pushing.",
+        "blocked_help": "Push is blocked until hard failures are removed or invalid targets are excluded.",
+        "counter_aria": "Config safety plan counters",
+        "high_risk_note": "Review high-risk changes before pushing.",
+        "hard_failures": "Hard failures",
+        "rollout_not_persisted": "Save as rollout is not available yet; export JSON/Markdown instead.",
+        "export_fallback": "JSON export will be generated in your browser because the backend export endpoint is unavailable.",
+        "export_ready": "Plan export ready",
+        "export_error": "Plan export failed",
+        "status": {
+          "ready": "Ready to push",
+          "blocked": "Push blocked"
+        },
+        "counter": {
+          "targets": "Target collectors",
+          "collectors": "Collectors",
+          "remote_config": "Remote-config capable",
+          "readonly": "Read-only",
+          "validation_ok": "Validation OK",
+          "validation_failed": "Validation failed",
+          "components_missing": "Components missing",
+          "high_risk": "High-risk changes",
+          "excluded": "Excluded"
+        },
+        "target": {
+          "excluded": "Excluded",
+          "valid": "Valid",
+          "invalid": "Invalid",
+          "remote_capable": "Remote-config capable",
+          "readonly": "Read-only",
+          "components_missing": "{{count}} missing components",
+          "high_risk": "{{count}} high-risk changes"
+        },
+        "action": {
+          "export": "Export plan",
+          "exporting": "Exporting plan…",
+          "save_rollout": "Save as rollout",
+          "rollout_title": "Persisted rollout storage is not implemented by the backend yet."
         }
       }
     }

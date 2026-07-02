@@ -4,69 +4,34 @@ import { safeRemoteErrorText } from '../../src/lib/safeRemoteErrorText'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const ACTIVE_CONFIG_ID = 'abc123'
-const WORKLOAD_INSTANCES = [
-  {
-    instance_uid: 'inst-a',
-    pod_name: 'otel-a',
-    version: '0.98.0',
-    connected_at: '2026-07-01T10:00:00Z',
-    last_message_at: '2026-07-01T10:01:00Z',
-    healthy: true,
-  },
-  {
-    instance_uid: 'inst-b',
-    pod_name: 'otel-b',
-    version: '0.98.0',
-    connected_at: '2026-07-01T10:00:00Z',
-    last_message_at: '2026-07-01T10:01:00Z',
-    healthy: true,
-  },
-  {
-    instance_uid: 'inst-c',
-    pod_name: 'otel-c',
-    version: '0.98.0',
-    connected_at: '2026-07-01T10:00:00Z',
-    last_message_at: '2026-07-01T10:01:00Z',
-    healthy: false,
-  },
-]
 
 function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
-  return Promise.all([
-    page.route(`**/api/workloads/${WORKLOAD_ID}`, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: WORKLOAD_ID,
-          fingerprint_source: 'k8s',
-          fingerprint_keys: { cluster: 'prod', namespace: 'obs', kind: 'deployment', name: 'otel' },
-          display_name: 'test-collector',
-          type: 'collector',
-          version: '0.98.0',
-          status: 'connected',
-          last_seen_at: new Date().toISOString(),
-          labels: {},
-          active_config_id: ACTIVE_CONFIG_ID,
-          accepts_remote_config: true,
-          available_components: {
-            components: {
-              receivers: ['otlp'],
-              exporters: ['logging', 'debug'],
-            },
+  return page.route(`**/api/workloads/${WORKLOAD_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: WORKLOAD_ID,
+        fingerprint_source: 'k8s',
+        fingerprint_keys: { cluster: 'prod', namespace: 'obs', kind: 'deployment', name: 'otel' },
+        display_name: 'test-collector',
+        type: 'collector',
+        version: '0.98.0',
+        status: 'connected',
+        last_seen_at: new Date().toISOString(),
+        labels: {},
+        active_config_id: ACTIVE_CONFIG_ID,
+        accepts_remote_config: true,
+        available_components: {
+          components: {
+            receivers: ['otlp'],
+            exporters: ['logging', 'debug'],
           },
-          ...overrides,
-        }),
+        },
+        ...overrides,
       }),
-    ),
-    page.route(`**/api/workloads/${WORKLOAD_ID}/instances`, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(WORKLOAD_INSTANCES),
-      }),
-    ),
-  ])
+    }),
+  )
 }
 
 function mockConfig(page: Page, content: string) {
@@ -113,6 +78,81 @@ function mockValidate(page: Page, result: Record<string, unknown> & { valid: boo
       body: JSON.stringify(result),
     }),
   )
+}
+
+function buildPlan(overrides: Record<string, unknown> = {}) {
+  return {
+    schema_version: 'config_application_plan.v1',
+    workload_id: WORKLOAD_ID,
+    config_hash: 'feedfacefeedface',
+    summary: {
+      target_count: 1,
+      collector_target_count: 1,
+      remote_config_capable_count: 1,
+      read_only_count: 0,
+      validation_ok_count: 1,
+      validation_failed_count: 0,
+      components_missing_count: 0,
+      high_risk_change_count: 0,
+      excluded_count: 0,
+    },
+    targets: [
+      {
+        workload_id: WORKLOAD_ID,
+        display_name: 'test-collector',
+        type: 'collector',
+        accepts_remote_config: true,
+        read_only: false,
+        validation_status: 'ok',
+        validation_errors: [],
+        components_missing_count: 0,
+        high_risk_change_count: 0,
+        excluded: false,
+        exclusion_reasons: [],
+        hard_failures: [],
+        active_config_hash: 'abc123',
+        active_config_unavailable: false,
+      },
+    ],
+    hard_failures: [],
+    can_push: true,
+    apply_allowed: true,
+    export: {
+      supported: true,
+      formats: ['json', 'markdown'],
+      json_endpoint: `/api/workloads/${WORKLOAD_ID}/config/plan/export?format=json`,
+      markdown_endpoint: `/api/workloads/${WORKLOAD_ID}/config/plan/export?format=markdown`,
+      persisted_rollout: 'not_persisted',
+    },
+    ...overrides,
+  }
+}
+
+function mockPlan(page: Page, plan: ReturnType<typeof buildPlan>) {
+  return page.route(`**/api/workloads/${WORKLOAD_ID}/config/plan`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(plan),
+    }),
+  )
+}
+
+function mockPlanExport(page: Page) {
+  return page.route(`**/api/workloads/${WORKLOAD_ID}/config/plan/export?format=markdown`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/markdown',
+      headers: { 'Content-Disposition': 'attachment; filename="config-safety-plan.md"' },
+      body: '# Config Safety Plan\n\n- Targets: 1\n',
+    }),
+  )
+}
+
+async function generateSafetyPlan(page: Page) {
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+  await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
 }
 
 const VALIDATION_CHECKS_SUCCESS = [
@@ -357,11 +397,12 @@ test('validate exposes errors and blocks push', async ({ loggedInPage: page }) =
   await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
 })
 
-test('valid config unlocks push button', async ({ loggedInPage: page }) => {
+test('valid config shows plan counters before push', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
@@ -371,6 +412,16 @@ test('valid config unlocks push button', async ({ loggedInPage: page }) => {
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
 
   await expect(page.locator('.validation-ok')).toContainText('valid')
+  await expect(page.getByRole('button', { name: 'Generate safety plan' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+
+  const plan = page.locator('.config-application-plan')
+  await expect(plan).toBeVisible()
+  await expect(plan).toContainText('Target collectors')
+  await expect(plan).toContainText('Remote-config capable')
+  await expect(plan).toContainText('Validation OK')
+  await expect(plan).toContainText('High-risk changes')
+  await expect(plan).toContainText('test-collector')
   await expect(page.getByRole('button', { name: 'Push' })).toBeEnabled()
 })
 
@@ -381,6 +432,8 @@ test('canary wizard validates a percentage target group before starting canary',
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
   await mockCanaryValidation(page, {
     valid: true,
     targets: [
@@ -391,6 +444,7 @@ test('canary wizard validates a percentage target group before starting canary',
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await generateSafetyPlan(page)
   await page.getByRole('button', { name: 'Start canary' }).click()
   await page.getByLabel('Canary strategy').selectOption('percentage')
   await page.getByLabel('Percentage of collectors').fill('50')
@@ -408,6 +462,8 @@ test('canary validation expires when the draft changes before push', async ({
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
   await mockCanaryValidation(page, {
     valid: true,
     targets: [{ instance_uid: 'inst-a', pod_name: 'otel-a', status: 'sent' }],
@@ -415,6 +471,7 @@ test('canary validation expires when the draft changes before push', async ({
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await generateSafetyPlan(page)
   await page.getByRole('button', { name: 'Start canary' }).click()
   await page.getByRole('button', { name: 'Validate canary targets' }).click()
   await expect(page.getByRole('button', { name: 'Push canary' })).toBeEnabled()
@@ -433,6 +490,8 @@ test('canary validation failure blocks submit and explains stop reason', async (
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
   await mockCanaryValidation(
     page,
     {
@@ -448,6 +507,7 @@ test('canary validation failure blocks submit and explains stop reason', async (
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await generateSafetyPlan(page)
   await page.getByRole('button', { name: 'Start canary' }).click()
   await page.getByRole('button', { name: 'Validate canary targets' }).click()
 
@@ -463,6 +523,8 @@ test('canary status panel shows stop reasons and action states', async ({ logged
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
   await mockCanaryValidation(page, {
     valid: true,
     targets: [{ instance_uid: 'inst-a', pod_name: 'otel-a', status: 'sent' }],
@@ -489,6 +551,7 @@ test('canary status panel shows stop reasons and action states', async ({ logged
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await generateSafetyPlan(page)
   await page.getByRole('button', { name: 'Start canary' }).click()
   await page.getByRole('button', { name: 'Validate canary targets' }).click()
   await page.getByRole('button', { name: 'Push canary' }).click()
@@ -516,6 +579,169 @@ test('viewer can inspect canary status but cannot start or act on it', async ({
     'title',
     /Requires workload:push_config permission/,
   )
+})
+
+test('plan blocks push for validation failure and read-only targets with reasons', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page, { accepts_remote_config: false })
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockPlan(
+    page,
+    buildPlan({
+      summary: {
+        target_count: 1,
+        collector_target_count: 1,
+        remote_config_capable_count: 0,
+        read_only_count: 1,
+        validation_ok_count: 0,
+        validation_failed_count: 1,
+        components_missing_count: 1,
+        high_risk_change_count: 0,
+        excluded_count: 1,
+      },
+      targets: [
+        {
+          workload_id: WORKLOAD_ID,
+          display_name: 'test-collector',
+          type: 'collector',
+          accepts_remote_config: false,
+          read_only: true,
+          validation_status: 'failed',
+          validation_errors: ['component_not_installed'],
+          components_missing_count: 1,
+          high_risk_change_count: 0,
+          excluded: true,
+          exclusion_reasons: ['read_only', 'validation_failed'],
+          hard_failures: ['read_only', 'validation_failed'],
+          active_config_hash: 'abc123',
+          active_config_unavailable: false,
+        },
+      ],
+      hard_failures: ['validation_failed', 'all_targets_excluded'],
+      can_push: false,
+      apply_allowed: false,
+    }),
+  )
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  const plan = page.locator('.config-application-plan')
+  await expect(plan).toContainText('Push blocked')
+  await expect(plan).toContainText('Read-only')
+  await expect(plan).toContainText('component_not_installed')
+  await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
+})
+
+test('plan surfaces high-risk changes reported by backend', async ({ loggedInPage: page }) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(
+    page,
+    buildPlan({
+      summary: {
+        target_count: 1,
+        collector_target_count: 1,
+        remote_config_capable_count: 1,
+        read_only_count: 0,
+        validation_ok_count: 1,
+        validation_failed_count: 0,
+        components_missing_count: 0,
+        high_risk_change_count: 2,
+        excluded_count: 0,
+      },
+      targets: [
+        {
+          workload_id: WORKLOAD_ID,
+          display_name: 'test-collector',
+          type: 'collector',
+          accepts_remote_config: true,
+          read_only: false,
+          validation_status: 'ok',
+          validation_errors: [],
+          components_missing_count: 0,
+          high_risk_change_count: 2,
+          excluded: false,
+          exclusion_reasons: [],
+          hard_failures: [],
+          active_config_hash: 'abc123',
+          active_config_unavailable: false,
+        },
+      ],
+    }),
+  )
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+
+  const plan = page.locator('.config-application-plan')
+  await expect(plan).toContainText('High-risk changes')
+  await expect(plan).toContainText('2')
+  await expect(plan).toContainText('Review high-risk changes before pushing')
+})
+
+test('export plan action exposes an accessible markdown download affordance', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
+  await mockPlanExport(page)
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+
+  await expect(page.getByRole('button', { name: 'Export plan' })).toBeEnabled()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export plan' }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toContain('config-safety-plan')
+  await expect(page.locator('.config-application-plan')).toContainText('Plan export ready')
+})
+
+test('export plan falls back to client-side JSON when backend export is unavailable', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(
+    page,
+    buildPlan({
+      export: {
+        supported: false,
+        formats: [],
+        json_endpoint: '',
+        markdown_endpoint: '',
+        persisted_rollout: 'not_persisted',
+      },
+    }),
+  )
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+
+  await expect(page.locator('.config-application-plan')).toContainText(
+    'JSON export will be generated in your browser',
+  )
+  await expect(page.getByRole('button', { name: 'Export plan' })).toBeEnabled()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export plan' }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toBe('config-safety-plan.json')
+  await expect(page.locator('.config-application-plan')).toContainText('Plan export ready')
 })
 
 test('validation details show separated static component and runtime checks', async ({
@@ -677,7 +903,8 @@ test('validation details explain when otelcol runtime check is skipped', async (
   await expect(details).toContainText('Validation passed with warnings')
   await expect(details).toContainText('Skipped')
   await expect(details).toContainText('otelcol binary "otelcol" was not found on the server.')
-  await expect(page.getByRole('button', { name: 'Push' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Generate safety plan' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
 })
 
 test('push timeline renders aggregate progress and per-instance details', async ({
@@ -871,6 +1098,7 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
   await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) =>
     route.fulfill({
       status: 202,
@@ -885,6 +1113,8 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   await page.keyboard.type(' # touched')
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await expect(page.locator('.validation-ok')).toBeVisible()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+  await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
   await page.getByRole('button', { name: 'Push' }).click()
 
   // Simulate FAILED WS event
@@ -974,6 +1204,7 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
   await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) =>
     route.fulfill({
       status: 202,
@@ -988,6 +1219,8 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   await page.keyboard.type(' # applied-flow')
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await expect(page.locator('.validation-ok')).toBeVisible()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+  await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
   await page.getByRole('button', { name: 'Push' }).click()
 
   // While the push is pending, the Push button switches to Applying...
@@ -1329,6 +1562,43 @@ test('selector is absent in read-only collector branch', async ({ loggedInPage: 
   await mockConfig(page, 'a: 1\n')
   await mockHistory(page, [])
   await mockConfigsList(page, [{ id: 'cfg-eu', name: 'collector-prod-eu' }])
+  await mockPlan(
+    page,
+    buildPlan({
+      summary: {
+        target_count: 1,
+        collector_target_count: 1,
+        remote_config_capable_count: 0,
+        read_only_count: 1,
+        validation_ok_count: 1,
+        validation_failed_count: 0,
+        components_missing_count: 0,
+        high_risk_change_count: 0,
+        excluded_count: 1,
+      },
+      targets: [
+        {
+          workload_id: WORKLOAD_ID,
+          display_name: 'test-collector',
+          type: 'collector',
+          accepts_remote_config: false,
+          read_only: true,
+          validation_status: 'ok',
+          validation_errors: [],
+          components_missing_count: 0,
+          high_risk_change_count: 0,
+          excluded: true,
+          exclusion_reasons: ['read_only'],
+          hard_failures: ['read_only'],
+          active_config_hash: 'abc123',
+          active_config_unavailable: false,
+        },
+      ],
+      hard_failures: ['all_targets_excluded'],
+      can_push: false,
+      apply_allowed: false,
+    }),
+  )
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
 

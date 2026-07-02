@@ -2455,6 +2455,165 @@ code {
   margin-top: 0.75rem;
 }
 
+/* ── Config application dry-run plan ── */
+.config-application-plan {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 1rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.config-application-plan-blocked {
+  border-color: rgba(248, 113, 113, 0.36);
+}
+
+.config-plan-header,
+.config-plan-target-topline,
+.config-plan-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.config-plan-help,
+.config-plan-action-status,
+.config-plan-target-meta,
+.config-plan-reason-list {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.config-plan-help {
+  margin-top: 0.25rem;
+}
+
+.config-plan-status,
+.config-plan-target-status {
+  border: 1px solid rgba(52, 211, 153, 0.32);
+  border-radius: 999px;
+  background: var(--green-dim);
+  color: var(--green);
+  padding: 0.18rem 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.config-plan-status-blocked,
+.config-plan-target-excluded .config-plan-target-status,
+.config-plan-target-failed {
+  border-color: rgba(248, 113, 113, 0.36);
+  background: var(--red-dim);
+  color: var(--red);
+}
+
+.config-plan-counter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.55rem;
+  margin: 0.9rem 0;
+}
+
+.config-plan-counter,
+.config-plan-target {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 0.72rem;
+  min-width: 0;
+}
+
+.config-plan-counter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.config-plan-counter span {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.config-plan-counter strong {
+  color: var(--text-hi);
+  font-family: var(--mono);
+  font-size: 1rem;
+}
+
+.config-plan-warning,
+.config-plan-failures {
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.config-plan-warning {
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: var(--amber);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.config-plan-failures {
+  border: 1px solid rgba(248, 113, 113, 0.36);
+  color: var(--red);
+  background: var(--red-dim);
+}
+
+.config-plan-failures ul,
+.config-plan-reason-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.config-plan-target-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.config-plan-target h3 {
+  margin: 0 0 0.25rem;
+  color: var(--text-hi);
+  font-size: 0.95rem;
+}
+
+.config-plan-target code {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.config-plan-target-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin-top: 0.65rem;
+}
+
+.config-plan-actions {
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .config-plan-header,
+  .config-plan-target-topline,
+  .config-plan-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .modal-body {
   padding: 1rem;
 }
