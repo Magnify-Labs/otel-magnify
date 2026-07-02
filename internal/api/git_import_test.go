@@ -52,3 +52,9 @@ func TestSanitizeGitURLPreservesHTTPSPortWhileStrippingCredentials(t *testing.T)
 		t.Fatalf("sanitizeGitURL() = %q, want %q", got, want)
 	}
 }
+
+func TestValidateGitRefRejectsOptionLikeRef(t *testing.T) {
+	if err := validateGitRef("--upload-pack=/tmp/evil"); err == nil {
+		t.Fatal("validateGitRef accepted option-like ref")
+	}
+}

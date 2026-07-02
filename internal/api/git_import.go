@@ -27,7 +27,9 @@ var (
 	errUnsafeGitURL       = errors.New("unsafe git URL")
 	errGitFileTooLarge    = errors.New("git file exceeds size limit")
 	errInvalidGitPath     = errors.New("invalid git path")
+	errInvalidGitRef      = errors.New("invalid git ref")
 	gitCommitSHARegexp    = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	gitRefRegexp          = regexp.MustCompile(`^[A-Za-z0-9._/@+-]+$`)
 	scpLikeGitURLHostExpr = regexp.MustCompile(`^[^@\s]+@([^:\s]+):(.+)$`)
 )
 
@@ -71,7 +73,7 @@ func importGitConfig(ctx context.Context, req gitImportRequest) (gitImportResult
 	if ref == "" {
 		ref = "HEAD"
 	}
-	if err := runGit(ctx, dir, "fetch", "--depth=1", "origin", ref); err != nil {
+	if err := runGit(ctx, dir, "fetch", "--depth=1", "origin", "--", ref); err != nil {
 		return gitImportResult{}, err
 	}
 	commitBytes, err := gitOutput(ctx, dir, "rev-parse", "FETCH_HEAD")
@@ -121,6 +123,9 @@ func validateGitImportRequest(req gitImportRequest) error {
 	if err := validateGitPath(req.GitPath); err != nil {
 		return err
 	}
+	if err := validateGitRef(req.GitRef); err != nil {
+		return err
+	}
 	host, err := gitURLHost(req.GitURL)
 	if err != nil {
 		return err
@@ -143,6 +148,23 @@ func validateGitPath(p string) error {
 	clean := path.Clean(p)
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
 		return errInvalidGitPath
+	}
+	return nil
+}
+
+func validateGitRef(ref string) error {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil
+	}
+	if strings.HasPrefix(ref, "-") || strings.HasPrefix(ref, "/") || strings.HasSuffix(ref, "/") || strings.HasSuffix(ref, ".") || strings.HasSuffix(ref, ".lock") {
+		return errInvalidGitRef
+	}
+	if strings.Contains(ref, "..") || strings.Contains(ref, "@{") || strings.Contains(ref, `\`) || strings.Contains(ref, ":") || strings.Contains(ref, "*") || strings.Contains(ref, "?") || strings.Contains(ref, "[") {
+		return errInvalidGitRef
+	}
+	if !gitRefRegexp.MatchString(ref) {
+		return errInvalidGitRef
 	}
 	return nil
 }
@@ -239,6 +261,7 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 
 func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	args = append([]string{"-c", "http.followRedirects=false"}, args...)
+	// codeql[go/command-line-injection] git is invoked directly without a shell; user-controlled URL/ref/path inputs are validated before args are assembled.
 	//nolint:gosec // args are fixed git subcommands assembled after URL/path validation; no shell is invoked.
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
