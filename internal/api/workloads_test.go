@@ -392,8 +392,11 @@ service:
 	if len(matrix) != 6 {
 		t.Fatalf("version_matrix len = %d, matrix=%+v", len(matrix), matrix)
 	}
-	assertVersionMatrixEntry(t, matrix, "prod", "collector", "connected", "0.9.0", 1)
-	assertVersionMatrixEntry(t, matrix, "prod", "sdk", "connected", "0.1.0", 1)
+	assertVersionMatrixEntry(t, matrix, "dev", "collector", "disconnected", "0.101.0", 1, "above_recommended")
+	assertVersionMatrixEntry(t, matrix, "prod", "collector", "connected", "0.9.0", 1, "below_recommended")
+	assertVersionMatrixEntry(t, matrix, "prod", "collector", "connected", "v0.100.0", 1, "at_recommended")
+	assertVersionMatrixEntry(t, matrix, "prod", "collector", "connected", "nightly", 1, "unknown")
+	assertVersionMatrixEntry(t, matrix, "prod", "sdk", "connected", "0.1.0", 1, "not_applicable")
 	below := body["collectors_below_recommended"].([]any)
 	if len(below) != 1 || below[0].(map[string]any)["workload_id"] != "w-old" {
 		t.Fatalf("collectors_below_recommended = %+v", below)
@@ -420,15 +423,42 @@ service:
 	}
 }
 
-func assertVersionMatrixEntry(t *testing.T, matrix []any, group, typ, status, version string, count float64) {
+func TestFleetVersionIntelligence_InvalidRecommendedVersionDoesNotFlagCollectors(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "w-valid", DisplayName: "collector valid", Type: "collector", Version: "0.100.0", Status: "connected",
+		LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := authedRequest(t, "GET", "/api/workloads/version-intelligence?recommended_version=latest")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	assertVersionMatrixEntry(t, body["version_matrix"].([]any), "prod", "collector", "connected", "0.100.0", 1, "unknown")
+	if invalid := body["invalid_versions"].([]any); len(invalid) != 0 {
+		t.Fatalf("invalid_versions = %+v, want empty when only recommended_version is invalid", invalid)
+	}
+	if below := body["collectors_below_recommended"].([]any); len(below) != 0 {
+		t.Fatalf("collectors_below_recommended = %+v, want empty when recommended_version is invalid", below)
+	}
+}
+
+func assertVersionMatrixEntry(t *testing.T, matrix []any, group, typ, status, version string, count float64, versionStatus string) {
 	t.Helper()
 	for _, item := range matrix {
 		entry := item.(map[string]any)
-		if entry["group"] == group && entry["type"] == typ && entry["status"] == status && entry["version"] == version && entry["count"] == count {
+		if entry["group"] == group && entry["type"] == typ && entry["status"] == status && entry["version"] == version && entry["count"] == count && entry["version_status"] == versionStatus {
 			return
 		}
 	}
-	t.Fatalf("missing matrix entry group=%q type=%q status=%q version=%q count=%v in %+v", group, typ, status, version, count, matrix)
+	t.Fatalf("missing matrix entry group=%q type=%q status=%q version=%q count=%v version_status=%q in %+v", group, typ, status, version, count, versionStatus, matrix)
 }
 
 func assertRecommendationAction(t *testing.T, recommendations []any, action string) {
