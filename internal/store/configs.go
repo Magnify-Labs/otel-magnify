@@ -1,8 +1,10 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -15,6 +17,9 @@ func (d *DB) CreateConfig(c models.Config) error {
 	if c.Status == "" {
 		c.Status = models.ConfigStatusReady
 	}
+	if c.SourceType == "" {
+		c.SourceType = models.ConfigSourceManual
+	}
 	variables, err := json.Marshal(c.Variables)
 	if err != nil {
 		return fmt.Errorf("marshal config variables: %w", err)
@@ -25,9 +30,13 @@ func (d *DB) CreateConfig(c models.Config) error {
 	}
 
 	_, err = d.Exec(`
-		INSERT INTO configs (id, name, content, created_at, created_by, kind, status, category, stack, description, variables, tags)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO configs (
+			id, name, content, created_at, created_by, kind, status, category, stack, description, variables, tags,
+			source_type, git_url, git_provider, git_ref, git_path, commit_sha, imported_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ID, c.Name, c.Content, c.CreatedAt.UTC(), c.CreatedBy, c.Kind, c.Status, c.Category, c.Stack, c.Description, string(variables), string(tags),
+		c.SourceType, nullIfEmpty(c.GitURL), nullIfEmpty(c.GitProvider), nullIfEmpty(c.GitRef), nullIfEmpty(c.GitPath), nullIfEmpty(c.CommitSHA), timePtrValue(c.ImportedAt),
 	)
 	return err
 }
@@ -35,17 +44,13 @@ func (d *DB) CreateConfig(c models.Config) error {
 // GetConfig fetches a config library row by id, wrapping sql.ErrNoRows on miss.
 func (d *DB) GetConfig(id string) (models.Config, error) {
 	var c models.Config
-	var variables, tags string
-	err := d.QueryRow(`
+	err := scanConfig(d.QueryRow(`
 		SELECT id, name, content, created_at, created_by,
 		       COALESCE(kind, 'saved'), COALESCE(status, 'ready'), COALESCE(category, ''), COALESCE(stack, ''), COALESCE(description, ''),
-		       COALESCE(variables, '[]'), COALESCE(tags, '[]')
-		FROM configs WHERE id = ?`, id).
-		Scan(&c.ID, &c.Name, &c.Content, &c.CreatedAt, &c.CreatedBy, &c.Kind, &c.Status, &c.Category, &c.Stack, &c.Description, &variables, &tags)
+		       COALESCE(variables, '[]'), COALESCE(tags, '[]'), COALESCE(source_type, 'manual'),
+		       git_url, git_provider, git_ref, git_path, commit_sha, imported_at
+		FROM configs WHERE id = ?`, id), &c)
 	if err != nil {
-		return c, fmt.Errorf("get config %s: %w", id, err)
-	}
-	if err := decodeConfigJSONMetadata(&c, variables, tags); err != nil {
 		return c, fmt.Errorf("get config %s: %w", id, err)
 	}
 	return c, nil
@@ -56,7 +61,8 @@ func (d *DB) ListConfigs() ([]models.Config, error) {
 	rows, err := d.Query(`
 		SELECT id, name, content, created_at, created_by,
 		       COALESCE(kind, 'saved'), COALESCE(status, 'ready'), COALESCE(category, ''), COALESCE(stack, ''), COALESCE(description, ''),
-		       COALESCE(variables, '[]'), COALESCE(tags, '[]')
+		       COALESCE(variables, '[]'), COALESCE(tags, '[]'), COALESCE(source_type, 'manual'),
+		       git_url, git_provider, git_ref, git_path, commit_sha, imported_at
 		FROM configs ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -67,16 +73,45 @@ func (d *DB) ListConfigs() ([]models.Config, error) {
 	var configs []models.Config
 	for rows.Next() {
 		var c models.Config
-		var variables, tags string
-		if err := rows.Scan(&c.ID, &c.Name, &c.Content, &c.CreatedAt, &c.CreatedBy, &c.Kind, &c.Status, &c.Category, &c.Stack, &c.Description, &variables, &tags); err != nil {
-			return nil, err
-		}
-		if err := decodeConfigJSONMetadata(&c, variables, tags); err != nil {
+		if err := scanConfig(rows, &c); err != nil {
 			return nil, err
 		}
 		configs = append(configs, c)
 	}
 	return configs, rows.Err()
+}
+
+type configScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanConfig(row configScanner, c *models.Config) error {
+	var variables, tags string
+	var gitURL, gitProvider, gitRef, gitPath, commitSHA sql.NullString
+	var importedAt sql.NullTime
+	if err := row.Scan(
+		&c.ID, &c.Name, &c.Content, &c.CreatedAt, &c.CreatedBy,
+		&c.Kind, &c.Status, &c.Category, &c.Stack, &c.Description, &variables, &tags, &c.SourceType,
+		&gitURL, &gitProvider, &gitRef, &gitPath, &commitSHA, &importedAt,
+	); err != nil {
+		return err
+	}
+	if err := decodeConfigJSONMetadata(c, variables, tags); err != nil {
+		return err
+	}
+	if c.SourceType == "" {
+		c.SourceType = models.ConfigSourceManual
+	}
+	c.GitURL = gitURL.String
+	c.GitProvider = gitProvider.String
+	c.GitRef = gitRef.String
+	c.GitPath = gitPath.String
+	c.CommitSHA = commitSHA.String
+	if importedAt.Valid {
+		v := importedAt.Time.UTC()
+		c.ImportedAt = &v
+	}
+	return nil
 }
 
 func decodeConfigJSONMetadata(c *models.Config, variablesJSON, tagsJSON string) error {
@@ -99,6 +134,13 @@ func decodeConfigJSONMetadata(c *models.Config, variablesJSON, tagsJSON string) 
 		return fmt.Errorf("decode tags: %w", err)
 	}
 	return nil
+}
+
+func timePtrValue(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.UTC()
 }
 
 func nullIfEmpty(s string) any {

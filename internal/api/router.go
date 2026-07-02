@@ -155,6 +155,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.Get("/api/configs", api.handleListConfigs)
 		r.With(api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs", api.handleCreateConfig)
 		r.Post("/api/configs/diff", api.handleDiffConfigs)
+		r.With(api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs/import/git", api.handleImportConfigFromGit)
 		r.Get("/api/configs/{id}", api.handleGetConfig)
 
 		r.Get("/api/alerts", api.handleListAlerts)

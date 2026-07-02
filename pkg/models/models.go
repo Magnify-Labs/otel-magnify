@@ -157,7 +157,21 @@ type Config struct {
 	Variables   []ConfigVariable `json:"variables,omitempty"`
 	Tags        []string         `json:"tags,omitempty"`
 	BuiltIn     bool             `json:"built_in"`
+	SourceType  string           `json:"source_type,omitempty"`
+	GitURL      string           `json:"git_url,omitempty"`
+	GitProvider string           `json:"git_provider,omitempty"`
+	GitRef      string           `json:"git_ref,omitempty"`
+	GitPath     string           `json:"git_path,omitempty"`
+	CommitSHA   string           `json:"commit_sha,omitempty"`
+	ImportedAt  *time.Time       `json:"imported_at,omitempty"`
 }
+
+const (
+	// ConfigSourceManual marks configs created directly through the API/UI.
+	ConfigSourceManual = "manual"
+	// ConfigSourceGit marks configs imported from a Git repository with provenance.
+	ConfigSourceGit = "git"
+)
 
 // WorkloadConfig records a single push of a Config to a Workload, including its current apply status.
 type WorkloadConfig struct {
