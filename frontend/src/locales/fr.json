@@ -299,6 +299,57 @@
           "save_rollout": "Enregistrer comme rollout",
           "rollout_title": "Le stockage de rollouts persistés n’est pas encore implémenté côté backend."
         }
+      },
+      "apply": {
+        "aria": "Appliquer une configuration sauvegardée",
+        "placeholder": "— Appliquer une configuration sauvegardée —",
+        "error": "— Échec du chargement des configurations —",
+        "empty": "— Aucune configuration sauvegardée (créez-en une dans Configurations) —",
+        "currently_applied": "{{name}} (actuellement appliquée)"
+      },
+      "permission": {
+        "push_blocked": "Vous n'avez pas la permission de pousser des configurations de workload. Cette configuration est en lecture seule pour votre compte.",
+        "validate_blocked": "Vous n'avez pas la permission de valider des configurations de workload."
+      },
+      "scope": {
+        "title": "Portée cible du push",
+        "help": "Prévisualisez les groupes sauvegardés ou dynamiques avant le push. Le push exécutable reste limité au workload courant.",
+        "preview_only": "Prévisualisation seule",
+        "mode_label": "Portée",
+        "single": "Workload courant",
+        "saved": "Groupe sauvegardé",
+        "dynamic": "Sélecteur dynamique",
+        "saved_label": "Groupe sauvegardé",
+        "saved_placeholder": "— Choisir un groupe sauvegardé —",
+        "groups_error": "— Échec du chargement des groupes —",
+        "preview_failed": "Échec de la prévisualisation des cibles",
+        "preview_button": "Prévisualiser les cibles",
+        "previewing": "Prévisualisation…",
+        "bulk_push_unavailable": "Le push groupé nécessite un endpoint backend dédié ; utilisez la prévisualisation pour vérifier la portée.",
+        "blocked_warning": "Les cibles bloquées doivent être exclues avant un push sûr.",
+        "ready": "Prêt pour le push : toutes les cibles prévisualisées acceptent la remote config.",
+        "field": {
+          "cluster": "Cluster",
+          "namespace": "Namespace",
+          "env": "Environnement",
+          "team": "Équipe",
+          "workload_type": "Type de workload",
+          "version": "Version collector",
+          "capabilities": "Capabilities"
+        },
+        "count": {
+          "targeted": "{{count}} ciblées",
+          "capable": "{{count}} compatibles",
+          "readonly": "{{count}} lecture seule",
+          "incompatible": "{{count}} incompatibles",
+          "offline": "{{count}} hors ligne"
+        },
+        "bucket": {
+          "read_only": "lecture seule",
+          "incompatible": "incompatible",
+          "offline": "hors ligne",
+          "remote_config_capable": "compatible"
+        }
       }
     }
   },

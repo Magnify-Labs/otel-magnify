@@ -5,6 +5,22 @@ import { safeRemoteErrorText } from '../../src/lib/safeRemoteErrorText'
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const ACTIVE_CONFIG_ID = 'abc123'
 
+const editorGroup = {
+  id: 'grp_system_editor',
+  name: 'editor' as const,
+  role: 'editor' as const,
+  is_system: true,
+  created_at: new Date().toISOString(),
+}
+
+const viewerGroup = {
+  id: 'grp_system_viewer',
+  name: 'viewer' as const,
+  role: 'viewer' as const,
+  is_system: true,
+  created_at: new Date().toISOString(),
+}
+
 function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
   return page.route(`**/api/workloads/${WORKLOAD_ID}`, (route) =>
     route.fulfill({
@@ -149,6 +165,104 @@ function mockPlanExport(page: Page) {
   )
 }
 
+function mockPushGroups(page: Page) {
+  return page.route('**/api/push-groups', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 'payments',
+          name: 'Payments collectors',
+          description: 'Production payment pipeline collectors',
+          selector: { match_labels: { team: 'payments', env: 'prod' }, types: ['collector'] },
+        },
+        {
+          id: 'read-only',
+          name: 'Read-only collectors',
+          selector: { capabilities: ['report_config'] },
+        },
+      ]),
+    }),
+  )
+}
+
+function mockPushPreview(page: Page) {
+  return page.route('**/api/pushes/preview', async (route) => {
+    const request = route.request().postDataJSON() as { group_id?: string }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        request.group_id === 'payments'
+          ? {
+              group_id: 'payments',
+              selector: { match_labels: { team: 'payments', env: 'prod' }, types: ['collector'] },
+              targeted_count: 8,
+              breakdown: {
+                remote_config_capable: 5,
+                read_only: 1,
+                incompatible: 1,
+                offline: 1,
+              },
+              targets: [
+                {
+                  workload_id: 'payments-capable',
+                  display_name: 'payments-capable',
+                  type: 'collector',
+                  version: '0.98.0',
+                  status: 'connected',
+                  bucket: 'remote_config_capable',
+                  accepts_remote_config: true,
+                },
+                {
+                  workload_id: 'payments-ro',
+                  display_name: 'payments-ro',
+                  type: 'collector',
+                  version: '0.98.0',
+                  status: 'connected',
+                  bucket: 'read_only',
+                  reason: 'workload does not accept remote config',
+                  accepts_remote_config: false,
+                },
+                {
+                  workload_id: 'payments-incompatible',
+                  display_name: 'payments-incompatible',
+                  type: 'collector',
+                  version: '0.74.0',
+                  status: 'connected',
+                  bucket: 'incompatible',
+                  reason: 'collector lacks the debug exporter',
+                  accepts_remote_config: true,
+                },
+                {
+                  workload_id: 'payments-offline',
+                  display_name: 'payments-offline',
+                  type: 'collector',
+                  version: '0.98.0',
+                  status: 'disconnected',
+                  bucket: 'offline',
+                  reason: 'workload is not connected',
+                  accepts_remote_config: true,
+                },
+              ],
+            }
+          : {
+              selector: request,
+              targeted_count: 3,
+              breakdown: {
+                remote_config_capable: 3,
+                read_only: 0,
+                incompatible: 0,
+                offline: 0,
+              },
+              targets: [],
+            },
+      ),
+    })
+  })
+}
+
 async function generateSafetyPlan(page: Page) {
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
@@ -210,6 +324,7 @@ const VALIDATION_CHECKS_SUCCESS = [
 ]
 
 test.beforeEach(async ({ loggedInPage: page }) => {
+  await mockMe(page, { groups: [editorGroup] })
   await mockConfigsList(page, [])
   await mockKnownGoodMissing(page)
 })
@@ -1651,4 +1766,124 @@ test('selecting a config overwrites in-progress draft silently (no confirm)', as
   await expect(page.locator('.cm-mergeView .cm-content').nth(1)).not.toContainText(
     'user-typed-mess',
   )
+})
+
+test('saved push group selection renders preview buckets and blocked targets', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await mockPushPreview(page)
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await expect(page.locator('.validation-ok')).toBeVisible()
+
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+  await page.locator('select.push-saved-group-select').selectOption('payments')
+  await page.getByRole('button', { name: 'Preview targets' }).click()
+
+  await expect(page.locator('.push-preview-panel')).toContainText('8 targeted')
+  await expect(page.locator('.push-preview-panel')).toContainText('5 capable')
+  await expect(page.locator('.push-preview-panel')).toContainText('1 read-only')
+  await expect(page.locator('.push-preview-panel')).toContainText('1 incompatible')
+  await expect(page.locator('.push-preview-panel')).toContainText('1 offline')
+  await expect(page.locator('.push-preview-blocked')).toContainText('payments-ro')
+  await expect(page.locator('.push-preview-blocked')).toContainText('payments-incompatible')
+  await expect(page.locator('.push-preview-warning')).toContainText(
+    'Blocked targets must be excluded',
+  )
+  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+})
+
+test('viewer permission keeps config push controls read-only', async ({ loggedInPage: page }) => {
+  await mockMe(page, { groups: [viewerGroup] })
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockConfigsList(page, [{ id: 'cfg-eu', name: 'collector-prod-eu' }])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
+  await expect(page.locator('select.apply-config-select')).toBeDisabled()
+  await expect(page.locator('.config-permission-note')).toContainText('permission')
+  await expect(page.getByRole('button', { name: 'Validate for this collector' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
+})
+
+test('French scope UX renders translated labels and blocked preview copy', async ({
+  loggedInPage: page,
+}) => {
+  await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await mockPushPreview(page)
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Modifier' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+  await page.locator('select.push-saved-group-select').selectOption('payments')
+  await page.getByRole('button', { name: 'Prévisualiser les cibles' }).click()
+
+  await expect(page.locator('.push-scope-panel')).toContainText('Portée cible du push')
+  await expect(page.locator('.push-scope-mode-badge')).toContainText('Prévisualisation seule')
+  await expect(page.locator('.push-preview-panel')).toContainText('8 ciblées')
+  await expect(page.locator('.push-preview-panel')).toContainText('1 lecture seule')
+  await expect(page.locator('.push-preview-warning')).toContainText('cibles bloquées')
+  await expect(page.locator('body')).not.toContainText('workloads.config.scope')
+})
+
+test('dynamic push selector posts labels version and capability for safe preview', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await mockPushPreview(page)
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await expect(page.locator('.validation-ok')).toBeVisible()
+
+  await page.locator('select.push-scope-mode-select').selectOption('dynamic')
+  await page.getByLabel('Cluster').fill('prod-eu')
+  await page.getByLabel('Namespace').fill('observability')
+  await page.getByLabel('Environment').fill('prod')
+  await page.getByLabel('Team').fill('platform')
+  await page.getByLabel('Workload type').fill('daemonset')
+  await page.getByLabel('Collector version').fill('0.98.0')
+  await page.getByLabel('Capabilities').fill('otlp, debug')
+  const previewRequest = page.waitForRequest('**/api/pushes/preview')
+  await page.getByRole('button', { name: 'Preview targets' }).click()
+
+  const request = await previewRequest
+  expect(request.postDataJSON()).toMatchObject({
+    selector: {
+      match_labels: {
+        cluster: 'prod-eu',
+        namespace: 'observability',
+        env: 'prod',
+        team: 'platform',
+        workload_type: 'daemonset',
+      },
+      types: ['collector'],
+      versions: ['0.98.0'],
+      capabilities: ['otlp', 'debug'],
+    },
+  })
+  await expect(page.locator('.push-preview-panel')).toContainText('3 targeted')
+  await expect(page.locator('.push-preview-panel')).toContainText('Ready to push')
 })

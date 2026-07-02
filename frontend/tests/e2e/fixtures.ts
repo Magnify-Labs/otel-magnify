@@ -73,6 +73,13 @@ export const test = base.extend<{ loggedInPage: Page }>({
         body: JSON.stringify(defaultMe),
       }),
     )
+    await page.route('**/api/push-groups', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      }),
+    )
     await use(page)
   },
 })

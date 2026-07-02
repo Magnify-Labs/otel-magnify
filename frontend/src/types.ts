@@ -550,6 +550,55 @@ export interface PushActivityPoint {
   count: number
 }
 
+export interface PushGroupSelector {
+  match_labels?: Record<string, string>
+  types?: string[]
+  versions?: string[]
+  capabilities?: string[]
+}
+
+export interface PushGroup {
+  id: string
+  name: string
+  description?: string
+  selector: PushGroupSelector
+}
+
+export interface PushPreviewRequest {
+  group_id?: string
+  selector?: PushGroupSelector
+  config_content?: string
+}
+
+export interface PushPreviewBreakdown {
+  remote_config_capable: number
+  read_only: number
+  incompatible: number
+  offline: number
+}
+
+export type PushPreviewBucket = 'remote_config_capable' | 'read_only' | 'incompatible' | 'offline'
+
+export interface PushPreviewTarget {
+  workload_id: string
+  display_name: string
+  type: string
+  version?: string
+  status: string
+  bucket: PushPreviewBucket
+  reason?: string
+  accepts_remote_config: boolean
+  last_seen_unix?: number
+}
+
+export interface PushPreview {
+  group_id?: string
+  selector: PushGroupSelector
+  targeted_count: number
+  breakdown: PushPreviewBreakdown
+  targets: PushPreviewTarget[]
+}
+
 export interface Group {
   id: string
   name: string

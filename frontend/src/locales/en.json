@@ -299,6 +299,57 @@
           "save_rollout": "Save as rollout",
           "rollout_title": "Persisted rollout storage is not implemented by the backend yet."
         }
+      },
+      "apply": {
+        "aria": "Apply a saved config",
+        "placeholder": "— Apply a saved config —",
+        "error": "— Failed to load configs —",
+        "empty": "— No saved configs (create one in Configs) —",
+        "currently_applied": "{{name}} (currently applied)"
+      },
+      "permission": {
+        "push_blocked": "You don't have permission to push workload configurations. This config is read-only for your account.",
+        "validate_blocked": "You don't have permission to validate workload configurations."
+      },
+      "scope": {
+        "title": "Push target scope",
+        "help": "Preview saved or dynamic groups before pushing. The current workload path remains the only executable push action.",
+        "preview_only": "Preview only",
+        "mode_label": "Scope",
+        "single": "Current workload",
+        "saved": "Saved group",
+        "dynamic": "Dynamic selector",
+        "saved_label": "Saved group",
+        "saved_placeholder": "— Select a saved group —",
+        "groups_error": "— Failed to load groups —",
+        "preview_failed": "Failed to preview push targets",
+        "preview_button": "Preview targets",
+        "previewing": "Previewing…",
+        "bulk_push_unavailable": "Bulk push requires a backend push endpoint; use preview to verify scope safety.",
+        "blocked_warning": "Blocked targets must be excluded before a safe push.",
+        "ready": "Ready to push: every previewed target is remote-config capable.",
+        "field": {
+          "cluster": "Cluster",
+          "namespace": "Namespace",
+          "env": "Environment",
+          "team": "Team",
+          "workload_type": "Workload type",
+          "version": "Collector version",
+          "capabilities": "Capabilities"
+        },
+        "count": {
+          "targeted": "{{count}} targeted",
+          "capable": "{{count}} capable",
+          "readonly": "{{count}} read-only",
+          "incompatible": "{{count}} incompatible",
+          "offline": "{{count}} offline"
+        },
+        "bucket": {
+          "read_only": "read-only",
+          "incompatible": "incompatible",
+          "offline": "offline",
+          "remote_config_capable": "capable"
+        }
       }
     }
   },
