@@ -1,9 +1,41 @@
 import { test, expect } from './fixtures'
 
 const mockWorkloads = [
-  { id: 'w1', fingerprint_source: 'k8s', fingerprint_keys: {}, display_name: 'coll-a', type: 'collector', version: '0.100.0', status: 'connected',    last_seen_at: new Date().toISOString(), labels: {}, accepts_remote_config: true  },
-  { id: 'w2', fingerprint_source: 'k8s', fingerprint_keys: {}, display_name: 'coll-b', type: 'collector', version: '0.100.0', status: 'degraded',     last_seen_at: new Date().toISOString(), labels: {}, accepts_remote_config: false },
-  { id: 'w3', fingerprint_source: 'uid', fingerprint_keys: {}, display_name: 'sdk-a',  type: 'sdk',       version: '0.99.0',  status: 'disconnected', last_seen_at: new Date().toISOString(), labels: {} },
+  {
+    id: 'w1',
+    fingerprint_source: 'k8s',
+    fingerprint_keys: {},
+    display_name: 'coll-a',
+    type: 'collector',
+    version: '0.100.0',
+    status: 'connected',
+    last_seen_at: new Date().toISOString(),
+    labels: {},
+    accepts_remote_config: true,
+  },
+  {
+    id: 'w2',
+    fingerprint_source: 'k8s',
+    fingerprint_keys: {},
+    display_name: 'coll-b',
+    type: 'collector',
+    version: '0.100.0',
+    status: 'degraded',
+    last_seen_at: new Date().toISOString(),
+    labels: {},
+    accepts_remote_config: false,
+  },
+  {
+    id: 'w3',
+    fingerprint_source: 'uid',
+    fingerprint_keys: {},
+    display_name: 'sdk-a',
+    type: 'sdk',
+    version: '0.99.0',
+    status: 'disconnected',
+    last_seen_at: new Date().toISOString(),
+    labels: {},
+  },
 ]
 
 const mockActivity = [
@@ -18,9 +50,13 @@ const mockActivity = [
 
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ loggedInPage: page }) => {
-    await page.route('**/api/workloads*', (route) => route.fulfill({
-      status: 200, contentType: 'application/json', body: JSON.stringify(mockWorkloads),
-    }))
+    await page.route('**/api/workloads*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockWorkloads),
+      }),
+    )
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -36,12 +72,20 @@ test.describe('Dashboard', () => {
         }),
       }),
     )
-    await page.route('**/api/alerts*', (route) => route.fulfill({
-      status: 200, contentType: 'application/json', body: '[]',
-    }))
-    await page.route('**/api/pushes/activity*', (route) => route.fulfill({
-      status: 200, contentType: 'application/json', body: JSON.stringify(mockActivity),
-    }))
+    await page.route('**/api/alerts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '[]',
+      }),
+    )
+    await page.route('**/api/pushes/activity*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockActivity),
+      }),
+    )
   })
 
   test('renders the six stat cards', async ({ loggedInPage: page }) => {
@@ -60,14 +104,22 @@ test.describe('Dashboard', () => {
     await expect(page.locator('.push-chart rect.push-chart-bar-last')).toHaveCount(1)
   })
 
-  test('config safety status summarizes supervised config readiness', async ({ loggedInPage: page }) => {
+  test('config safety status summarizes supervised config readiness', async ({
+    loggedInPage: page,
+  }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: /Config safety status|Statut de sécurité des configs/ })).toBeVisible()
-    await expect(page.locator('.config-safety-panel')).toContainText(/Supervised collectors|Collecteurs supervisés/)
+    await expect(
+      page.getByRole('heading', { name: /Config safety status|Statut de sécurité des configs/ }),
+    ).toBeVisible()
+    await expect(page.locator('.config-safety-panel')).toContainText(
+      /Supervised collectors|Collecteurs supervisés/,
+    )
     await expect(page.locator('.config-safety-panel')).toContainText('1')
     await expect(page.locator('.config-safety-panel')).toContainText(/Last 7d pushes|Pushes sur 7j/)
     await expect(page.locator('.config-safety-panel')).toContainText('11')
-    await expect(page.getByRole('link', { name: /Review supervised workloads|Voir les workloads supervisés/ })).toHaveAttribute('href', '/inventory?control=supervised')
+    await expect(
+      page.getByRole('link', { name: /Review supervised workloads|Voir les workloads supervisés/ }),
+    ).toHaveAttribute('href', '/inventory?control=supervised')
   })
 
   test('config safety status panel summarizes supervised collectors and safe flow', async ({
@@ -195,7 +247,9 @@ test.describe('Dashboard', () => {
     ).toBeVisible()
   })
 
-  test('fleet version matrix renders groups, versions, status badges, and counts', async ({ loggedInPage: page }) => {
+  test('fleet version matrix renders groups, versions, status badges, and counts', async ({
+    loggedInPage: page,
+  }) => {
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -266,7 +320,9 @@ test.describe('Dashboard', () => {
     await expect(thirdRow).toContainText('3 workloads')
   })
 
-  test('fleet version intelligence surfaces all three recommendation paths for unsupported components', async ({ loggedInPage: page }) => {
+  test('fleet version intelligence surfaces all three recommendation paths for unsupported components', async ({
+    loggedInPage: page,
+  }) => {
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -340,16 +396,117 @@ test.describe('Dashboard', () => {
     await expect(page.getByText('collector-payments-a is running 0.99.0')).toBeVisible()
     await expect(page.getByText('receivers.kafka uses unsupported kafka')).toBeVisible()
     await expect(recommendations.getByText('Upgrade collector', { exact: true })).toBeVisible()
-    await expect(recommendations.getByText('Upgrade collector before applying config requiring kafka.')).toBeVisible()
+    await expect(
+      recommendations.getByText('Upgrade collector before applying config requiring kafka.'),
+    ).toBeVisible()
     await expect(recommendations.getByText('Choose older config', { exact: true })).toBeVisible()
-    await expect(recommendations.getByText('Choose a config built for collector 0.99.0.')).toBeVisible()
-    await expect(recommendations.getByText('Remove or replace component', { exact: true })).toBeVisible()
-    await expect(recommendations.getByText('Remove kafka from this config before applying it.')).toBeVisible()
+    await expect(
+      recommendations.getByText('Choose a config built for collector 0.99.0.'),
+    ).toBeVisible()
+    await expect(
+      recommendations.getByText('Remove or replace component', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      recommendations.getByText('Remove kafka from this config before applying it.'),
+    ).toBeVisible()
   })
 
-  test('fleet version intelligence represents loading, empty, and error states', async ({ loggedInPage: page }) => {
+  test('fleet version intelligence localizes recommendation reasons in French', async ({
+    loggedInPage: page,
+  }) => {
+    await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
+    await page.route('**/api/workloads/version-intelligence*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schema_version: 'fleet-version-intelligence.v1',
+          recommended_version: '0.100.0',
+          version_matrix: [
+            {
+              group: 'payments',
+              type: 'collector',
+              status: 'connected',
+              version: '0.99.0',
+              version_status: 'below_recommended',
+              count: 1,
+              workload_ids: ['w1'],
+            },
+          ],
+          collectors_below_recommended: [
+            {
+              workload_id: 'w1',
+              display_name: 'collector-payments-a',
+              group: 'payments',
+              version: '0.99.0',
+              recommended_version: '0.100.0',
+            },
+          ],
+          unsupported_config_components: [
+            {
+              workload_id: 'w1',
+              display_name: 'collector-payments-a',
+              config_hash: 'cfg_123456',
+              category: 'receivers',
+              component_type: 'kafka',
+              path: 'receivers.kafka',
+            },
+          ],
+          invalid_versions: [],
+          recommendations: [
+            {
+              action: 'upgrade_collector',
+              workload_id: 'w1',
+              reason: 'Upgrade collector before applying config requiring kafka.',
+              components: ['kafka'],
+            },
+            {
+              action: 'choose_older_config',
+              workload_id: 'w1',
+              config_hash: 'cfg_123456',
+              reason: 'Choose a config built for collector 0.99.0.',
+              components: ['kafka'],
+            },
+            {
+              action: 'remove_component',
+              workload_id: 'w1',
+              config_hash: 'cfg_123456',
+              reason: 'Remove kafka from this config before applying it.',
+              components: ['kafka'],
+            },
+          ],
+        }),
+      }),
+    )
+
+    await page.goto('/')
+
+    const recommendations = page.getByLabel('Recommandations actionnables')
+    await expect(page.getByText('Intelligence versions flotte')).toBeVisible()
+    await expect(page.getByText('Le collecteur est sous la version recommandée.')).toBeVisible()
+    await expect(
+      recommendations.getByText('Mettez à niveau le collecteur avant d’appliquer cette config.'),
+    ).toBeVisible()
+    await expect(
+      recommendations.getByText(
+        'Choisissez une config plus ancienne compatible avec les capacités actuelles du collecteur.',
+      ),
+    ).toBeVisible()
+    await expect(
+      recommendations.getByText('Retirez ou remplacez kafka avant d’appliquer cette config.'),
+    ).toBeVisible()
+    await expect(
+      page.getByText('Upgrade collector before applying config requiring kafka.'),
+    ).toHaveCount(0)
+    await expect(page.getByText('Choose a config built for collector 0.99.0.')).toHaveCount(0)
+    await expect(page.getByText('Remove kafka from this config before applying it.')).toHaveCount(0)
+  })
+
+  test('fleet version intelligence represents loading, empty, and error states', async ({
+    loggedInPage: page,
+  }) => {
     await page.route('**/api/workloads/version-intelligence*', async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      await new Promise((resolve) => setTimeout(resolve, 1000))
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -378,7 +535,9 @@ test.describe('Dashboard', () => {
     await expect(page.getByText('Version intelligence is unavailable.')).toBeVisible()
   })
 
-  test('clicking the Collectors stat card navigates to filtered inventory', async ({ loggedInPage: page }) => {
+  test('clicking the Collectors stat card navigates to filtered inventory', async ({
+    loggedInPage: page,
+  }) => {
     await page.goto('/')
     await page.locator('.stat-card', { hasText: /Collectors|Collecteurs/ }).click()
     await expect(page).toHaveURL(/\/inventory\?type=collector/)
