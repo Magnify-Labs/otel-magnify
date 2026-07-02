@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/magnify-labs/otel-magnify/internal/audit"
+	"github.com/magnify-labs/otel-magnify/internal/configpolicy"
 	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
 	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
@@ -26,6 +28,24 @@ type createConfigRequest struct {
 type configDiffRequest struct {
 	BaseYAML   string `json:"base_yaml"`
 	TargetYAML string `json:"target_yaml"`
+}
+
+type configPolicyPreviewRequest struct {
+	CandidateYAML string                      `json:"candidate_yaml"`
+	CurrentYAML   string                      `json:"current_yaml,omitempty"`
+	TargetYAML    string                      `json:"target_yaml,omitempty"`
+	BaseYAML      string                      `json:"base_yaml,omitempty"`
+	Target        models.ConfigPolicyTarget   `json:"target"`
+	Settings      models.ConfigPolicySettings `json:"settings,omitempty"`
+	Context       configPolicyContextRequest  `json:"context,omitempty"`
+}
+
+type configPolicyContextRequest struct {
+	Environment                string   `json:"environment,omitempty"`
+	EndpointAllowlist          []string `json:"endpoint_allowlist,omitempty"`
+	CriticalExporters          []string `json:"critical_exporters,omitempty"`
+	RequiredResourceAttributes []string `json:"required_resource_attributes,omitempty"`
+	MaxSamplingPercentage      float64  `json:"max_sampling_percentage,omitempty"`
 }
 
 func (a *API) handleListConfigs(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +89,46 @@ func (a *API) handleDiffConfigs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, 200, oteldiff.Compare([]byte(req.BaseYAML), []byte(req.TargetYAML)))
+}
+
+func (a *API) handlePreviewConfigPolicy(w http.ResponseWriter, r *http.Request) {
+	var req configPolicyPreviewRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		respondError(w, 400, "invalid JSON")
+		return
+	}
+	if strings.TrimSpace(req.CandidateYAML) == "" {
+		req.CandidateYAML = req.TargetYAML
+	}
+	if strings.TrimSpace(req.CurrentYAML) == "" {
+		req.CurrentYAML = req.BaseYAML
+	}
+	if req.Target.Environment == "" {
+		req.Target.Environment = req.Context.Environment
+	}
+	if req.Settings.AllowedOTLPEndpoints == nil {
+		req.Settings.AllowedOTLPEndpoints = req.Context.EndpointAllowlist
+	}
+	if len(req.Settings.CriticalExporters) == 0 {
+		req.Settings.CriticalExporters = req.Context.CriticalExporters
+	}
+	if len(req.Settings.RequiredResourceAttributes) == 0 {
+		req.Settings.RequiredResourceAttributes = req.Context.RequiredResourceAttributes
+	}
+	if req.Context.MaxSamplingPercentage > 0 {
+		req.Settings.Sampling.MaxPercentage = req.Context.MaxSamplingPercentage
+	}
+	if strings.TrimSpace(req.CandidateYAML) == "" {
+		respondError(w, 400, "target_yaml is required")
+		return
+	}
+	result := configpolicy.NewDefaultEngine().Evaluate(configpolicy.EvaluationRequest{
+		CurrentYAML:   req.CurrentYAML,
+		CandidateYAML: req.CandidateYAML,
+		Target:        req.Target,
+		Settings:      req.Settings,
+	})
+	respondJSON(w, 200, result)
 }
 
 func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {

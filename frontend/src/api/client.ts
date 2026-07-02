@@ -32,6 +32,8 @@ import type {
   RollbackStatusReport,
   OTelConfigDiffRequest,
   OTelConfigDiffResponse,
+  ConfigPolicyEvaluation,
+  ConfigPolicyPreviewRequest,
   CanarySelection,
   CanaryStatus,
   CanaryValidationResult,
@@ -285,6 +287,8 @@ export const configsAPI = {
     api.post<Config>('/configs', { name, content }).then((r) => r.data),
   diff: (request: OTelConfigDiffRequest) =>
     api.post<OTelConfigDiffResponse>('/configs/diff', request).then((r) => r.data),
+  previewPolicy: (request: ConfigPolicyPreviewRequest) =>
+    api.post<ConfigPolicyEvaluation>('/configs/policy/preview', request).then((r) => r.data),
 }
 
 export const alertsAPI = {

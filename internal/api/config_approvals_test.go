@@ -171,6 +171,37 @@ func TestConfigApprovals_ProdPushRequiresCommentAndDoubleConfirmation(t *testing
 	}
 }
 
+func TestConfigApprovals_ApprovedProdPushBlocksPolicyDecisionBeforeOpAMP(t *testing.T) {
+	db, router, opamp, audit := newAuditTestAPI(t)
+	seedProductionPolicyWorkload(t, db, "w-approval-policy-block")
+
+	requestBody := `{"draft_yaml":` + strconvQuote(policyUnsafeCandidateConfig) + `,"target_group":"prod-collectors","target_env":"prod","comment":"please review prod","prod_confirmation":true}`
+	code, approval, body := requestApproval(t, router, "w-approval-policy-block", requestBody)
+	if code != http.StatusCreated {
+		t.Fatalf("request status = %d, body=%s", code, body)
+	}
+	if code, body = approveApproval(t, router, "w-approval-policy-block", approval.ID); code != http.StatusOK {
+		t.Fatalf("approve status = %d, body=%s", code, body)
+	}
+
+	code, body = pushApproval(t, router, "w-approval-policy-block", approval.ID, `{"comment":"prod rollout","prod_double_confirmed":true}`)
+	assertApprovalPolicyBlockedBeforePush(t, db, opamp, audit, "w-approval-policy-block", code, body)
+}
+
+func TestConfigApprovals_BreakGlassProdPushBlocksPolicyDecisionBeforeOpAMP(t *testing.T) {
+	db, router, opamp, audit := newAuditTestAPI(t)
+	seedProductionPolicyWorkload(t, db, "w-approval-policy-breakglass")
+
+	requestBody := `{"draft_yaml":` + strconvQuote(policyUnsafeCandidateConfig) + `,"target_group":"prod-collectors","target_env":"prod","comment":"emergency prod draft","prod_confirmation":true}`
+	code, approval, body := requestApproval(t, router, "w-approval-policy-breakglass", requestBody)
+	if code != http.StatusCreated {
+		t.Fatalf("request status = %d, body=%s", code, body)
+	}
+
+	code, body = pushApproval(t, router, "w-approval-policy-breakglass", approval.ID, `{"break_glass":true,"break_glass_reason":"stop outage","comment":"emergency push","prod_double_confirmed":true}`)
+	assertApprovalPolicyBlockedBeforePush(t, db, opamp, audit, "w-approval-policy-breakglass", code, body)
+}
+
 func TestConfigApprovals_BreakGlassRequiresReasonAndDistinctAudit(t *testing.T) {
 	db, router, opamp, audit := newAuditTestAPI(t)
 	seedApprovalWorkload(t, db, "w-approval-breakglass")
@@ -303,4 +334,36 @@ func TestConfigApprovals_ListRequiresPushPermissionAndDoesNotLeakDraftsToViewers
 func strconvQuote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+func seedProductionPolicyWorkload(t *testing.T, db ext.Store, id string) {
+	t.Helper()
+	if err := db.UpsertWorkload(models.Workload{ID: id, Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{"env": "production"}, AcceptsRemoteConfig: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertApprovalPolicyBlockedBeforePush(t *testing.T, db ext.Store, opamp *fakeOpAMPPusher, audit *recordingAuditLogger, workloadID string, code int, body string) {
+	t.Helper()
+	if code != http.StatusBadRequest {
+		t.Fatalf("push status = %d, want %d, body=%s", code, http.StatusBadRequest, body)
+	}
+	if !strings.Contains(body, "config_policy_blocked") || strings.Contains(body, "blocked.example") || strings.Contains(body, "receivers:") {
+		t.Fatalf("policy block response missing code or leaked raw config: %s", body)
+	}
+	if len(opamp.pushed) != 0 {
+		t.Fatalf("opamp push happened despite policy block: %+v", opamp.pushed)
+	}
+	history, err := db.GetWorkloadConfigHistory(workloadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("blocked approval push recorded workload config history: %+v", history)
+	}
+	events := audit.snapshot()
+	got := findEvent(events, "config.policy.block")
+	if got == nil || got.ResourceID != workloadID || !strings.Contains(got.Detail, "approval") || strings.Contains(got.Detail, "blocked.example") || strings.Contains(got.Detail, "receivers:") {
+		t.Fatalf("missing sanitized policy block audit event: %+v", events)
+	}
 }

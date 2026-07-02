@@ -315,6 +315,54 @@ func TestImportConfigFromGit_RejectsUnsafeURLBeforeFetch(t *testing.T) {
 	}
 }
 
+func TestPreviewConfigPolicy_ReturnsStableFindingsContract(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	body := `{
+		"target_yaml":"receivers:\n  otlp: {}\nprocessors:\n  batch: {}\nexporters:\n  otlp:\n    endpoint: https://evil.example:4317\n    tls:\n      insecure: true\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      processors: [batch]\n      exporters: [otlp]\n",
+		"context":{"environment":"production","endpoint_allowlist":["allowed.example"],"required_resource_attributes":["service.name"],"max_sampling_percentage":50}
+	}`
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/policy/preview", body, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("policy status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "secret-token") || strings.Contains(rec.Body.String(), "Bearer ") {
+		t.Fatalf("policy response leaked raw secret-like content: %s", rec.Body.String())
+	}
+	var resp models.ConfigPolicyEvaluation
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.SchemaVersion != "config-policy.v1" || resp.Valid || resp.Allowed || resp.Decision != models.PolicyDecisionBlock || resp.Severity != models.PolicySeverityCritical {
+		t.Fatalf("unexpected policy response: %+v", resp)
+	}
+	assertPolicyAPIFinding(t, resp, "community.production.insecure_tls")
+	assertPolicyAPIFinding(t, resp, "community.exporters.otlp_endpoint.allowlist")
+	assertPolicyAPIFinding(t, resp, "community.resource.attributes.required")
+}
+
+func TestPreviewConfigPolicy_RejectsInvalidRequest(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/policy/preview", `{"base_yaml":"receivers: {}"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func assertPolicyAPIFinding(t *testing.T, resp models.ConfigPolicyEvaluation, ruleID string) {
+	t.Helper()
+	for _, finding := range resp.Findings {
+		if finding.RuleID == ruleID && len(finding.Paths) > 0 && finding.Packaging == "community" && finding.Tier == "core" {
+			return
+		}
+	}
+	t.Fatalf("finding %s not found in %+v", ruleID, resp.Findings)
+}
+
 func TestLoginHandler(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 
