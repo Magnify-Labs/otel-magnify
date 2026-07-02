@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
@@ -81,11 +82,12 @@ type pushPreviewTarget struct {
 }
 
 type pushPreviewResponse struct {
-	GroupID       string               `json:"group_id,omitempty"`
-	Selector      pushGroupSelector    `json:"selector"`
-	TargetedCount int                  `json:"targeted_count"`
-	Breakdown     pushPreviewBreakdown `json:"breakdown"`
-	Targets       []pushPreviewTarget  `json:"targets"`
+	GroupID        string               `json:"group_id,omitempty"`
+	SelectorSource string               `json:"selector_source"`
+	Selector       pushGroupSelector    `json:"selector"`
+	TargetedCount  int                  `json:"targeted_count"`
+	Breakdown      pushPreviewBreakdown `json:"breakdown"`
+	Targets        []pushPreviewTarget  `json:"targets"`
 }
 
 // handleListPushActivity returns per-day push counts for the dashboard chart.
@@ -172,12 +174,18 @@ func resolvePushPreviewSelector(req pushPreviewRequest) (*pushGroupSelector, str
 }
 
 func buildPushPreview(groupID string, selector pushGroupSelector, workloads []models.Workload, configContent []byte) pushPreviewResponse {
-	targets := filterPushPreviewTargets(workloads, selector)
+	useTrustedLabels := groupID != ""
+	targets := filterPushPreviewTargets(workloads, selector, useTrustedLabels)
+	selectorSource := "collector_labels"
+	if useTrustedLabels {
+		selectorSource = "trusted_labels"
+	}
 	resp := pushPreviewResponse{
-		GroupID:       groupID,
-		Selector:      selector,
-		TargetedCount: len(targets),
-		Targets:       make([]pushPreviewTarget, 0, len(targets)),
+		GroupID:        groupID,
+		SelectorSource: selectorSource,
+		Selector:       selector,
+		TargetedCount:  len(targets),
+		Targets:        make([]pushPreviewTarget, 0, len(targets)),
 	}
 	for _, workload := range targets {
 		target := classifyPushPreviewTarget(workload, configContent)
@@ -196,10 +204,10 @@ func buildPushPreview(groupID string, selector pushGroupSelector, workloads []mo
 	return resp
 }
 
-func filterPushPreviewTargets(workloads []models.Workload, selector pushGroupSelector) []models.Workload {
+func filterPushPreviewTargets(workloads []models.Workload, selector pushGroupSelector, useTrustedLabels bool) []models.Workload {
 	matched := make([]models.Workload, 0)
 	for _, workload := range workloads {
-		if matchesPushSelector(workload, selector) {
+		if matchesPushSelector(workload, selector, useTrustedLabels) {
 			matched = append(matched, workload)
 		}
 	}
@@ -207,9 +215,15 @@ func filterPushPreviewTargets(workloads []models.Workload, selector pushGroupSel
 	return matched
 }
 
-func matchesPushSelector(workload models.Workload, selector pushGroupSelector) bool {
+func matchesPushSelector(workload models.Workload, selector pushGroupSelector, useTrustedLabels bool) bool {
 	for key, want := range selector.MatchLabels {
-		if got := workload.Labels[key]; got != want {
+		labelKey := key
+		if useTrustedLabels {
+			labelKey = models.TrustedSelectorLabelPrefix + key
+		} else if strings.HasPrefix(key, models.TrustedSelectorLabelPrefix) {
+			return false
+		}
+		if got := workload.Labels[labelKey]; got != want {
 			return false
 		}
 	}
