@@ -14,6 +14,7 @@ var matrix = map[string]map[Permission]bool{
 		ValidateConfig:  true,
 		CreateConfigTpl: true,
 		ResolveAlert:    true,
+		ExportReports:   true,
 		ArchiveWorkload: true,
 	},
 	"administrator": {
@@ -21,6 +22,7 @@ var matrix = map[string]map[Permission]bool{
 		ValidateConfig:  true,
 		CreateConfigTpl: true,
 		ResolveAlert:    true,
+		ExportReports:   true,
 		ArchiveWorkload: true,
 		DeleteWorkload:  true,
 		ManageUsers:     true,

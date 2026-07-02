@@ -35,6 +35,7 @@ type API struct {
 	authMethods       func() []ext.AuthMethod
 	workloadRetention time.Duration
 	features          map[string]bool
+	reportSigner      ext.ReportSigner
 }
 
 // NewRouter constructs the chi-based HTTP handler that wires together public
@@ -50,11 +51,14 @@ type API struct {
 // auditLogger may be nil — handlers fall back to ext.NopAuditLogger so the
 // community binary works without an audit sink configured. EE wires its
 // sink via pkg/server.WithAuditLogger.
-func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, protectedHooks []func(chi.Router)) http.Handler {
+func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, protectedHooks []func(chi.Router), reportSigner ...ext.ReportSigner) http.Handler {
 	if auditLogger == nil {
 		auditLogger = ext.NopAuditLogger{}
 	}
-	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features}
+	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features, reportSigner: ext.NopReportSigner{}}
+	if len(reportSigner) > 0 && reportSigner[0] != nil {
+		api.reportSigner = reportSigner[0]
+	}
 	if api.features == nil {
 		api.features = map[string]bool{}
 	}
@@ -110,6 +114,8 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.Use(a.Middleware)
 
 		r.Get("/api/config-safety/drift", api.handleListConfigDrift)
+		r.With(api.RequirePerm(perm.ExportReports)).Post("/api/reports/evidence-pack", api.handlePreviewEvidencePack)
+		r.With(api.RequirePerm(perm.ExportReports)).Post("/api/reports/evidence-pack/export", api.handleExportEvidencePack)
 
 		r.Get("/api/workloads", api.handleListWorkloads)
 		r.Get("/api/workloads/version-intelligence", api.handleFleetVersionIntelligence)
