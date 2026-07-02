@@ -487,7 +487,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   } = useQuery({
     queryKey: ['push-groups'],
     queryFn: pushesAPI.groups,
-    enabled: editMode && scopeMode === 'saved',
+    enabled: editMode && hasPerm(me?.groups, 'workload:push_config') && scopeMode === 'saved',
   })
 
   const { data: history = [], isLoading: historyLoading } = useQuery({
@@ -695,12 +695,20 @@ export default function WorkloadConfigSection({ workload }: Props) {
   }
 
   function updateScopeMode(next: PushScopeMode) {
+    if (!hasPushPermission) {
+      setPushError(t('workloads.config.permission.push_blocked'))
+      return
+    }
     setScopeMode(next)
     setPushPreview(null)
     setPushError(null)
   }
 
   function updateDynamicSelector(field: keyof DynamicSelectorState, value: string) {
+    if (!hasPushPermission) {
+      setPushError(t('workloads.config.permission.push_blocked'))
+      return
+    }
     setDynamicSelector((current) => ({ ...current, [field]: value }))
     setPushPreview(null)
   }
@@ -858,6 +866,16 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 : ''
 
   const canRollback = hasPushPermission
+  const scopePermissionDescription = !hasPushPermission ? 'push-scope-permission-note' : undefined
+  const scopePermissionTitle = !hasPushPermission
+    ? t('workloads.config.permission.push_blocked')
+    : ''
+  const scopeInputReadOnlyProps = !hasPushPermission
+    ? {
+        title: scopePermissionTitle,
+        'aria-describedby': scopePermissionDescription,
+      }
+    : {}
   const knownGoodMissing = knownGoodIsError && isNotFoundError(knownGoodError)
   const recoveryPanel = (
     <ConfigRecoveryPanel
@@ -983,7 +1001,13 @@ export default function WorkloadConfigSection({ workload }: Props) {
         </button>
       </div>
 
-      {tab === 'edit' && <YamlEditor value={draftYaml} onChange={onDraftChange} />}
+      {tab === 'edit' && (
+        <YamlEditor
+          value={draftYaml}
+          onChange={hasPushPermission ? onDraftChange : undefined}
+          readOnly={!hasPushPermission}
+        />
+      )}
       {tab === 'diff' && <ConfigDiffView oldYaml={activeContent} newYaml={draftYaml} />}
 
       {validation && <ValidationDetails validation={validation} />}
@@ -996,7 +1020,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
         safetyPlanReady={canPush}
       />
 
-      <section className="push-scope-panel" aria-labelledby="push-scope-title">
+      <section
+        className={`push-scope-panel ${!hasPushPermission ? 'push-scope-panel-readonly' : ''}`}
+        aria-labelledby="push-scope-title"
+        aria-describedby={scopePermissionDescription}
+      >
         <div className="push-scope-header">
           <div>
             <h3 id="push-scope-title">{t('workloads.config.scope.title')}</h3>
@@ -1017,8 +1045,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
               value={scopeMode}
               onChange={(e) => updateScopeMode(e.target.value as PushScopeMode)}
               disabled={!!pendingHash || !hasPushPermission}
-              title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
-              aria-describedby={!hasPushPermission ? 'push-scope-permission-note' : undefined}
+              title={scopePermissionTitle}
+              aria-describedby={scopePermissionDescription}
             >
               <option value="single">{t('workloads.config.scope.single')}</option>
               <option value="saved">{t('workloads.config.scope.saved')}</option>
@@ -1038,8 +1066,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
                   setPushPreview(null)
                 }}
                 disabled={!!pendingHash || !hasPushPermission || pushGroupsError}
-                title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
-                aria-describedby={!hasPushPermission ? 'push-scope-permission-note' : undefined}
+                title={scopePermissionTitle}
+                aria-describedby={scopePermissionDescription}
               >
                 <option value="">
                   {pushGroupsError
@@ -1068,6 +1096,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.cluster}
                 onChange={(e) => updateDynamicSelector('cluster', e.target.value)}
                 disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
               />
             </label>
             <label>
@@ -1076,6 +1105,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.namespace}
                 onChange={(e) => updateDynamicSelector('namespace', e.target.value)}
                 disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
               />
             </label>
             <label>
@@ -1084,6 +1114,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.env}
                 onChange={(e) => updateDynamicSelector('env', e.target.value)}
                 disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
               />
             </label>
             <label>
@@ -1092,6 +1123,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.team}
                 onChange={(e) => updateDynamicSelector('team', e.target.value)}
                 disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
               />
             </label>
             <label>
@@ -1100,6 +1132,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.workloadType}
                 onChange={(e) => updateDynamicSelector('workloadType', e.target.value)}
                 disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
               />
             </label>
             <label>
@@ -1109,6 +1142,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 onChange={(e) => updateDynamicSelector('version', e.target.value)}
                 placeholder={t('workloads.config.scope.placeholder.version')}
                 disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
               />
             </label>
             <label className="push-dynamic-wide">
@@ -1118,6 +1152,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 onChange={(e) => updateDynamicSelector('capabilities', e.target.value)}
                 placeholder={t('workloads.config.scope.placeholder.capabilities')}
                 disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
               />
             </label>
           </div>
@@ -1205,6 +1240,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
           onClick={previewTargets}
           disabled={!canPreview}
           title={previewDisabledReason}
+          aria-describedby={!hasPushPermission ? 'push-scope-permission-note' : undefined}
         >
           {previewMutation.isPending
             ? t('workloads.config.scope.previewing')
