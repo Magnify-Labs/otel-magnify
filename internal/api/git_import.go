@@ -261,6 +261,7 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 
 func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	args = append([]string{"-c", "http.followRedirects=false"}, args...)
+	// lgtm[go/command-line-injection] git is invoked directly without a shell after URL/ref/path validation and option-like refs are rejected.
 	// codeql[go/command-line-injection] git is invoked directly without a shell; user-controlled URL/ref/path inputs are validated before args are assembled.
 	//nolint:gosec // args are fixed git subcommands assembled after URL/path validation; no shell is invoked.
 	cmd := exec.CommandContext(ctx, "git", args...)
