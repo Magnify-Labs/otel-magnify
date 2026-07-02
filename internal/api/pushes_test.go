@@ -1,8 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -122,3 +124,120 @@ func TestPushActivity_RejectsUnsupportedWindow(t *testing.T) {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
+
+func TestPushGroups_ListSavedGroups(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+
+	req := authedRequest(t, "GET", "/api/push-groups")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var groups []pushGroup
+	if err := json.NewDecoder(rec.Body).Decode(&groups); err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, 0, len(groups))
+	selectors := make(map[string]pushGroupSelector, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ID)
+		selectors[group.ID] = group.Selector
+	}
+	for _, want := range []string{"prod-eu", "staging", "edge", "payments"} {
+		if !slices.Contains(ids, want) {
+			t.Fatalf("group ids = %v, missing %q", ids, want)
+		}
+		if len(selectors[want].MatchLabels) == 0 {
+			t.Fatalf("group %s has empty match_labels selector", want)
+		}
+	}
+}
+
+func TestPushPreview_BucketsSavedGroupTargets(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	seed := []models.Workload{
+		{ID: "payments-capable", DisplayName: "payments-capable", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"team": "payments", "env": "prod", "cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}},
+		{ID: "payments-read-only", DisplayName: "payments-read-only", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"team": "payments", "env": "prod", "cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: false},
+		{ID: "payments-incompatible", DisplayName: "payments-incompatible", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.74.0", Labels: models.Labels{"team": "payments", "env": "prod", "cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"otlp"}}}},
+		{ID: "payments-offline", DisplayName: "payments-offline", Type: "collector", Status: "disconnected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"team": "payments", "env": "prod", "cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}},
+		{ID: "checkout", DisplayName: "checkout", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"team": "checkout", "env": "prod"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true},
+	}
+	for _, workload := range seed {
+		if err := db.UpsertWorkload(workload); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := []byte(`{
+		"group_id": "payments",
+		"config_content": "receivers:\n  otlp:\nexporters:\n  logging:\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      exporters: [logging]\n"
+	}`)
+	req := authedRequest(t, "POST", "/api/pushes/preview")
+	req.Body = ioNopCloser{Reader: bytes.NewReader(body)}
+	req.ContentLength = int64(len(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var got pushPreviewResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.GroupID != "payments" {
+		t.Fatalf("group_id = %q, want payments", got.GroupID)
+	}
+	if got.TargetedCount != 4 {
+		t.Fatalf("targeted_count = %d, want 4", got.TargetedCount)
+	}
+	if got.Breakdown.RemoteConfigCapable != 1 || got.Breakdown.ReadOnly != 1 || got.Breakdown.Incompatible != 1 || got.Breakdown.Offline != 1 {
+		t.Fatalf("breakdown = %#v, want 1 in each bucket", got.Breakdown)
+	}
+	if len(got.Targets) != 4 {
+		t.Fatalf("targets len = %d, want 4", len(got.Targets))
+	}
+}
+
+func TestPushPreview_BucketsDynamicSelectorTargets(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	for _, workload := range []models.Workload{
+		{ID: "dyn-1", DisplayName: "dyn-1", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"cluster": "prod-eu", "team": "platform", "env": "prod"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"debug"}}}},
+		{ID: "dyn-2", DisplayName: "dyn-2", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.97.0", Labels: models.Labels{"cluster": "prod-eu", "team": "platform", "env": "prod"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"debug"}}}},
+		{ID: "other", DisplayName: "other", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"cluster": "prod-us", "team": "platform", "env": "prod"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"debug"}}}},
+	} {
+		if err := db.UpsertWorkload(workload); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := []byte(`{"selector":{"match_labels":{"cluster":"prod-eu","team":"platform"},"types":["collector"],"versions":["0.98.0"],"capabilities":["debug"]},"config_content":""}`)
+	req := authedRequest(t, "POST", "/api/pushes/preview")
+	req.Body = ioNopCloser{Reader: bytes.NewReader(body)}
+	req.ContentLength = int64(len(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var got pushPreviewResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TargetedCount != 1 || got.Breakdown.RemoteConfigCapable != 1 {
+		t.Fatalf("preview = %#v, want one capable dynamic target", got)
+	}
+}
+
+type ioNopCloser struct {
+	*bytes.Reader
+}
+
+func (ioNopCloser) Close() error { return nil }
