@@ -307,6 +307,9 @@
         "empty": "— No saved configs (create one in Configs) —",
         "currently_applied": "{{name}} (currently applied)"
       },
+      "action": {
+        "push_config": "Push config"
+      },
       "permission": {
         "push_blocked": "You don't have permission to push workload configurations. This config is read-only for your account.",
         "validate_blocked": "You don't have permission to validate workload configurations."
@@ -352,16 +355,30 @@
           "namespace": "Namespace",
           "env": "Environment",
           "team": "Team",
-          "workload_type": "Workload type",
+          "workload_type": "Workload type label",
           "version": "Collector version",
           "capabilities": "Capabilities"
         },
+        "placeholder": {
+          "version": "0.98.0",
+          "capabilities": "otlp, debug"
+        },
         "count": {
           "targeted": "{{count}} targeted",
+          "targeted_one": "{{count}} targeted",
+          "targeted_other": "{{count}} targeted",
           "capable": "{{count}} capable",
+          "capable_one": "{{count}} capable",
+          "capable_other": "{{count}} capable",
           "readonly": "{{count}} read-only",
+          "readonly_one": "{{count}} read-only",
+          "readonly_other": "{{count}} read-only",
           "incompatible": "{{count}} incompatible",
-          "offline": "{{count}} offline"
+          "incompatible_one": "{{count}} incompatible",
+          "incompatible_other": "{{count}} incompatible",
+          "offline": "{{count}} offline",
+          "offline_one": "{{count}} offline",
+          "offline_other": "{{count}} offline"
         },
         "bucket": {
           "read_only": "read-only",

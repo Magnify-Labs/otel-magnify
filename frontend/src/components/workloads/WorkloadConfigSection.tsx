@@ -1107,7 +1107,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.version}
                 onChange={(e) => updateDynamicSelector('version', e.target.value)}
-                placeholder="0.98.0"
+                placeholder={t('workloads.config.scope.placeholder.version')}
                 disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
@@ -1116,7 +1116,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.capabilities}
                 onChange={(e) => updateDynamicSelector('capabilities', e.target.value)}
-                placeholder="otlp, debug"
+                placeholder={t('workloads.config.scope.placeholder.capabilities')}
                 disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
@@ -1239,11 +1239,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
   )
 
   const isConfigsEmpty = !configsListError && (savedConfigs?.length ?? 0) === 0
-  let placeholderLabel = '— Apply a saved config —'
+  let placeholderLabel = t('workloads.config.apply.placeholder')
   if (configsListError) {
-    placeholderLabel = '— Failed to load configs —'
+    placeholderLabel = t('workloads.config.apply.error')
   } else if (isConfigsEmpty) {
-    placeholderLabel = '— No saved configs (create one in Config Library) —'
+    placeholderLabel = t('workloads.config.apply.empty')
   }
 
   const applySelector = (
@@ -1257,7 +1257,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
         setSelectedConfigId(id)
         loadConfigMutation.mutate(id)
       }}
-      aria-label="Apply a saved config"
+      aria-label={t('workloads.config.apply.aria')}
       aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
       title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
       disabled={
@@ -1271,7 +1271,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <option value="">{placeholderLabel}</option>
       {(savedConfigs ?? []).map((c) => (
         <option key={c.id} value={c.id}>
-          {c.id === workload.active_config_id ? `${c.name} (currently applied)` : c.name}
+          {c.id === workload.active_config_id
+            ? t('workloads.config.apply.currently_applied', { name: c.name })
+            : c.name}
         </option>
       ))}
     </select>
@@ -1301,6 +1303,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
             onClick={() => enterEditMode('')}
             disabled={!hasPushPermission}
             title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
+            aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
           >
             {t('workloads.config.action.push_config')}
           </button>
@@ -1357,6 +1360,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               onClick={() => enterEditMode(activeContent)}
               disabled={!hasPushPermission}
               title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
+              aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
             >
               {t('common.edit')}
             </button>

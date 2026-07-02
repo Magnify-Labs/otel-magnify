@@ -307,6 +307,9 @@
         "empty": "— Aucune configuration sauvegardée (créez-en une dans Configurations) —",
         "currently_applied": "{{name}} (actuellement appliquée)"
       },
+      "action": {
+        "push_config": "Pousser la config"
+      },
       "permission": {
         "push_blocked": "Vous n'avez pas la permission de pousser des configurations de workload. Cette configuration est en lecture seule pour votre compte.",
         "validate_blocked": "Vous n'avez pas la permission de valider des configurations de workload."
@@ -352,16 +355,30 @@
           "namespace": "Namespace",
           "env": "Environnement",
           "team": "Équipe",
-          "workload_type": "Type de workload",
+          "workload_type": "Label de type de workload",
           "version": "Version collector",
           "capabilities": "Capabilities"
         },
+        "placeholder": {
+          "version": "0.98.0",
+          "capabilities": "otlp, debug"
+        },
         "count": {
           "targeted": "{{count}} ciblées",
+          "targeted_one": "{{count}} ciblée",
+          "targeted_other": "{{count}} ciblées",
           "capable": "{{count}} compatibles",
+          "capable_one": "{{count}} compatible",
+          "capable_other": "{{count}} compatibles",
           "readonly": "{{count}} lecture seule",
+          "readonly_one": "{{count}} lecture seule",
+          "readonly_other": "{{count}} lecture seule",
           "incompatible": "{{count}} incompatibles",
-          "offline": "{{count}} hors ligne"
+          "incompatible_one": "{{count}} incompatible",
+          "incompatible_other": "{{count}} incompatibles",
+          "offline": "{{count}} hors ligne",
+          "offline_one": "{{count}} hors ligne",
+          "offline_other": "{{count}} hors ligne"
         },
         "bucket": {
           "read_only": "lecture seule",
