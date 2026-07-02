@@ -83,17 +83,6 @@
       "action": {
         "upgrade_collector": "Upgrade collector to {{version}}",
         "unsupported_component": "Choose an older config, upgrade collector, or remove {{component}}."
-      },
-      "recommendations_label": "Actionable recommendations",
-      "action_label": {
-        "upgrade_collector": "Upgrade collector",
-        "choose_older_config": "Choose older config",
-        "remove_component": "Remove or replace component"
-      },
-      "recommendation": {
-        "upgrade_collector": "Upgrade the collector before applying this config.",
-        "choose_older_config": "Choose an older compatible config for the current collector capabilities.",
-        "remove_component": "Remove or replace {{component}} before applying this config."
       }
     },
     "alerts": {
@@ -165,6 +154,40 @@
           "empty_endpoints": "No endpoint changes.",
           "empty_sampling": "No sampling changes.",
           "empty_auth": "No auth or header changes."
+        },
+        "requires_push_permission": "Requires workload:push_config permission",
+        "known_good_only_applied": "Only applied revisions can be marked known-good",
+        "content_unavailable": "Config content unavailable",
+        "rollback_only_applied": "Only applied revisions can be rolled back. Failed or pending revisions are not safe rollback targets.",
+        "known_good_load_error": "Failed to load Last known-good state.",
+        "col_actions": "Actions",
+        "states_for": "States for {{hash}}",
+        "clear_known_good": "Clear Last known-good",
+        "mark_known_good": "Mark as known-good",
+        "mark_known_good_confirm_title": "Mark this revision as Last known-good?",
+        "mark_known_good_confirm_body": "Future rollback defaults will target this config for this workload until another revision is marked.",
+        "mark_known_good_replaces": "This replaces {{hash}} as Last known-good.",
+        "marking_known_good": "Marking…",
+        "mark_as_last_known_good": "Mark as Last known-good",
+        "mark_known_good_failed": "Failed to mark known-good",
+        "clear_known_good_failed": "Failed to clear known-good",
+        "state": {
+          "current": "Current",
+          "previous": "Previous",
+          "last_known_good": "Last known-good",
+          "failed_candidate": "Failed candidate"
+        },
+        "status": {
+          "applied": "Applied",
+          "applying": "Applying",
+          "failed": "Failed",
+          "pending": "Pending",
+          "validated": "Validated",
+          "submitted": "Submitted",
+          "sent": "Sent",
+          "rollback_started": "Rolling back",
+          "rollback_applied": "Rolled back",
+          "rollback_failed": "Rollback failed"
         }
       },
       "safety": {
@@ -370,7 +393,15 @@
         "placeholder": "— Apply a saved config —",
         "error": "— Failed to load configs —",
         "empty": "— No saved configs (create one in Configs) —",
-        "currently_applied": "{{name}} (currently applied)"
+        "currently_applied": "{{name}} (currently applied)",
+        "reason": {
+          "read_only": "Read-only",
+          "validation_failed": "Validation failed",
+          "all_targets_excluded": "All targets excluded",
+          "empty_config": "Empty config",
+          "non_collector_target": "Non-collector target",
+          "workload_not_connected": "Workload is not connected"
+        }
       },
       "action": {
         "push_config": "Push config"
@@ -467,6 +498,148 @@
         "group": {
           "payments": "Payments collectors",
           "read_only": "Read-only collectors"
+        }
+      },
+      "recovery": {
+        "aria_label": "Configuration recovery states",
+        "title": "Configuration recovery states",
+        "help": "Review the effective recovery target before pushing risky Collector changes.",
+        "rollback_last_known_good": "Rollback to Last known-good",
+        "rollback_previous": "Rollback to Previous",
+        "requires_push_permission": "Requires workload:push_config permission",
+        "known_good_unavailable": "Last known-good content unavailable. Mark another applied revision before rollback.",
+        "no_recovery_target": "No Last known-good or Previous config is available for rollback.",
+        "loading": "Loading recovery states…",
+        "current": "Current",
+        "previous": "Previous",
+        "last_known_good": "Last known-good",
+        "no_current_config": "No current config",
+        "none_yet": "None yet",
+        "unknown_marker": "Unknown marker",
+        "content_unavailable": "Content unavailable",
+        "last_known_good_none": "Last known-good: None",
+        "not_loaded": "Not loaded",
+        "previous_fallback": "Rollback will use Previous until a known-good revision is marked.",
+        "failed_candidate": "Failed candidate",
+        "candidate_failed": "Candidate failed",
+        "known_good_load_error": "Failed to load Last known-good configuration."
+      },
+      "editor": {
+        "validation_request_failed": "Validation request failed",
+        "plan_failed": "Failed to generate config safety plan",
+        "plan_loading": "Loading config safety plan…",
+        "plan_load_failed": "Failed to load config safety plan.",
+        "loading": "Loading configuration…",
+        "load_failed": "Failed to load configuration",
+        "no_reported_config": "No config reported yet.",
+        "validating": "Validating…",
+        "validate_for_collector": "Validate for this collector",
+        "generating_plan": "Generating plan…",
+        "generate_safety_plan": "Generate safety plan",
+        "applying": "Applying…",
+        "pushing": "Pushing…",
+        "push": "Push"
+      },
+      "title": "Configuration",
+      "readonly_note": {
+        "before": "Read-only — this collector uses the",
+        "after": "extension which can only report its configuration. Run it under the OpAMP Supervisor to enable remote config pushes."
+      },
+      "validation": {
+        "aria_label": "Configuration validation result",
+        "versions_aria": "Validation versions",
+        "otelcol_unavailable": "otelcol unavailable",
+        "blocking_errors": "Blocking errors",
+        "warnings": "Warnings",
+        "required": "Required",
+        "advisory": "Advisory",
+        "binary": "Binary",
+        "target": "Target",
+        "path": "Path",
+        "failed": "Validation failed",
+        "passed_with_warnings": "Validation passed with warnings",
+        "passed": "Validation passed",
+        "configuration_validation": "Configuration validation",
+        "configuration_valid": "Configuration is valid.",
+        "status": {
+          "passed": "Passed",
+          "warning": "Warning",
+          "failed": "Failed",
+          "skipped": "Skipped"
+        }
+      },
+      "push_status": {
+        "panel_aria": "Config push status",
+        "empty_title": "No config push in progress",
+        "empty_copy": "Validate a config, then push it to see delivery status here.",
+        "updated": "Updated {{time}}",
+        "no_opamp_status": "No OpAMP status after 30s",
+        "timeout_copy": "otel-magnify sent the config but has not received an OpAMP status from the workload yet.",
+        "hide_instance_details": "Hide instance details",
+        "view_instance_details": "View instance details",
+        "auto_rolled_back": "Auto-rolled back",
+        "dismiss": "Dismiss",
+        "timeline_aria": "Push timeline",
+        "error_groups_aria": "Grouped remote config errors",
+        "error_groups_heading": "Remote config errors grouped by cause",
+        "instance_count": "{{count}} instance",
+        "instance_count_one": "{{count}} instance",
+        "instance_count_other": "{{count}} instances",
+        "severity": "Severity: {{severity}}",
+        "aggregate": {
+          "applied_count": "{{applied}}/{{total}} applied",
+          "failed_count": "{{count}} failed",
+          "pending_count": "{{count}} pending",
+          "pending": "Push is pending submission.",
+          "submitted": "Request accepted. Waiting for OpAMP delivery.",
+          "sent": "Sent via OpAMP. Waiting for remote status.",
+          "applying": "The workload is applying this config.",
+          "applied": "Config applied successfully.",
+          "failed": "Config push failed. Review errors and affected instances.",
+          "rollback_started": "Rollback is in progress.",
+          "rollback_applied": "Rollback applied successfully.",
+          "rollback_failed": "Rollback failed. Review details before retrying.",
+          "validated": "Validation passed. Ready to push.",
+          "default": "Push status is available."
+        },
+        "status": {
+          "validated": "Validated",
+          "submitted": "Submitted",
+          "sent": "Sent via OpAMP",
+          "applying": "Applying",
+          "applied": "✓ Applied",
+          "failed": "✗ Failed",
+          "rollback_started": "Rolling back",
+          "rollback_applied": "Rolled back",
+          "rollback_failed": "Rollback failed",
+          "pending": "Pending"
+        },
+        "instance": {
+          "col_instance": "Instance",
+          "col_target": "Target",
+          "col_status": "Status",
+          "col_updated": "Updated",
+          "col_hash": "Hash",
+          "col_error": "Error",
+          "best_effort": "Best effort",
+          "required": "Required",
+          "status": {
+            "no_status": "No status yet",
+            "sent": "Sent",
+            "applying": "Applying",
+            "applied": "Applied",
+            "failed": "Failed",
+            "unknown": "Unknown"
+          }
+        },
+        "error_cause": {
+          "collector_validation": "Collector rejected the config",
+          "opamp_send_failed": "OpAMP delivery failed",
+          "apply_timeout": "No OpAMP status after 30s",
+          "capability_mismatch": "Collector capability mismatch",
+          "permission_or_policy": "Permission or policy blocked the config",
+          "rollback_unavailable": "Rollback status unavailable",
+          "redacted": "Remote config error details redacted"
         }
       }
     }

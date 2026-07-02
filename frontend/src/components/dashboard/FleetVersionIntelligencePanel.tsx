@@ -127,7 +127,8 @@ export default function FleetVersionIntelligencePanel({ intelligence, isLoading,
                     {row.group}
                   </span>
                   <span className="version-intelligence-meta" role="cell">
-                    {row.type} · {row.status}
+                    {t(`inventory.filter.type.${row.type}`)} ·{' '}
+                    {t(`inventory.filter.status.${row.status}`)}
                   </span>
                   <span className="version-intelligence-version" role="cell">
                     {row.version}

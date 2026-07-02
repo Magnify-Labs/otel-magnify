@@ -135,6 +135,7 @@ function ConfigRecoveryPanel({
   canRollback,
   onRollback,
 }: RecoveryPanelProps) {
+  const { t } = useTranslation()
   const current = history.find((row) => row.is_current)
   const previous = history.find((row) => row.is_previous)
   const lastKnownGoodRow = history.find((row) => row.is_last_known_good)
@@ -153,7 +154,7 @@ function ConfigRecoveryPanel({
               applied_at: knownGood.source_applied_at ?? knownGood.marked_at,
               status: 'applied',
               pushed_by: knownGood.marked_by,
-              label: 'Last known-good',
+              label: t('workloads.config.recovery.last_known_good'),
               is_last_known_good: true,
               content_available: knownGood.content_available,
             } satisfies WorkloadConfig)
@@ -162,25 +163,25 @@ function ConfigRecoveryPanel({
   const rollbackTarget = knownGoodTarget ?? (previousAvailable ? previous : null)
   const rollbackKind = knownGoodTarget ? 'last_known_good' : previousAvailable ? 'previous' : null
   const rollbackLabel =
-    rollbackKind === 'last_known_good' ? 'Rollback to Last known-good' : 'Rollback to Previous'
+    rollbackKind === 'last_known_good'
+      ? t('workloads.config.recovery.rollback_last_known_good')
+      : t('workloads.config.recovery.rollback_previous')
   const disableReason = !canRollback
-    ? 'Requires workload:push_config permission'
+    ? t('workloads.config.recovery.requires_push_permission')
     : hasKnownGood && !knownGoodAvailable
-      ? 'Last known-good content unavailable. Mark another applied revision before rollback.'
-      : 'No Last known-good or Previous config is available for rollback.'
+      ? t('workloads.config.recovery.known_good_unavailable')
+      : t('workloads.config.recovery.no_recovery_target')
 
   return (
     <section
       className="config-recovery-panel"
       role="region"
-      aria-label="Configuration recovery states"
+      aria-label={t('workloads.config.recovery.aria_label')}
     >
       <div className="config-recovery-header">
         <div>
-          <p className="section-title">Configuration recovery states</p>
-          <p className="config-recovery-help">
-            Review the effective recovery target before pushing risky Collector changes.
-          </p>
+          <p className="section-title">{t('workloads.config.recovery.title')}</p>
+          <p className="config-recovery-help">{t('workloads.config.recovery.help')}</p>
         </div>
         <button
           className="btn btn-primary"
@@ -192,43 +193,43 @@ function ConfigRecoveryPanel({
         </button>
       </div>
       {loading ? (
-        <div className="loading">Loading recovery states...</div>
+        <div className="loading">{t('workloads.config.recovery.loading')}</div>
       ) : (
         <div className="config-state-grid">
           <ConfigStateCard
-            title="Current"
+            title={t('workloads.config.recovery.current')}
             hash={current?.config_id}
-            meta={current?.status ?? 'No current config'}
+            meta={current?.status ?? t('workloads.config.recovery.no_current_config')}
           />
           <ConfigStateCard
-            title="Previous"
+            title={t('workloads.config.recovery.previous')}
             hash={previous?.config_id}
-            meta={previous ? formatDate(previous.applied_at) : 'None yet'}
+            meta={
+              previous ? formatDate(previous.applied_at) : t('workloads.config.recovery.none_yet')
+            }
           />
           <ConfigStateCard
-            title="Last known-good"
+            title={t('workloads.config.recovery.last_known_good')}
             hash={knownGoodHash}
             meta={
               hasKnownGood
                 ? knownGoodAvailable
-                  ? `${knownGood?.marked_by ?? 'Unknown marker'} · ${formatDate(knownGood?.marked_at)}`
-                  : 'Content unavailable'
+                  ? `${knownGood?.marked_by ?? t('workloads.config.recovery.unknown_marker')} · ${formatDate(knownGood?.marked_at)}`
+                  : t('workloads.config.recovery.content_unavailable')
                 : knownGoodMissing
-                  ? 'Last known-good: None'
-                  : 'Not loaded'
+                  ? t('workloads.config.recovery.last_known_good_none')
+                  : t('workloads.config.recovery.not_loaded')
             }
-            detail={
-              !hasKnownGood
-                ? 'Rollback will use Previous until a known-good revision is marked.'
-                : undefined
-            }
+            detail={!hasKnownGood ? t('workloads.config.recovery.previous_fallback') : undefined}
             tone={hasKnownGood && !knownGoodAvailable ? 'danger' : 'default'}
           />
           {failedCandidate && (
             <ConfigStateCard
-              title="Failed candidate"
+              title={t('workloads.config.recovery.failed_candidate')}
               hash={failedCandidate.config_id}
-              meta={failedCandidate.error_message || 'Candidate failed'}
+              meta={
+                failedCandidate.error_message || t('workloads.config.recovery.candidate_failed')
+              }
               tone="danger"
             />
           )}
@@ -236,7 +237,7 @@ function ConfigRecoveryPanel({
       )}
       {!!knownGoodError && !knownGoodMissing && (
         <div className="error-text config-recovery-error">
-          Failed to load Last known-good configuration.
+          {t('workloads.config.recovery.known_good_load_error')}
         </div>
       )}
     </section>
@@ -348,7 +349,7 @@ function ConfigApplicationPlanPanel({
           <strong>{t('workloads.config.application_plan.hard_failures')}</strong>
           <ul>
             {plan.hard_failures.map((failure) => (
-              <li key={failure}>{humanizePlanReason(failure)}</li>
+              <li key={failure}>{humanizePlanReason(failure, t)}</li>
             ))}
           </ul>
         </div>
@@ -397,7 +398,7 @@ function ConfigApplicationPlanPanel({
               {(reasons.length > 0 || (target.validation_errors ?? []).length > 0) && (
                 <ul className="config-plan-reason-list">
                   {Array.from(new Set(reasons)).map((reason) => (
-                    <li key={reason}>{humanizePlanReason(reason)}</li>
+                    <li key={reason}>{humanizePlanReason(reason, t)}</li>
                   ))}
                   {(target.validation_errors ?? []).map((error) => (
                     <li key={error}>{error}</li>
@@ -532,7 +533,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     onError: (err: unknown) => {
       const msg = axios.isAxiosError(err)
         ? (err.response?.data?.error ?? err.message)
-        : 'Validation request failed'
+        : t('workloads.config.editor.validation_request_failed')
       setPushError(msg)
     },
   })
@@ -547,7 +548,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     onError: (err: unknown) => {
       const msg = axios.isAxiosError(err)
         ? (err.response?.data?.error ?? err.message)
-        : 'Failed to generate config safety plan'
+        : t('workloads.config.editor.plan_failed')
       setPushError(msg)
     },
   })
@@ -906,9 +907,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
       onExport={() => exportApplicationPlan(visiblePlan)}
     />
   ) : readOnlyPlanLoading ? (
-    <div className="loading">Loading config safety plan...</div>
+    <div className="loading">{t('workloads.config.editor.plan_loading')}</div>
   ) : readOnlyPlanError ? (
-    <div className="error-text">Failed to load config safety plan.</div>
+    <div className="error-text">{t('workloads.config.editor.plan_load_failed')}</div>
   ) : null
 
   const safetySection = (
@@ -933,7 +934,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     return (
       <>
         {safetySection}
-        <p className="section-title">Configuration</p>
+        <p className="section-title">{t('workloads.config.title')}</p>
         <div className="label-chip-list">
           {Object.entries(workload.labels).map(([k, v]) => (
             <span key={k} className="label-chip">
@@ -956,18 +957,19 @@ export default function WorkloadConfigSection({ workload }: Props) {
         {recoveryPanel}
         {applicationPlanPanel}
         {defaultRollbackDialog}
-        <p className="section-title">Configuration</p>
+        <p className="section-title">{t('workloads.config.title')}</p>
         {hasConfig && isLoading ? (
-          <div className="loading">Loading configuration...</div>
+          <div className="loading">{t('workloads.config.editor.loading')}</div>
         ) : hasConfig && isError ? (
-          <div className="error-text">Failed to load configuration</div>
+          <div className="error-text">{t('workloads.config.editor.load_failed')}</div>
         ) : hasConfig ? (
           <YamlEditor value={activeContent} readOnly />
         ) : (
-          <div className="empty-state">No config reported yet.</div>
+          <div className="empty-state">{t('workloads.config.editor.no_reported_config')}</div>
         )}
         <div className="config-readonly-note">
-          Read-only — this collector uses the <code>opamp</code> extension which can only report its
+          {t('workloads.config.readonly_note.before')} <code>opamp</code>{' '}
+          {t('workloads.config.readonly_note.after')}
           config. Run it under the OpAMP Supervisor to enable config push.{' '}
           <a
             href={`${DOCS_BASE_URL}/users/connecting-agents.md#running-a-collector-via-opamp-supervisor`}
@@ -1233,7 +1235,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
           disabled={!canValidateConfig || !draftYaml || validateMutation.isPending || !!pendingHash}
           title={validateDisabledReason}
         >
-          {validateMutation.isPending ? 'Validating...' : 'Validate for this collector'}
+          {validateMutation.isPending
+            ? t('workloads.config.editor.validating')
+            : t('workloads.config.editor.validate_for_collector')}
         </button>
         <button
           className="btn"
@@ -1252,7 +1256,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
           disabled={!canGeneratePlan}
           title={planDisabledReason}
         >
-          {planMutation.isPending ? 'Generating plan...' : 'Generate safety plan'}
+          {planMutation.isPending
+            ? t('workloads.config.editor.generating_plan')
+            : t('workloads.config.editor.generate_safety_plan')}
         </button>
         <button
           className="btn btn-primary"
@@ -1260,7 +1266,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
           disabled={!canPush}
           title={pushDisabledReason}
         >
-          {pendingHash ? 'Applying...' : pushMutation.isPending ? 'Pushing...' : 'Push'}
+          {pendingHash
+            ? t('workloads.config.editor.applying')
+            : pushMutation.isPending
+              ? t('workloads.config.editor.pushing')
+              : t('workloads.config.editor.push')}
         </button>
         <button className="btn" onClick={cancelEdit} disabled={!!pendingHash}>
           Cancel
@@ -1328,7 +1338,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
         {safetySection}
         {recoveryPanel}
         {defaultRollbackDialog}
-        <p className="section-title">Configuration</p>
+        <p className="section-title">{t('workloads.config.title')}</p>
         {applySelector}
         {permissionNote}
         {editMode ? (
@@ -1361,8 +1371,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
         {safetySection}
         {recoveryPanel}
         {defaultRollbackDialog}
-        <p className="section-title">Configuration</p>
-        <div className="loading">Loading configuration...</div>
+        <p className="section-title">{t('workloads.config.title')}</p>
+        <div className="loading">{t('workloads.config.editor.loading')}</div>
       </>
     )
   }
@@ -1372,8 +1382,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
         {safetySection}
         {recoveryPanel}
         {defaultRollbackDialog}
-        <p className="section-title">Configuration</p>
-        <div className="error-text">Failed to load configuration</div>
+        <p className="section-title">{t('workloads.config.title')}</p>
+        <div className="error-text">{t('workloads.config.editor.load_failed')}</div>
       </>
     )
   }
@@ -1383,7 +1393,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       {safetySection}
       {recoveryPanel}
       {defaultRollbackDialog}
-      <p className="section-title">Configuration</p>
+      <p className="section-title">{t('workloads.config.title')}</p>
       {applySelector}
       {permissionNote}
 
@@ -1423,6 +1433,7 @@ interface ValidationDetailsProps {
 }
 
 function ValidationDetails({ validation }: ValidationDetailsProps) {
+  const { t } = useTranslation()
   const errors = validation.errors ?? []
   const warnings = validation.warnings ?? []
   const blockingMessages: ValidationMessage[] = errors.map((error) => ({
@@ -1432,29 +1443,34 @@ function ValidationDetails({ validation }: ValidationDetailsProps) {
     path: error.path,
     check_id: error.check_id,
   }))
-  const checks = validation.checks ?? legacyChecksFromResult(validation)
+  const checks = validation.checks ?? legacyChecksFromResult(validation, t)
   const runtimeCheck = checks.find((check) => check.id === 'otelcol_runtime')
   const binaryVersion = metadataString(runtimeCheck, 'binary_version')
   const targetVersion =
     validation.target_collector_version ?? metadataString(runtimeCheck, 'target_version')
-  const statusLabel = validationStatusLabel(validation)
+  const statusLabel = validationStatusLabel(validation, t)
 
   return (
     <section
       className={`validation-block validation-details ${validation.valid ? 'validation-ok' : 'validation-errors'}`}
-      aria-label="Configuration validation result"
+      aria-label={t('workloads.config.validation.aria_label')}
     >
       <div className="validation-details-header">
         <div>
           <p className="validation-details-title">{statusLabel}</p>
           {validation.summary && <p className="validation-details-summary">{validation.summary}</p>}
         </div>
-        <div className="validation-version-row" aria-label="Validation versions">
+        <div
+          className="validation-version-row"
+          aria-label={t('workloads.config.validation.versions_aria')}
+        >
           {targetVersion && <span className="validation-version-pill">Target {targetVersion}</span>}
           {binaryVersion ? (
             <span className="validation-version-pill">otelcol {binaryVersion}</span>
           ) : runtimeCheck ? (
-            <span className="validation-version-pill">otelcol unavailable</span>
+            <span className="validation-version-pill">
+              {t('workloads.config.validation.otelcol_unavailable')}
+            </span>
           ) : null}
         </div>
       </div>
@@ -1463,13 +1479,17 @@ function ValidationDetails({ validation }: ValidationDetailsProps) {
         <div className="validation-message-groups">
           {errors.length > 0 && (
             <ValidationMessageGroup
-              title="Blocking errors"
+              title={t('workloads.config.validation.blocking_errors')}
               tone="error"
               messages={blockingMessages}
             />
           )}
           {warnings.length > 0 && (
-            <ValidationMessageGroup title="Warnings" tone="warning" messages={warnings} />
+            <ValidationMessageGroup
+              title={t('workloads.config.validation.warnings')}
+              tone="warning"
+              messages={warnings}
+            />
           )}
         </div>
       )}
@@ -1487,10 +1507,12 @@ function ValidationDetails({ validation }: ValidationDetailsProps) {
               </div>
               <div className="validation-check-badges">
                 <span className={`validation-status-badge validation-status-badge-${check.status}`}>
-                  {humanizeStatus(check.status)}
+                  {humanizeStatus(check.status, t)}
                 </span>
                 <span className="validation-required-badge">
-                  {check.required ? 'Required' : 'Advisory'}
+                  {check.required
+                    ? t('workloads.config.validation.required')
+                    : t('workloads.config.validation.advisory')}
                 </span>
               </div>
             </div>
@@ -1499,19 +1521,19 @@ function ValidationDetails({ validation }: ValidationDetailsProps) {
               <dl className="validation-check-meta">
                 {metadataString(check, 'binary_version') && (
                   <>
-                    <dt>Binary</dt>
+                    <dt>{t('workloads.config.validation.binary')}</dt>
                     <dd>otelcol {metadataString(check, 'binary_version')}</dd>
                   </>
                 )}
                 {metadataString(check, 'target_version') && (
                   <>
-                    <dt>Target</dt>
+                    <dt>{t('workloads.config.validation.target')}</dt>
                     <dd>{metadataString(check, 'target_version')}</dd>
                   </>
                 )}
                 {metadataString(check, 'binary_path') && (
                   <>
-                    <dt>Path</dt>
+                    <dt>{t('workloads.config.validation.path')}</dt>
                     <dd>{metadataString(check, 'binary_path')}</dd>
                   </>
                 )}
@@ -1563,20 +1585,26 @@ function ValidationMessageItem({ message }: { message: ValidationMessage }) {
   )
 }
 
-function validationStatusLabel(validation: ValidationResult) {
-  if (!validation.valid) return 'Validation failed'
+function validationStatusLabel(
+  validation: ValidationResult,
+  t: ReturnType<typeof useTranslation>['t'],
+) {
+  if (!validation.valid) return t('workloads.config.validation.failed')
   if (validation.overall_status === 'warning' || (validation.warnings ?? []).length > 0) {
-    return 'Validation passed with warnings'
+    return t('workloads.config.validation.passed_with_warnings')
   }
-  return 'Validation passed'
+  return t('workloads.config.validation.passed')
 }
 
-function legacyChecksFromResult(validation: ValidationResult): ValidationCheck[] {
+function legacyChecksFromResult(
+  validation: ValidationResult,
+  t: ReturnType<typeof useTranslation>['t'],
+): ValidationCheck[] {
   if (validation.valid) {
     return [
       {
         id: 'legacy_validation',
-        label: 'Configuration validation',
+        label: t('workloads.config.validation.configuration_validation'),
         source: 'server.validation',
         status: 'passed',
         required: true,
@@ -1584,7 +1612,7 @@ function legacyChecksFromResult(validation: ValidationResult): ValidationCheck[]
           {
             code: 'validation_ok',
             severity: 'info',
-            message: 'Configuration is valid.',
+            message: t('workloads.config.validation.configuration_valid'),
             check_id: 'legacy_validation',
           },
         ],
@@ -1594,7 +1622,7 @@ function legacyChecksFromResult(validation: ValidationResult): ValidationCheck[]
   return [
     {
       id: 'legacy_validation',
-      label: 'Configuration validation',
+      label: t('workloads.config.validation.configuration_validation'),
       source: 'server.validation',
       status: 'failed',
       required: true,
@@ -1614,35 +1642,38 @@ function metadataString(check: ValidationCheck | undefined, key: string) {
   return typeof value === 'string' && value.trim() ? value : undefined
 }
 
-function humanizeStatus(status: ValidationCheck['status']) {
+function humanizeStatus(
+  status: ValidationCheck['status'],
+  t: ReturnType<typeof useTranslation>['t'],
+) {
   switch (status) {
     case 'passed':
-      return 'Passed'
+      return t('workloads.config.validation.status.passed')
     case 'warning':
-      return 'Warning'
+      return t('workloads.config.validation.status.warning')
     case 'failed':
-      return 'Failed'
+      return t('workloads.config.validation.status.failed')
     case 'skipped':
-      return 'Skipped'
+      return t('workloads.config.validation.status.skipped')
     default:
       return status
   }
 }
 
-function humanizePlanReason(reason: string) {
+function humanizePlanReason(reason: string, t: ReturnType<typeof useTranslation>['t']) {
   switch (reason) {
     case 'read_only':
-      return 'Read-only'
+      return t('workloads.config.apply.reason.read_only')
     case 'validation_failed':
-      return 'Validation failed'
+      return t('workloads.config.apply.reason.validation_failed')
     case 'all_targets_excluded':
-      return 'All targets excluded'
+      return t('workloads.config.apply.reason.all_targets_excluded')
     case 'empty_config':
-      return 'Empty config'
+      return t('workloads.config.apply.reason.empty_config')
     case 'non_collector':
-      return 'Non-collector target'
+      return t('workloads.config.apply.reason.non_collector_target')
     case 'workload_offline':
-      return 'Workload is not connected'
+      return t('workloads.config.apply.reason.workload_not_connected')
     default:
       return reason
         .split('_')

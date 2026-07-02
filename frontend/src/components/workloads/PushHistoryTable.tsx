@@ -26,19 +26,27 @@ function hasContent(row: WorkloadConfig) {
   return row.content_available ?? !!row.content
 }
 
-function knownGoodDisableReason(row: WorkloadConfig, canMark: boolean) {
-  if (!canMark) return 'Requires workload:push_config permission'
-  if (row.status !== 'applied') return 'Only applied revisions can be marked known-good'
-  if (!hasContent(row)) return 'Config content unavailable'
+function knownGoodDisableReason(
+  row: WorkloadConfig,
+  canMark: boolean,
+  t: ReturnType<typeof useTranslation>['t'],
+) {
+  if (!canMark) return t('workloads.config.versioning.requires_push_permission')
+  if (row.status !== 'applied') return t('workloads.config.versioning.known_good_only_applied')
+  if (!hasContent(row)) return t('workloads.config.versioning.content_unavailable')
   return ''
 }
 
-function rollbackDisableReason(row: WorkloadConfig, canRollback: boolean) {
-  if (!canRollback) return 'Requires workload:push_config permission'
+function rollbackDisableReason(
+  row: WorkloadConfig,
+  canRollback: boolean,
+  t: ReturnType<typeof useTranslation>['t'],
+) {
+  if (!canRollback) return t('workloads.config.versioning.requires_push_permission')
   if (row.status !== 'applied') {
-    return 'Only applied revisions can be rolled back. Failed or pending revisions are not safe rollback targets.'
+    return t('workloads.config.versioning.rollback_only_applied')
   }
-  if (!hasContent(row)) return 'Config content unavailable'
+  if (!hasContent(row)) return t('workloads.config.versioning.content_unavailable')
   return ''
 }
 
@@ -98,7 +106,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
     onError: (err: unknown) => {
       const msg = axios.isAxiosError(err)
         ? (err.response?.data?.error ?? err.message)
-        : 'Failed to mark known-good'
+        : t('workloads.config.versioning.mark_known_good_failed')
       setKnownGoodError(msg)
     },
   })
@@ -114,7 +122,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
     onError: (err: unknown) => {
       const msg = axios.isAxiosError(err)
         ? (err.response?.data?.error ?? err.message)
-        : 'Failed to clear known-good'
+        : t('workloads.config.versioning.clear_known_good_failed')
       setKnownGoodError(msg)
     },
   })
@@ -135,21 +143,32 @@ export default function PushHistoryTable({ workloadId }: Props) {
 
   function renderStateBadges(row: WorkloadConfig) {
     const badges = [
-      row.is_current ? 'Current' : null,
-      row.is_previous ? 'Previous' : null,
-      row.is_last_known_good || row.config_id === activeKnownGoodHash ? 'Last known-good' : null,
-      row.is_failed_candidate ? 'Failed candidate' : null,
-    ].filter(Boolean)
+      row.is_current
+        ? { key: 'current', label: t('workloads.config.versioning.state.current') }
+        : null,
+      row.is_previous
+        ? { key: 'previous', label: t('workloads.config.versioning.state.previous') }
+        : null,
+      row.is_last_known_good || row.config_id === activeKnownGoodHash
+        ? { key: 'last-known-good', label: t('workloads.config.versioning.state.last_known_good') }
+        : null,
+      row.is_failed_candidate
+        ? {
+            key: 'failed-candidate',
+            label: t('workloads.config.versioning.state.failed_candidate'),
+          }
+        : null,
+    ].filter((badge): badge is { key: string; label: string } => badge !== null)
 
     if (badges.length === 0) return null
     return (
-      <div className="history-state-badges" aria-label={`States for ${shortHash(row.config_id)}`}>
+      <div
+        className="history-state-badges"
+        aria-label={t('workloads.config.versioning.states_for', { hash: shortHash(row.config_id) })}
+      >
         {badges.map((badge) => (
-          <span
-            key={badge}
-            className={`history-state-badge history-state-${String(badge).toLowerCase().replaceAll(' ', '-')}`}
-          >
-            {badge}
+          <span key={badge.key} className={`history-state-badge history-state-${badge.key}`}>
+            {badge.label}
           </span>
         ))}
       </div>
@@ -159,7 +178,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
   return (
     <>
       <div className="btn-row btn-row-top">
-        <p className="section-title" style={{ flex: 1 }}>
+        <p className="section-title section-title-flex">
           {t('workloads.config.versioning.history_title')}
         </p>
         <button
@@ -177,7 +196,9 @@ export default function PushHistoryTable({ workloadId }: Props) {
       </div>
       {knownGoodError && <div className="error-text error-text-push">{knownGoodError}</div>}
       {knownGoodQueryError && !isNotFoundError(knownGoodQueryError) && (
-        <div className="error-text error-text-push">Failed to load Last known-good state.</div>
+        <div className="error-text error-text-push">
+          {t('workloads.config.versioning.known_good_load_error')}
+        </div>
       )}
       <table className="history-table">
         <thead>
@@ -188,23 +209,25 @@ export default function PushHistoryTable({ workloadId }: Props) {
             <th>{t('workloads.config.versioning.col_hash')}</th>
             <th>{t('workloads.config.versioning.col_label')}</th>
             <th>{t('workloads.config.versioning.col_error')}</th>
-            <th aria-label="actions"></th>
+            <th aria-label={t('workloads.config.versioning.col_actions')}></th>
           </tr>
         </thead>
         <tbody>
           {history.map((row) => {
             const rowKey = `${row.config_id}-${row.applied_at}`
             const isEditing = editingLabel === rowKey
-            const markDisabledReason = knownGoodDisableReason(row, canPushConfig)
+            const markDisabledReason = knownGoodDisableReason(row, canPushConfig, t)
             const markDisabled = !!markDisabledReason || markKnownGoodMutation.isPending
-            const rollbackDisabledReason = rollbackDisableReason(row, canPushConfig)
+            const rollbackDisabledReason = rollbackDisableReason(row, canPushConfig, t)
             const rollbackDisabled = !!rollbackDisabledReason
             const isKnownGood = row.is_last_known_good || row.config_id === activeKnownGoodHash
             return (
               <tr key={rowKey}>
                 <td>{new Date(row.applied_at).toLocaleString()}</td>
                 <td>
-                  <span className={`status-pill status-${row.status}`}>{row.status}</span>
+                  <span className={`status-pill status-${row.status}`}>
+                    {t(`workloads.config.versioning.status.${row.status}`)}
+                  </span>
                   {renderStateBadges(row)}
                 </td>
                 <td>{row.pushed_by || '—'}</td>
@@ -259,11 +282,11 @@ export default function PushHistoryTable({ workloadId }: Props) {
                       disabled={!canPushConfig || clearKnownGoodMutation.isPending}
                       title={
                         canPushConfig
-                          ? 'Clear Last known-good'
-                          : 'Requires workload:push_config permission'
+                          ? t('workloads.config.versioning.clear_known_good')
+                          : t('workloads.config.versioning.requires_push_permission')
                       }
                     >
-                      Clear known-good
+                      {t('workloads.config.versioning.clear_known_good')}
                     </button>
                   ) : (
                     <button
@@ -272,7 +295,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
                       disabled={markDisabled}
                       title={markDisabledReason}
                     >
-                      Mark as known-good
+                      {t('workloads.config.versioning.mark_known_good')}
                     </button>
                   )}
                 </td>
@@ -314,20 +337,19 @@ export default function PushHistoryTable({ workloadId }: Props) {
             className="modal"
             role="dialog"
             aria-modal="true"
-            aria-label="Mark this revision as Last known-good?"
+            aria-label={t('workloads.config.versioning.mark_known_good_confirm_title')}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
-              <span>Mark this revision as Last known-good?</span>
+              <span>{t('workloads.config.versioning.mark_known_good_confirm_title')}</span>
             </div>
             <div className="modal-body">
-              <p>
-                Future rollback defaults will target this config for this workload until another
-                revision is marked.
-              </p>
+              <p>{t('workloads.config.versioning.mark_known_good_confirm_body')}</p>
               {activeKnownGoodHash && activeKnownGoodHash !== confirmKnownGood.config_id && (
                 <p className="config-confirm-detail">
-                  This replaces {shortHash(activeKnownGoodHash)} as Last known-good.
+                  {t('workloads.config.versioning.mark_known_good_replaces', {
+                    hash: shortHash(activeKnownGoodHash),
+                  })}
                 </p>
               )}
             </div>
@@ -337,7 +359,9 @@ export default function PushHistoryTable({ workloadId }: Props) {
                 onClick={() => markKnownGoodMutation.mutate(confirmKnownGood)}
                 disabled={markKnownGoodMutation.isPending}
               >
-                {markKnownGoodMutation.isPending ? 'Marking…' : 'Mark as Last known-good'}
+                {markKnownGoodMutation.isPending
+                  ? t('workloads.config.versioning.marking_known_good')
+                  : t('workloads.config.versioning.mark_as_last_known_good')}
               </button>
               <button
                 className="btn"

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type {
   RemoteConfigStatus,
   AutoRollbackEvent,
@@ -20,52 +21,52 @@ interface Props {
 const CANONICAL_STATES: PushStatus[] = ['validated', 'submitted', 'sent', 'applying', 'applied']
 
 export default function PushStatusBanner({ status, push, rollback, onDismissRollback }: Props) {
+  const { t } = useTranslation()
   const [detailsOpen, setDetailsOpen] = useState(false)
   const visiblePush = push ?? statusToPush(status)
   const timedOut = hasTimedOutRequiredTarget(visiblePush)
   const rollbackReason = safeRollbackReasonText(rollback?.reason)
 
   return (
-    <div className="push-status-panel" aria-label="Config push status">
+    <div className="push-status-panel" aria-label={t('workloads.config.push_status.panel_aria')}>
       {!visiblePush && !rollback && (
         <div className="push-empty-state">
-          <span className="push-empty-title">No config push in progress</span>
-          <span className="push-empty-copy">
-            Validate a config, then push it to see delivery status here.
-          </span>
+          <span className="push-empty-title">{t('workloads.config.push_status.empty_title')}</span>
+          <span className="push-empty-copy">{t('workloads.config.push_status.empty_copy')}</span>
         </div>
       )}
 
       {visiblePush && (
         <div className={`push-banner push-banner-${visiblePush.status}`}>
           <div className="push-banner-row push-banner-row-main">
-            <span className="push-banner-label">{label(visiblePush.status)}</span>
+            <span className="push-banner-label">{label(visiblePush.status, t)}</span>
             {pushHash(visiblePush) && (
               <code className="push-banner-hash">{shortHash(pushHash(visiblePush))}</code>
             )}
             {visiblePush.updated_at && (
               <time className="push-banner-time" dateTime={visiblePush.updated_at}>
-                Updated {formatDateTime(visiblePush.updated_at)}
+                {t('workloads.config.push_status.updated', {
+                  time: formatDateTime(visiblePush.updated_at),
+                })}
               </time>
             )}
           </div>
 
           <div className="push-summary-row">
-            <span>{aggregateCopy(visiblePush)}</span>
+            <span>{aggregateCopy(visiblePush, t)}</span>
             {visiblePush.push_id && <code>{visiblePush.push_id}</code>}
           </div>
 
           {timedOut && (
             <div className="push-timeout-banner" role="status">
-              <strong>{visiblePush.timeout_message || 'No OpAMP status after 30s'}</strong>
-              <span>
-                otel-magnify sent the config but has not received an OpAMP status from the workload
-                yet.
-              </span>
+              <strong>
+                {visiblePush.timeout_message || t('workloads.config.push_status.no_opamp_status')}
+              </strong>
+              <span>{t('workloads.config.push_status.timeout_copy')}</span>
             </div>
           )}
 
-          <Timeline push={visiblePush} />
+          <Timeline push={visiblePush} t={t} />
 
           {visiblePush.error_message && !visiblePush.error_groups?.length && (
             <pre className="push-banner-error">
@@ -73,7 +74,7 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
             </pre>
           )}
           {visiblePush.error_groups && visiblePush.error_groups.length > 0 && (
-            <ErrorGroups groups={visiblePush.error_groups} />
+            <ErrorGroups groups={visiblePush.error_groups} t={t} />
           )}
 
           {visiblePush.instance_statuses && visiblePush.instance_statuses.length > 0 && (
@@ -84,9 +85,11 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
                 onClick={() => setDetailsOpen((open) => !open)}
                 aria-expanded={detailsOpen}
               >
-                {detailsOpen ? 'Hide instance details' : 'View instance details'}
+                {detailsOpen
+                  ? t('workloads.config.push_status.hide_instance_details')
+                  : t('workloads.config.push_status.view_instance_details')}
               </button>
-              {detailsOpen && <InstanceTable instances={visiblePush.instance_statuses} />}
+              {detailsOpen && <InstanceTable instances={visiblePush.instance_statuses} t={t} />}
             </div>
           )}
         </div>
@@ -95,7 +98,9 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
       {rollback && (
         <div className="push-banner push-banner-rollback">
           <div className="push-banner-row">
-            <span className="push-banner-label">Auto-rolled back</span>
+            <span className="push-banner-label">
+              {t('workloads.config.push_status.auto_rolled_back')}
+            </span>
             <code className="push-banner-hash">
               {rollback.from_hash.substring(0, 8)} → {rollback.to_hash.substring(0, 8)}
             </code>
@@ -103,7 +108,7 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
               <button
                 className="push-banner-dismiss"
                 onClick={onDismissRollback}
-                aria-label="Dismiss"
+                aria-label={t('workloads.config.push_status.dismiss')}
               >
                 ×
               </button>
@@ -116,17 +121,23 @@ export default function PushStatusBanner({ status, push, rollback, onDismissRoll
   )
 }
 
-function Timeline({ push }: { push: WorkloadConfig }) {
+function Timeline({
+  push,
+  t,
+}: {
+  push: WorkloadConfig
+  t: ReturnType<typeof useTranslation>['t']
+}) {
   const entries = normalizedTimeline(push)
   return (
-    <ol className="push-timeline" aria-label="Push timeline">
+    <ol className="push-timeline" aria-label={t('workloads.config.push_status.timeline_aria')}>
       {entries.map((entry) => (
         <li
           key={`${entry.state}-${entry.at || 'pending'}`}
           className={`push-timeline-step push-timeline-${entryStateTone(entry, push)}`}
         >
           <span className="push-timeline-dot" aria-hidden="true" />
-          <span className="push-timeline-label">{timelineLabel(entry.state)}</span>
+          <span className="push-timeline-label">{timelineLabel(entry.state, t)}</span>
           {entry.at && (
             <time className="push-timeline-time" dateTime={entry.at}>
               {formatDateTime(entry.at)}
@@ -139,10 +150,21 @@ function Timeline({ push }: { push: WorkloadConfig }) {
   )
 }
 
-function ErrorGroups({ groups }: { groups: WorkloadConfigErrorGroup[] }) {
+function ErrorGroups({
+  groups,
+  t,
+}: {
+  groups: WorkloadConfigErrorGroup[]
+  t: ReturnType<typeof useTranslation>['t']
+}) {
   return (
-    <div className="push-error-groups" aria-label="Grouped remote config errors">
-      <p className="push-detail-heading">Remote config errors grouped by cause</p>
+    <div
+      className="push-error-groups"
+      aria-label={t('workloads.config.push_status.error_groups_aria')}
+    >
+      <p className="push-detail-heading">
+        {t('workloads.config.push_status.error_groups_heading')}
+      </p>
       {groups.map((group) => (
         <div
           key={group.cause}
@@ -150,8 +172,8 @@ function ErrorGroups({ groups }: { groups: WorkloadConfigErrorGroup[] }) {
         >
           <div className="push-error-group-header">
             <strong>{group.title || group.cause}</strong>
-            <span>{formatInstanceCount(group.count)}</span>
-            <span className="push-error-severity">{severityLabel(group.severity)}</span>
+            <span>{formatInstanceCount(group.count, t)}</span>
+            <span className="push-error-severity">{severityLabel(group.severity, t)}</span>
             <code className="push-error-cause">{group.cause}</code>
           </div>
           {group.sample_message && (
@@ -171,17 +193,23 @@ function ErrorGroups({ groups }: { groups: WorkloadConfigErrorGroup[] }) {
   )
 }
 
-function InstanceTable({ instances }: { instances: WorkloadConfigInstanceStatus[] }) {
+function InstanceTable({
+  instances,
+  t,
+}: {
+  instances: WorkloadConfigInstanceStatus[]
+  t: ReturnType<typeof useTranslation>['t']
+}) {
   return (
     <table className="push-instance-table">
       <thead>
         <tr>
-          <th>Instance</th>
-          <th>Target</th>
-          <th>Status</th>
-          <th>Updated</th>
-          <th>Hash</th>
-          <th>Error</th>
+          <th>{t('workloads.config.push_status.instance.col_instance')}</th>
+          <th>{t('workloads.config.push_status.instance.col_target')}</th>
+          <th>{t('workloads.config.push_status.instance.col_status')}</th>
+          <th>{t('workloads.config.push_status.instance.col_updated')}</th>
+          <th>{t('workloads.config.push_status.instance.col_hash')}</th>
+          <th>{t('workloads.config.push_status.instance.col_error')}</th>
         </tr>
       </thead>
       <tbody>
@@ -192,15 +220,19 @@ function InstanceTable({ instances }: { instances: WorkloadConfigInstanceStatus[
               {instance.pod_name && <span className="push-instance-meta">{instance.pod_name}</span>}
               {instance.node && <span className="push-instance-meta">{instance.node}</span>}
             </td>
-            <td>{instance.required === false ? 'Best effort' : 'Required'}</td>
+            <td>
+              {instance.required === false
+                ? t('workloads.config.push_status.instance.best_effort')
+                : t('workloads.config.push_status.instance.required')}
+            </td>
             <td>
               <span className={`status-pill status-${instance.status}`}>
-                {instanceStatusLabel(instance.status)}
+                {instanceStatusLabel(instance.status, t)}
               </span>
             </td>
             <td>{instance.updated_at ? formatDateTime(instance.updated_at) : '—'}</td>
             <td>{instance.config_hash ? <code>{shortHash(instance.config_hash)}</code> : '—'}</td>
-            <td>{instanceErrorLabel(instance)}</td>
+            <td>{instanceErrorLabel(instance, t)}</td>
           </tr>
         ))}
       </tbody>
@@ -269,37 +301,50 @@ function entryStateTone(entry: WorkloadConfigTimelineEntry, push: WorkloadConfig
   return 'pending'
 }
 
-function aggregateCopy(push: WorkloadConfig): string {
+function aggregateCopy(push: WorkloadConfig, t: ReturnType<typeof useTranslation>['t']): string {
   const targetCount = push.target_count ?? 0
   if (targetCount > 1) {
-    const parts = [`${push.applied_count ?? 0}/${targetCount} applied`]
-    if ((push.failed_count ?? 0) > 0) parts.push(`${push.failed_count} failed`)
-    if ((push.pending_count ?? 0) > 0) parts.push(`${push.pending_count} pending`)
+    const parts = [
+      t('workloads.config.push_status.aggregate.applied_count', {
+        applied: push.applied_count ?? 0,
+        total: targetCount,
+      }),
+    ]
+    if ((push.failed_count ?? 0) > 0) {
+      parts.push(
+        t('workloads.config.push_status.aggregate.failed_count', { count: push.failed_count }),
+      )
+    }
+    if ((push.pending_count ?? 0) > 0) {
+      parts.push(
+        t('workloads.config.push_status.aggregate.pending_count', { count: push.pending_count }),
+      )
+    }
     return parts.join(' · ')
   }
   switch (push.status) {
     case 'pending':
-      return 'Push is pending submission.'
+      return t('workloads.config.push_status.aggregate.pending')
     case 'submitted':
-      return 'Request accepted. Waiting for OpAMP delivery.'
+      return t('workloads.config.push_status.aggregate.submitted')
     case 'sent':
-      return 'Sent via OpAMP. Waiting for remote status.'
+      return t('workloads.config.push_status.aggregate.sent')
     case 'applying':
-      return 'The workload is applying this config.'
+      return t('workloads.config.push_status.aggregate.applying')
     case 'applied':
-      return 'Config applied successfully.'
+      return t('workloads.config.push_status.aggregate.applied')
     case 'failed':
-      return 'Config push failed. Review errors and affected instances.'
+      return t('workloads.config.push_status.aggregate.failed')
     case 'rollback_started':
-      return 'Rollback is in progress.'
+      return t('workloads.config.push_status.aggregate.rollback_started')
     case 'rollback_applied':
-      return 'Rollback applied successfully.'
+      return t('workloads.config.push_status.aggregate.rollback_applied')
     case 'rollback_failed':
-      return 'Rollback failed. Review details before retrying.'
+      return t('workloads.config.push_status.aggregate.rollback_failed')
     case 'validated':
-      return 'Validation passed. Ready to push.'
+      return t('workloads.config.push_status.aggregate.validated')
     default:
-      return 'Push status is available.'
+      return t('workloads.config.push_status.aggregate.default')
   }
 }
 
@@ -311,91 +356,93 @@ function shortHash(hash: string): string {
   return hash.substring(0, 8)
 }
 
-function label(s: PushStatus): string {
+function label(s: PushStatus, t: ReturnType<typeof useTranslation>['t']): string {
   switch (s) {
     case 'validated':
-      return 'Validated'
+      return t('workloads.config.push_status.status.validated')
     case 'submitted':
-      return 'Submitted'
+      return t('workloads.config.push_status.status.submitted')
     case 'sent':
-      return 'Sent via OpAMP'
+      return t('workloads.config.push_status.status.sent')
     case 'applying':
-      return 'Applying'
+      return t('workloads.config.push_status.status.applying')
     case 'applied':
-      return '✓ Applied'
+      return t('workloads.config.push_status.status.applied')
     case 'failed':
-      return '✗ Failed'
+      return t('workloads.config.push_status.status.failed')
     case 'rollback_started':
-      return 'Rolling back'
+      return t('workloads.config.push_status.status.rollback_started')
     case 'rollback_applied':
-      return 'Rolled back'
+      return t('workloads.config.push_status.status.rollback_applied')
     case 'rollback_failed':
-      return 'Rollback failed'
+      return t('workloads.config.push_status.status.rollback_failed')
     case 'pending':
-      return 'Pending'
+      return t('workloads.config.push_status.status.pending')
   }
 }
 
-function timelineLabel(s: string): string {
-  if (s === 'sent') return 'Sent via OpAMP'
-  if (s === 'rollback_started') return 'Rolling back'
-  if (s === 'rollback_applied') return 'Rolled back'
-  if (s === 'rollback_failed') return 'Rollback failed'
-  return s.charAt(0).toUpperCase() + s.slice(1).replaceAll('_', ' ')
+function timelineLabel(s: string, t: ReturnType<typeof useTranslation>['t']): string {
+  if (s === 'sent') return t('workloads.config.push_status.status.sent')
+  if (s === 'rollback_started') return t('workloads.config.push_status.status.rollback_started')
+  if (s === 'rollback_applied') return t('workloads.config.push_status.status.rollback_applied')
+  if (s === 'rollback_failed') return t('workloads.config.push_status.status.rollback_failed')
+  return t(`workloads.config.push_status.status.${s}`, { defaultValue: s.replaceAll('_', ' ') })
 }
 
-function instanceStatusLabel(status: string): string {
+function instanceStatusLabel(status: string, t: ReturnType<typeof useTranslation>['t']): string {
   switch (status) {
     case 'no_status':
-      return 'No status yet'
+      return t('workloads.config.push_status.instance.status.no_status')
     case 'sent':
-      return 'Sent'
+      return t('workloads.config.push_status.instance.status.sent')
     case 'applying':
-      return 'Applying'
+      return t('workloads.config.push_status.status.applying')
     case 'applied':
-      return 'Applied'
+      return t('workloads.config.push_status.instance.status.applied')
     case 'failed':
-      return 'Failed'
+      return t('workloads.config.push_status.instance.status.failed')
     default:
-      return status || 'Unknown'
+      return status || t('workloads.config.push_status.instance.status.unknown')
   }
 }
 
-function instanceErrorLabel(instance: WorkloadConfigInstanceStatus): string {
+function instanceErrorLabel(
+  instance: WorkloadConfigInstanceStatus,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
   if (instance.timed_out || instance.error_message === 'No OpAMP status after 30s') {
-    return 'No OpAMP status after 30s'
+    return t('workloads.config.push_status.no_opamp_status')
   }
-  if (instance.error_cause) return errorCauseLabel(instance.error_cause)
+  if (instance.error_cause) return errorCauseLabel(instance.error_cause, t)
   if (instance.error_message) return safeRemoteErrorText(instance.error_message)
   return '—'
 }
 
-function errorCauseLabel(cause: string): string {
+function errorCauseLabel(cause: string, t: ReturnType<typeof useTranslation>['t']): string {
   switch (cause) {
     case 'collector_validation':
-      return 'Collector rejected the config'
+      return t('workloads.config.push_status.error_cause.collector_validation')
     case 'opamp_send_failed':
-      return 'OpAMP delivery failed'
+      return t('workloads.config.push_status.error_cause.opamp_send_failed')
     case 'apply_timeout':
-      return 'No OpAMP status after 30s'
+      return t('workloads.config.push_status.no_opamp_status')
     case 'capability_mismatch':
-      return 'Collector capability mismatch'
+      return t('workloads.config.push_status.error_cause.capability_mismatch')
     case 'permission_or_policy':
-      return 'Permission or policy blocked the config'
+      return t('workloads.config.push_status.error_cause.permission_or_policy')
     case 'rollback_unavailable':
-      return 'Rollback status unavailable'
+      return t('workloads.config.push_status.error_cause.rollback_unavailable')
     default:
-      return 'Remote config error details redacted'
+      return t('workloads.config.push_status.error_cause.redacted')
   }
 }
 
-function severityLabel(severity: string): string {
-  if (!severity) return 'Severity: medium'
-  return `Severity: ${severity}`
+function severityLabel(severity: string, t: ReturnType<typeof useTranslation>['t']): string {
+  return t('workloads.config.push_status.severity', { severity: severity || 'medium' })
 }
 
-function formatInstanceCount(count: number): string {
-  return `${count} ${count === 1 ? 'instance' : 'instances'}`
+function formatInstanceCount(count: number, t: ReturnType<typeof useTranslation>['t']): string {
+  return t('workloads.config.push_status.instance_count', { count })
 }
 
 function formatDateTime(value: string): string {
