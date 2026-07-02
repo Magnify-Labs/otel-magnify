@@ -1,8 +1,9 @@
 # API — overview
 
-otel-magnify exposes three integration surfaces:
+otel-magnify exposes API integration surfaces through REST, WebSocket, and OpAMP:
 
 - **[REST API](rest.md)** — JSON over HTTP for inventory, configs, alerts.
+- **[Report export API](report-exports.md)** — report/evidence-pack request, response, export, signing, and error contract.
 - **[WebSocket](websocket.md)** — live events from the server to browsers and integrations.
 - **[OpAMP](opamp.md)** — the agent-management protocol on port `:4320`.
 

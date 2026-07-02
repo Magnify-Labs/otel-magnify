@@ -320,6 +320,132 @@ export interface ConfigApplicationPlan {
   export: ConfigApplicationPlanExport
 }
 
+export type ReportExportRequestSchemaVersion = 'report_export_request.v1'
+export type EvidencePackSchemaVersion = 'evidence_pack.v1'
+export type ReportExportFormat = 'markdown' | 'csv' | 'pdf'
+export type EvidenceReportType = 'evidence_pack'
+export type ReportRedactionMode = 'strict' | 'none'
+export type ReportSignatureScheme = 'none' | 'sha256-hmac' | 'ed25519'
+
+export interface ReportScope {
+  workload_ids?: string[]
+  group_id?: string
+  selector?: Record<string, string>
+  since?: string
+  until?: string
+}
+
+export interface ReportIncludeOptions {
+  workload_summary: boolean
+  config_history: boolean
+  current_config: boolean
+  config_plan: boolean
+  drift_findings: boolean
+  version_intelligence: boolean
+  alerts: boolean
+  workload_events: boolean
+  rollback_readiness: boolean
+  audit_verification: boolean
+  signed_audit_metadata?: boolean
+}
+
+export interface ReportExportRequest {
+  schema_version: ReportExportRequestSchemaVersion
+  report_type: EvidenceReportType
+  scope: ReportScope
+  include: ReportIncludeOptions
+  redaction: ReportRedactionMode
+}
+
+export interface ReportScopeResolved {
+  workload_ids?: string[]
+  workload_count?: number
+  group_id?: string
+  selector?: Record<string, string>
+  since?: string
+  until?: string
+  requested_scope?: ReportScope
+}
+
+export interface EvidenceItem {
+  id: string
+  resource: string
+  resource_id: string
+  observed_at?: string
+  severity?: string
+  summary: string
+  facts: Record<string, unknown>
+  content_hash?: string
+  redacted: boolean
+}
+
+export interface EvidenceTable {
+  columns: string[]
+  rows: string[][]
+}
+
+export interface EvidenceSection {
+  id: string
+  title: string
+  order: number
+  items: EvidenceItem[]
+  csv_table?: EvidenceTable
+}
+
+export interface ReportSignature {
+  scheme: ReportSignatureScheme
+  key_id?: string
+  signed_at: string
+  payload_hash: string
+  signature_b64?: string
+  verifier?: string
+}
+
+export interface SignedAuditReportMetadata {
+  status: string
+  verifier: string
+  verified_from?: string
+  verified_until?: string
+  head_hash?: string
+  checked_at: string
+  first_bad_sequence?: number
+}
+
+export interface ReportWarning {
+  code: string
+  message: string
+}
+
+export interface EvidencePack {
+  schema_version: EvidencePackSchemaVersion
+  generated_at: string
+  inputs_hash: string
+  report_hash: string
+  scope: ReportScopeResolved
+  sections: EvidenceSection[]
+  signatures?: ReportSignature[]
+  signed_audit?: SignedAuditReportMetadata
+  warnings?: ReportWarning[]
+}
+
+export interface ReportExportErrorResponse extends APIErrorResponse {
+  fallback_format?: ReportExportFormat
+}
+
+export const REPORT_EXPORT_CSV_COLUMNS = [
+  'section_id',
+  'item_id',
+  'resource',
+  'resource_id',
+  'observed_at',
+  'severity',
+  'summary',
+  'key',
+  'value',
+  'content_hash',
+  'redacted',
+] as const
+
 export interface APIErrorResponse {
   error?: string
   code?: string

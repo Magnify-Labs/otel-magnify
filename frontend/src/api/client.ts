@@ -14,6 +14,9 @@ import type {
   DefaultRollbackResponse,
   ConfigApplicationPlan,
   ConfigApplicationPlanExportFormat,
+  EvidencePack,
+  ReportExportFormat,
+  ReportExportRequest,
   ValidationResult,
   PushActivityPoint,
   PushGroup,
@@ -251,6 +254,19 @@ export const pushesAPI = {
 
 export const configSafetyAPI = {
   drift: () => api.get<ConfigDriftDashboard>('/config-safety/drift').then((r) => r.data),
+}
+
+export const reportsAPI = {
+  previewEvidencePack: (request: ReportExportRequest) =>
+    api.post<EvidencePack>('/reports/evidence-pack', request).then((r) => r.data),
+  exportEvidencePack: (format: ReportExportFormat, request: ReportExportRequest) =>
+    api
+      .post<Blob>('/reports/evidence-pack/export', request, {
+        headers: { 'Content-Type': 'application/json' },
+        params: { format },
+        responseType: 'blob',
+      })
+      .then((r) => r.data),
 }
 
 export const authAPI = {
