@@ -30,6 +30,8 @@ import type {
   CanaryStatus,
   CanaryValidationResult,
   ConfigDriftDashboard,
+  EvidenceReport,
+  EvidenceReportExportFormat,
   FleetVersionIntelligence,
 } from '../types'
 
@@ -251,6 +253,25 @@ export const pushesAPI = {
 
 export const configSafetyAPI = {
   drift: () => api.get<ConfigDriftDashboard>('/config-safety/drift').then((r) => r.data),
+  report: (recommendedVersion?: string) =>
+    api
+      .get<EvidenceReport>('/reports/config-safety', {
+        params: {
+          format: 'json' as EvidenceReportExportFormat,
+          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
+        },
+      })
+      .then((r) => r.data),
+  exportReport: (format: Exclude<EvidenceReportExportFormat, 'json'>, recommendedVersion?: string) =>
+    api
+      .get<Blob>('/reports/config-safety', {
+        params: {
+          format,
+          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
+        },
+        responseType: 'blob',
+      })
+      .then((r) => r.data),
 }
 
 export const authAPI = {
