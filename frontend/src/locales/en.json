@@ -62,12 +62,23 @@
       "below_reason": "Collector is below the recommended version.",
       "unsupported_title": "{{path}} uses unsupported {{component}}",
       "unsupported_reason": "Collector capabilities do not support this component.",
+      "recommendations_label": "Actionable recommendations",
       "status": {
         "below_recommended": "Below recommended",
         "at_recommended": "At recommended",
         "above_recommended": "Above recommended",
         "unknown": "Unknown",
         "not_applicable": "N/A"
+      },
+      "action_label": {
+        "upgrade_collector": "Upgrade collector",
+        "choose_older_config": "Choose older config",
+        "remove_component": "Remove or replace component"
+      },
+      "recommendation": {
+        "upgrade_collector": "Upgrade the collector before applying this config.",
+        "choose_older_config": "Choose an older compatible config for the current collector capabilities.",
+        "remove_component": "Remove or replace {{component}} before applying this config."
       },
       "action": {
         "upgrade_collector": "Upgrade collector to {{version}}",

@@ -378,6 +378,34 @@
   font-size: 0.76rem;
 }
 
+.version-intelligence-recommendations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+  padding: 0;
+  list-style: none;
+}
+
+.version-intelligence-recommendation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  color: var(--text);
+  font-size: 0.76rem;
+}
+
+.version-intelligence-recommendation-label {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  background: var(--surface);
+  color: var(--text-hi);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
 .version-intelligence-action {
   max-width: 46%;
   color: var(--text-hi);

@@ -62,12 +62,23 @@
       "below_reason": "Le collecteur est sous la version recommandée.",
       "unsupported_title": "{{path}} utilise {{component}} non supporté",
       "unsupported_reason": "Les capacités du collecteur ne supportent pas ce composant.",
+      "recommendations_label": "Recommandations actionnables",
       "status": {
         "below_recommended": "Sous recommandation",
         "at_recommended": "À la recommandation",
         "above_recommended": "Au-dessus",
         "unknown": "Inconnu",
         "not_applicable": "N/A"
+      },
+      "action_label": {
+        "upgrade_collector": "Mettre à niveau le collecteur",
+        "choose_older_config": "Choisir une config plus ancienne",
+        "remove_component": "Retirer ou remplacer le composant"
+      },
+      "recommendation": {
+        "upgrade_collector": "Mettez à niveau le collecteur avant d’appliquer cette config.",
+        "choose_older_config": "Choisissez une config plus ancienne compatible avec les capacités actuelles du collecteur.",
+        "remove_component": "Retirez ou remplacez {{component}} avant d’appliquer cette config."
       },
       "action": {
         "upgrade_collector": "Mettre à niveau vers {{version}}",

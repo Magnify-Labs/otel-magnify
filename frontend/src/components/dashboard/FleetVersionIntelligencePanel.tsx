@@ -27,13 +27,22 @@ function recommendationByAction(
   action: FleetVersionRecommendationAction,
   workloadId: string,
   component?: string,
+  configHash?: string,
 ) {
   return recommendations.find(
     (r) =>
       r.action === action &&
       r.workload_id === workloadId &&
+      (!configHash || !r.config_hash || r.config_hash === configHash) &&
       (!component || !r.components || r.components.includes(component)),
   )
+}
+
+function actionItemKey(
+  action: FleetVersionRecommendationAction,
+  component: FleetUnsupportedComponentFinding,
+) {
+  return `${component.workload_id}:${component.config_hash}:${component.component_type}:${action}`
 }
 
 function normalizeSemver(version: string) {
@@ -195,13 +204,50 @@ function UnsupportedComponentFinding({
     'choose_older_config',
     component.workload_id,
     component.component_type,
+    component.config_hash,
   )
   const removeComponent = recommendationByAction(
     recommendations,
     'remove_component',
     component.workload_id,
     component.component_type,
+    component.config_hash,
   )
+  const upgradeCollector = recommendationByAction(
+    recommendations,
+    'upgrade_collector',
+    component.workload_id,
+    component.component_type,
+  )
+  const actionItems: Array<{
+    action: FleetVersionRecommendationAction
+    label: string
+    reason: string
+  }> = [
+    {
+      action: 'upgrade_collector',
+      label: t('dashboard.version_intelligence.action_label.upgrade_collector'),
+      reason:
+        upgradeCollector?.reason ??
+        t('dashboard.version_intelligence.recommendation.upgrade_collector'),
+    },
+    {
+      action: 'choose_older_config',
+      label: t('dashboard.version_intelligence.action_label.choose_older_config'),
+      reason:
+        chooseOlder?.reason ??
+        t('dashboard.version_intelligence.recommendation.choose_older_config'),
+    },
+    {
+      action: 'remove_component',
+      label: t('dashboard.version_intelligence.action_label.remove_component'),
+      reason:
+        removeComponent?.reason ??
+        t('dashboard.version_intelligence.recommendation.remove_component', {
+          component: component.component_type,
+        }),
+    },
+  ]
 
   return (
     <article className="version-intelligence-finding version-intelligence-finding-warning">
@@ -212,11 +258,21 @@ function UnsupportedComponentFinding({
             component: component.component_type,
           })}
         </div>
-        <p>
-          {chooseOlder?.reason ??
-            removeComponent?.reason ??
-            t('dashboard.version_intelligence.unsupported_reason')}
-        </p>
+        <p>{t('dashboard.version_intelligence.unsupported_reason')}</p>
+        <ul
+          className="version-intelligence-recommendations"
+          aria-label={t('dashboard.version_intelligence.recommendations_label')}
+        >
+          {actionItems.map((item) => (
+            <li
+              className="version-intelligence-recommendation"
+              key={actionItemKey(item.action, component)}
+            >
+              <span className="version-intelligence-recommendation-label">{item.label}</span>
+              <span>{item.reason}</span>
+            </li>
+          ))}
+        </ul>
       </div>
       <span className="version-intelligence-action">
         {t('dashboard.version_intelligence.action.unsupported_component', {
