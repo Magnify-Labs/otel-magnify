@@ -220,6 +220,7 @@ test.beforeEach(async ({ loggedInPage: page }) => {
   await mockMe(page, { groups: [editorGroup] })
   await mockConfigsList(page, [])
   await mockKnownGoodMissing(page)
+  await mockApprovalList(page)
 })
 
 const PUSH_STATUS_LABEL_CASES = [
@@ -404,11 +405,11 @@ test('validate exposes errors and blocks push', async ({ loggedInPage: page }) =
     .click()
 
   await expect(page.locator('.validation-errors')).toContainText('undefined_component')
-  // Push stays disabled
-  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+  // Approval flow remains unavailable until validation succeeds and a plan is generated.
+  await expect(page.getByRole('button', { name: 'Request approval' })).toHaveCount(0)
 })
 
-test('valid config shows plan counters before push', async ({ loggedInPage: page }) => {
+test('valid config shows plan counters before approval request', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -435,7 +436,229 @@ test('valid config shows plan counters before push', async ({ loggedInPage: page
   await expect(plan).toContainText('Validation OK')
   await expect(plan).toContainText('High-risk changes')
   await expect(plan).toContainText('test-collector')
-  await expect(page.getByRole('button', { name: 'Push' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Request approval' })).toBeDisabled()
+  await page.getByLabel('Approval request comment').fill('please review prod change')
+  await page.getByLabel('I acknowledge this targets production').check()
+  await expect(page.getByRole('button', { name: 'Request approval' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Push approved config' })).toHaveCount(0)
+})
+
+function approvalRequest(overrides: Record<string, unknown> = {}) {
+  const now = '2026-06-30T10:15:00.000Z'
+  return {
+    id: 'approval-1',
+    workload_id: WORKLOAD_ID,
+    draft_yaml: 'receivers:\n  otlp: {}\n # touched',
+    target_group: 'single',
+    target_env: 'prod',
+    status: 'pending',
+    requested_by: 'operator@example.com',
+    requested_at: now,
+    request_comment: 'please review prod change',
+    prod_confirmation: true,
+    ...overrides,
+  }
+}
+
+function mockApprovalList(page: Page, approvals: unknown[] = []) {
+  return page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals`, async (route, request) => {
+    if (request.method() === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(approvals) })
+      return
+    }
+    await route.continue()
+  })
+}
+
+async function prepareApprovedDraft(page: Page) {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
+  await mockApprovalList(page)
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.locator('.cm-content').first().click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' # touched')
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+}
+
+async function requestAndApproveDraft(page: Page) {
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals`, async (route, request) => {
+    if (request.method() !== 'POST') return route.continue()
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(approvalRequest()),
+    })
+  })
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals/approval-1/approve`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        approvalRequest({
+          status: 'approved',
+          approved_by: 'alice@example.com',
+          approved_at: '2026-06-30T10:16:00.000Z',
+          approval_comment: 'approved after review',
+        }),
+      ),
+    }),
+  )
+
+  await page.getByLabel('Approval request comment').fill('please review prod change')
+  await page.getByLabel('I acknowledge this targets production').check()
+  await page.getByRole('button', { name: 'Request approval' }).click()
+  await page.getByLabel('Approval comment').fill('approved after review')
+  await page.getByRole('button', { name: 'Approve request' }).click()
+  await expect(page.locator('.config-approval-panel')).toContainText('Approved by alice@example.com')
+}
+
+test('approval request and production push require comments and double confirmation', async ({
+  loggedInPage: page,
+}) => {
+  await prepareApprovedDraft(page)
+
+  let requestBody: Record<string, unknown> | null = null
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals`, async (route, request) => {
+    if (request.method() !== 'POST') return route.continue()
+    requestBody = request.postDataJSON() as Record<string, unknown>
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(approvalRequest()),
+    })
+  })
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals/approval-1/approve`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        approvalRequest({
+          status: 'approved',
+          approved_by: 'alice@example.com',
+          approved_at: '2026-06-30T10:16:00.000Z',
+          approval_comment: 'approved after review',
+        }),
+      ),
+    }),
+  )
+
+  await expect(page.getByRole('button', { name: 'Request approval' })).toBeDisabled()
+  await page.getByLabel('Approval request comment').fill('please review prod change')
+  await page.getByLabel('I acknowledge this targets production').check()
+  await page.getByRole('button', { name: 'Request approval' }).click()
+  await expect.poll(() => requestBody).toMatchObject({
+    target_group: 'single',
+    target_env: 'prod',
+    comment: 'please review prod change',
+    prod_confirmation: true,
+  })
+
+  await expect(page.locator('.config-approval-panel')).toContainText('Approval requested')
+  await page.getByLabel('Approval comment').fill('approved after review')
+  await page.getByRole('button', { name: 'Approve request' }).click()
+  await expect(page.locator('.config-approval-panel')).toContainText('Approved by alice@example.com')
+  await expect(page.getByRole('button', { name: 'Push approved config' })).toBeDisabled()
+
+  let pushBody: Record<string, unknown> | null = null
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals/approval-1/push`, async (route, request) => {
+    pushBody = request.postDataJSON() as Record<string, unknown>
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        approvalRequest({
+          status: 'pushed',
+          config_hash: 'feedfacefeedface',
+          pushed_at: '2026-06-30T10:17:00.000Z',
+        }),
+      ),
+    })
+  })
+  await page.getByLabel('Production push comment').fill('roll out during approved window')
+  await page.getByLabel('I understand this changes production telemetry').check()
+  await page.getByLabel('I confirm the safety plan and approval are current').check()
+  await page.getByRole('button', { name: 'Push approved config' }).click()
+
+  await expect.poll(() => pushBody).toMatchObject({
+    comment: 'roll out during approved window',
+    prod_double_confirmed: true,
+    break_glass: false,
+  })
+  await expect(page.locator('.config-approval-panel')).toContainText('Pushed')
+})
+
+test('break-glass push is visually distinct and requires an audited reason', async ({
+  loggedInPage: page,
+}) => {
+  await prepareApprovedDraft(page)
+
+  let pushBody: Record<string, unknown> | null = null
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals`, async (route, request) => {
+    if (request.method() !== 'POST') return route.continue()
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(approvalRequest()),
+    })
+  })
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals/approval-1/push`, async (route, request) => {
+    pushBody = request.postDataJSON() as Record<string, unknown>
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        approvalRequest({
+          id: 'break-glass',
+          status: 'pushed',
+          break_glass: true,
+          break_glass_reason: 'prod outage mitigation',
+          config_hash: 'feedfacefeedface',
+          pushed_at: '2026-06-30T10:18:00.000Z',
+        }),
+      ),
+    })
+  })
+
+  await page.getByLabel('Approval request comment').fill('please review prod change')
+  await page.getByLabel('I acknowledge this targets production').check()
+  await page.getByRole('button', { name: 'Request approval' }).click()
+  await page.getByLabel('Use break-glass emergency push').check()
+  await expect(page.locator('.config-approval-panel')).toContainText('Break-glass emergency path')
+  await expect(page.getByRole('button', { name: 'Break-glass push' })).toBeDisabled()
+  await page.getByLabel('Break-glass reason').fill('prod outage mitigation')
+  await page.getByLabel('I understand this changes production telemetry').check()
+  await page.getByLabel('I confirm the safety plan and approval are current').check()
+  await page.getByRole('button', { name: 'Break-glass push' }).click()
+
+  await expect.poll(() => pushBody).toMatchObject({
+    comment: 'prod outage mitigation',
+    break_glass: true,
+    break_glass_reason: 'prod outage mitigation',
+    prod_double_confirmed: true,
+  })
+  await expect(page.locator('.config-approval-panel')).toContainText('Break-glass pushed')
+})
+
+test('viewer cannot request approval, approve, or push config', async ({ loggedInPage: page }) => {
+  await mockMe(page, { groups: [viewerGroup] })
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockApprovalList(page, [approvalRequest({ status: 'approved', approved_by: 'alice@example.com' })])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Request approval' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Approve request' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Push approved config|Break-glass push/ })).toHaveCount(0)
 })
 
 test('canary wizard validates a percentage target group before starting canary', async ({
@@ -646,7 +869,7 @@ test('plan blocks push for validation failure and read-only targets with reasons
   await expect(plan).toContainText('Push blocked')
   await expect(plan).toContainText('Read-only')
   await expect(plan).toContainText('component_not_installed')
-  await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Push approved config' })).toHaveCount(0)
 })
 
 test('plan surfaces high-risk changes reported by backend', async ({ loggedInPage: page }) => {
@@ -878,7 +1101,7 @@ test('validation details separate non-blocking warnings from blocking errors', a
   await expect(details.locator('.validation-check-card-warning')).toContainText(
     'otelcol_version_mismatch',
   )
-  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Request approval' })).toHaveCount(0)
 })
 
 test('validation details explain when otelcol runtime check is skipped', async ({
@@ -931,7 +1154,7 @@ test('validation details explain when otelcol runtime check is skipped', async (
   await expect(details).toContainText('Skipped')
   await expect(details).toContainText('otelcol binary "otelcol" was not found on the server.')
   await expect(page.getByRole('button', { name: 'Generate safety plan' })).toBeEnabled()
-  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Request approval' })).toHaveCount(0)
 })
 
 test('push timeline renders aggregate progress and per-instance details', async ({
@@ -1126,11 +1349,17 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
   await mockPlan(page, buildPlan())
-  await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) =>
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals/approval-1/push`, (route) =>
     route.fulfill({
       status: 202,
       contentType: 'application/json',
-      body: JSON.stringify({ status: 'config push initiated', config_hash: 'deadbeefdeadbeef' }),
+      body: JSON.stringify(
+        approvalRequest({
+          status: 'pushed',
+          config_hash: 'deadbeefdeadbeef',
+          pushed_at: '2026-06-30T10:17:00.000Z',
+        }),
+      ),
     }),
   )
 
@@ -1144,7 +1373,11 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   await expect(page.locator('.validation-ok')).toBeVisible()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
   await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
-  await page.getByRole('button', { name: 'Push' }).click()
+  await requestAndApproveDraft(page)
+  await page.getByLabel('Production push comment').fill('roll out during approved window')
+  await page.getByLabel('I understand this changes production telemetry').check()
+  await page.getByLabel('I confirm the safety plan and approval are current').check()
+  await page.getByRole('button', { name: 'Push approved config' }).click()
 
   // Simulate FAILED WS event
   await page.evaluate(() => {
@@ -1234,11 +1467,17 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
   await mockPlan(page, buildPlan())
-  await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) =>
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals/approval-1/push`, (route) =>
     route.fulfill({
       status: 202,
       contentType: 'application/json',
-      body: JSON.stringify({ status: 'config push initiated', config_hash: 'feedfacefeedface' }),
+      body: JSON.stringify(
+        approvalRequest({
+          status: 'pushed',
+          config_hash: 'feedfacefeedface',
+          pushed_at: '2026-06-30T10:17:00.000Z',
+        }),
+      ),
     }),
   )
 
@@ -1252,10 +1491,11 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   await expect(page.locator('.validation-ok')).toBeVisible()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
   await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
-  await page.getByRole('button', { name: 'Push' }).click()
-
-  // While the push is pending, the Push button switches to Applying...
-  await expect(page.getByRole('button', { name: /Applying/ })).toBeVisible()
+  await requestAndApproveDraft(page)
+  await page.getByLabel('Production push comment').fill('roll out during approved window')
+  await page.getByLabel('I understand this changes production telemetry').check()
+  await page.getByLabel('I confirm the safety plan and approval are current').check()
+  await page.getByRole('button', { name: 'Push approved config' }).click()
 
   // Simulate APPLIED WS event matching our pending hash
   await page.evaluate(() => {
@@ -1272,7 +1512,7 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   })
 
   // Edit mode closed — the editor toolbar buttons are gone, the Edit entry-point is back
-  await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Push approved config' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Validate for this collector' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
 
@@ -1745,7 +1985,7 @@ test('capable user sees enabled push scope selector and preview buckets', async 
   await expect(page.locator('.push-preview-warning')).toContainText(
     'Blocked targets must be excluded',
   )
-  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Request approval' })).toHaveCount(0)
 })
 
 test('saved group blocked preview cannot submit an accidental config push', async ({
@@ -1780,12 +2020,8 @@ test('saved group blocked preview cannot submit an accidental config push', asyn
   await expect(page.locator('.push-preview-warning')).toContainText(
     'Blocked targets must be excluded',
   )
-  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Push' })).toHaveAttribute(
-    'title',
-    'Bulk push requires a backend push endpoint; use preview to verify scope safety.',
-  )
-  await page.getByRole('button', { name: 'Push' }).dispatchEvent('click')
+  await expect(page.getByRole('button', { name: 'Request approval' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Push approved config' })).toHaveCount(0)
   expect(pushRequestCount).toBe(0)
 })
 
@@ -1822,12 +2058,8 @@ test('dynamic all-capable preview stays preview-only and does not push bulk targ
   await expect(page.locator('.push-preview-panel')).toContainText('3 targeted')
   await expect(page.locator('.push-preview-panel')).toContainText('3 capable')
   await expect(page.locator('.push-preview-ready')).toContainText('Ready to push')
-  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Push' })).toHaveAttribute(
-    'title',
-    'Bulk push requires a backend push endpoint; use preview to verify scope safety.',
-  )
-  await page.getByRole('button', { name: 'Push' }).dispatchEvent('click')
+  await expect(page.getByRole('button', { name: 'Request approval' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Push approved config' })).toHaveCount(0)
   expect(pushRequestCount).toBe(0)
 })
 
@@ -1839,13 +2071,6 @@ test('single collector scope still generates a plan and submits the workload con
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
   await mockPlan(page, buildPlan())
-  await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) =>
-    route.fulfill({
-      status: 202,
-      contentType: 'application/json',
-      body: JSON.stringify({ status: 'config push initiated', config_hash: 'feedfacefeedface' }),
-    }),
-  )
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
@@ -1858,12 +2083,29 @@ test('single collector scope still generates a plan and submits the workload con
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
   await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
 
-  const pushRequest = page.waitForRequest(`**/api/workloads/${WORKLOAD_ID}/config`)
-  await page.getByRole('button', { name: 'Push' }).click()
+  await requestAndApproveDraft(page)
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/approvals/approval-1/push`, (route) =>
+    route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        approvalRequest({
+          status: 'pushed',
+          config_hash: 'feedfacefeedface',
+          pushed_at: '2026-06-30T10:17:00.000Z',
+        }),
+      ),
+    }),
+  )
+  const pushRequest = page.waitForRequest(`**/api/workloads/${WORKLOAD_ID}/config/approvals/approval-1/push`)
+  await page.getByLabel('Production push comment').fill('roll out during approved window')
+  await page.getByLabel('I understand this changes production telemetry').check()
+  await page.getByLabel('I confirm the safety plan and approval are current').check()
+  await page.getByRole('button', { name: 'Push approved config' }).click()
   const request = await pushRequest
 
-  expect(request.postData()).toContain('# single-scope-regression')
-  await expect(page.getByRole('button', { name: /Applying/ })).toBeVisible()
+  expect(request.postDataJSON()).toMatchObject({ comment: 'roll out during approved window' })
+  await expect(page.locator('.config-approval-panel')).toContainText('Pushed')
 })
 
 test('viewer permission keeps config push controls read-only', async ({ loggedInPage: page }) => {
@@ -1908,7 +2150,7 @@ test('viewer permission keeps config push controls read-only', async ({ loggedIn
   await expect(page.locator('.push-scope-panel')).toHaveCount(0)
   await expect(page.locator('.push-preview-panel')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Validate for this collector' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Push approved config' })).toHaveCount(0)
 })
 
 test('French scope UX renders translated labels and blocked preview copy', async ({

@@ -693,6 +693,39 @@
           "rollback_unavailable": "Statut de rollback indisponible",
           "redacted": "Détails d’erreur de config distante masqués"
         }
+      },
+      "approval": {
+        "title": "Flux d’approbation",
+        "help": "Créez une demande de brouillon validé, enregistrez l’approbation, puis poussez avec confirmations production.",
+        "request_comment": "Commentaire de demande d’approbation",
+        "prod_request_ack": "Je reconnais que cela cible la production",
+        "request": "Demander l’approbation",
+        "requesting": "Demande en cours…",
+        "approval_comment": "Commentaire d’approbation",
+        "approve": "Approuver la demande",
+        "approving": "Approbation en cours…",
+        "approved_by": "Approuvé par {{user}}",
+        "push_comment": "Commentaire de push production",
+        "prod_impact_ack": "Je comprends que cela modifie la télémétrie de production",
+        "prod_safety_ack": "Je confirme que le safety plan et l’approbation sont à jour",
+        "push_approved": "Pousser la config approuvée",
+        "pushed": "Poussé",
+        "break_glass_toggle": "Utiliser le push d’urgence break-glass",
+        "break_glass_title": "Chemin d’urgence break-glass",
+        "break_glass_help": "Cela contourne l’approbation normale et émet un événement d’audit distinct. À utiliser uniquement pour mitiger un incident actif.",
+        "break_glass_reason": "Raison break-glass",
+        "break_glass_push": "Push break-glass",
+        "break_glass_pushed": "Push break-glass effectué",
+        "request_failed": "Échec de la demande d’approbation",
+        "approve_failed": "Échec de l’approbation",
+        "push_failed": "Échec du push approuvé",
+        "status": {
+          "draft": "Brouillon",
+          "pending": "Approbation demandée",
+          "approved": "Prêt à pousser",
+          "pushed": "Poussé",
+          "break_glass": "Push break-glass effectué"
+        }
       }
     }
   },

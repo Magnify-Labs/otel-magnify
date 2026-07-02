@@ -293,6 +293,34 @@ export interface WorkloadKnownGoodConfig {
   content_available: boolean
 }
 
+export type ConfigApprovalStatus = 'pending' | 'approved' | 'pushed' | string
+
+export interface ConfigApprovalRequest {
+  id: string
+  workload_id: string
+  draft_yaml: string
+  target_group: string
+  target_env?: string
+  requester?: string
+  requested_by?: string
+  request_comment: string
+  approver?: string
+  approval_comment?: string
+  status: ConfigApprovalStatus
+  approved_by?: string
+  approved_at?: string
+  push_comment?: string
+  prod_target: boolean
+  prod_confirmation: boolean
+  prod_double_confirmed: boolean
+  break_glass: boolean
+  break_glass_reason?: string
+  config_hash?: string
+  created_at: string
+  updated_at: string
+  pushed_at?: string
+}
+
 export interface MarkKnownGoodResponse {
   changed: boolean
   replaced_config_id?: string
