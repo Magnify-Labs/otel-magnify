@@ -351,6 +351,7 @@ test('config safety shows read-only collector caveat and no enabled push CTA', a
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
   await mockConfigsList(page, [])
+  await mockPlan(page, buildPlan({ can_push: false, apply_allowed: false }))
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
 
@@ -446,6 +447,7 @@ test('canary wizard validates a percentage target group before starting canary',
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
   await mockPlan(page, buildPlan())
+  await mockInstances(page)
   await mockCanaryValidation(page, {
     valid: true,
     targets: [
@@ -476,6 +478,7 @@ test('canary validation expires when the draft changes before push', async ({
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
   await mockPlan(page, buildPlan())
+  await mockInstances(page)
   await mockCanaryValidation(page, {
     valid: true,
     targets: [{ instance_uid: 'inst-a', pod_name: 'otel-a', status: 'sent' }],
@@ -504,6 +507,7 @@ test('canary validation failure blocks submit and explains stop reason', async (
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
   await mockPlan(page, buildPlan())
+  await mockInstances(page)
   await mockCanaryValidation(
     page,
     {
@@ -537,6 +541,7 @@ test('canary status panel shows stop reasons and action states', async ({ logged
   await mockHistory(page, [])
   await mockValidate(page, { valid: true })
   await mockPlan(page, buildPlan())
+  await mockInstances(page)
   await mockCanaryValidation(page, {
     valid: true,
     targets: [{ instance_uid: 'inst-a', pod_name: 'otel-a', status: 'sent' }],
@@ -1250,7 +1255,7 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   await page.getByRole('button', { name: 'Push' }).click()
 
   // While the push is pending, the Push button switches to Applying...
-  await expect(page.getByRole('button', { name: 'Applying...' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Applying/ })).toBeVisible()
 
   // Simulate APPLIED WS event matching our pending hash
   await page.evaluate(() => {
@@ -1427,6 +1432,26 @@ function mockStartCanary(page: Page, result: Record<string, unknown>) {
       status: 202,
       contentType: 'application/json',
       body: JSON.stringify(result),
+    }),
+  )
+}
+
+function mockInstances(page: Page) {
+  return page.route(`**/api/workloads/${WORKLOAD_ID}/instances`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          instance_uid: 'inst-a',
+          pod_name: 'otel-a',
+          version: '0.98.0',
+          connected_at: new Date().toISOString(),
+          last_message_at: new Date().toISOString(),
+          effective_config_hash: 'abc123',
+          healthy: true,
+        },
+      ]),
     }),
   )
 }
@@ -1838,6 +1863,7 @@ test('single collector scope still generates a plan and submits the workload con
   const request = await pushRequest
 
   expect(request.postData()).toContain('# single-scope-regression')
+  await expect(page.getByRole('button', { name: /Applying/ })).toBeVisible()
 })
 
 test('viewer permission keeps config push controls read-only', async ({ loggedInPage: page }) => {
