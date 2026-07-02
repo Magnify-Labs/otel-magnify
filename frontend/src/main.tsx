@@ -13,6 +13,7 @@ import Workloads from './pages/Workloads'
 import WorkloadDetail from './pages/WorkloadDetail'
 import Configs from './pages/Configs'
 import Alerts from './pages/Alerts'
+import Audit from './pages/Audit'
 import Profile from './pages/Profile'
 import Admin from './pages/Admin'
 import SSOProviders from './pages/admin/sso/Providers'
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
           { path: '/workloads/:id', element: <WorkloadDetail /> },
           { path: '/configs', element: <Configs /> },
           { path: '/alerts', element: <Alerts /> },
+          { path: '/audit', element: <Audit /> },
           { path: '/profile', element: <Profile /> },
           { path: '/admin', element: <Admin /> },
           { path: '/admin/sso/providers', element: <SSOProviders /> },
