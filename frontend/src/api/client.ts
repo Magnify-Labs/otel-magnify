@@ -22,6 +22,8 @@ import type {
   PushGroup,
   PushPreview,
   PushPreviewRequest,
+  AuditEventFilters,
+  AuditEventPage,
   MeResponse,
   UserPreferences,
   RollbackPrepareResponse,
@@ -250,6 +252,35 @@ export const pushesAPI = {
   groups: () => api.get<PushGroup[]>('/push-groups').then((r) => r.data ?? []),
   preview: (request: PushPreviewRequest) =>
     api.post<PushPreview>('/pushes/preview', request).then((r) => r.data),
+}
+
+function auditParams(filters?: AuditEventFilters) {
+  return filters && Object.keys(filters).length > 0 ? filters : undefined
+}
+
+export function buildAuditEventsCSVUrl(filters?: AuditEventFilters): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters ?? {})) {
+    if (value !== undefined && value !== null && `${value}`.trim() !== '') {
+      params.set(key, `${value}`)
+    }
+  }
+  const query = params.toString()
+  return query ? `/api/audit/events.csv?${query}` : '/api/audit/events.csv'
+}
+
+export const auditAPI = {
+  list: (filters?: AuditEventFilters) =>
+    api
+      .get<AuditEventPage>('/audit/events', { params: auditParams(filters) })
+      .then((r) => ({ ...r.data, events: r.data.events ?? [] })),
+  exportCSV: (filters?: AuditEventFilters) =>
+    api
+      .get<Blob>('/audit/events.csv', {
+        params: auditParams(filters),
+        responseType: 'blob',
+      })
+      .then((r) => r.data),
 }
 
 export const configSafetyAPI = {

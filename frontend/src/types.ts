@@ -168,6 +168,44 @@ export interface WorkloadEvent {
   occurred_at: string
 }
 
+export interface AuditRecord {
+  id: string
+  occurred_at: string
+  action: string
+  user_id?: string
+  email?: string
+  resource?: string
+  resource_id?: string
+  workload_id?: string
+  config_hash?: string
+  detail?: string
+  prev_hash?: string
+  event_hash?: string
+  immutable_ref?: string
+}
+
+export interface AuditEventFilters {
+  user?: string
+  user_id?: string
+  email?: string
+  action?: string
+  resource_id?: string
+  workload_id?: string
+  config_hash?: string
+  from?: string
+  to?: string
+  limit?: number
+  offset?: number
+}
+
+export interface AuditEventPage {
+  available: boolean
+  events: AuditRecord[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface EventsStats {
   connected: number
   disconnected: number

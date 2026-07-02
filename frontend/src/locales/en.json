@@ -9,6 +9,7 @@
       "inventory": "Inventory",
       "configs": "Configurations",
       "alerts": "Alerts",
+      "audit": "Audit",
       "profile": "Profile",
       "administration": "Administration",
       "config_drift": "Config drift"
@@ -103,6 +104,57 @@
         "failed": "At least one collector failed to apply remote config.",
         "applying": "A remote config change is applying."
       }
+    }
+  },
+  "audit": {
+    "title": "Audit events",
+    "subtitle": "Trace who changed telemetry configuration and when.",
+    "export_csv": "Export CSV",
+    "export_error": "CSV export failed.",
+    "error": "Audit events are unavailable.",
+    "access": {
+      "title": "Audit access required",
+      "body": "You do not have permission to view audit events."
+    },
+    "filters": {
+      "title": "Filters",
+      "hint": "Filter state is saved in the URL for refresh-safe investigations.",
+      "user": "User or email",
+      "action": "Action",
+      "workload": "Workload ID",
+      "resource": "Resource ID",
+      "config_hash": "Config hash",
+      "from": "Date from",
+      "to": "Date to",
+      "apply": "Apply filters"
+    },
+    "table": {
+      "title": "Event ledger",
+      "hint": "Latest matching audit events",
+      "count": "{{count}} events",
+      "no_links": "No config links",
+      "view_diff": "View diff",
+      "rollback": "Rollback",
+      "prev_hash": "Previous hash",
+      "event_hash": "Event hash",
+      "columns": {
+        "timestamp": "Timestamp",
+        "user": "User / email",
+        "action": "Action",
+        "resource": "Workload / resource",
+        "config_hash": "Config hash",
+        "chain": "Chain",
+        "detail": "Detail",
+        "links": "Links"
+      }
+    },
+    "unavailable": {
+      "title": "No readable audit sink is configured.",
+      "body": "Audit emission can still run, but this deployment has no queryable audit backend."
+    },
+    "empty": {
+      "title": "No audit events match the current filters.",
+      "body": "Adjust the filters or widen the date range."
     }
   },
   "workloads": {

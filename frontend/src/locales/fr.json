@@ -9,6 +9,7 @@
       "inventory": "Inventaire",
       "configs": "Configurations",
       "alerts": "Alertes",
+      "audit": "Audit",
       "profile": "Profil",
       "administration": "Administration",
       "config_drift": "Drift config"
@@ -103,6 +104,57 @@
         "failed": "Au moins un collecteur n’a pas appliqué la config distante.",
         "applying": "Un changement de config distante est en cours."
       }
+    }
+  },
+  "audit": {
+    "title": "Événements d’audit",
+    "subtitle": "Suivre qui a modifié la configuration télémétrie et quand.",
+    "export_csv": "Exporter CSV",
+    "export_error": "L’export CSV a échoué.",
+    "error": "Les événements d’audit sont indisponibles.",
+    "access": {
+      "title": "Accès audit requis",
+      "body": "Vous n’avez pas la permission de consulter les événements d’audit."
+    },
+    "filters": {
+      "title": "Filtres",
+      "hint": "L’état des filtres est enregistré dans l’URL pour les investigations partageables.",
+      "user": "Utilisateur ou email",
+      "action": "Action",
+      "workload": "Workload ID",
+      "resource": "Resource ID",
+      "config_hash": "Hash config",
+      "from": "Date début",
+      "to": "Date fin",
+      "apply": "Appliquer les filtres"
+    },
+    "table": {
+      "title": "Journal des événements",
+      "hint": "Derniers événements d’audit correspondants",
+      "count": "{{count}} événements",
+      "no_links": "Aucun lien config",
+      "view_diff": "Voir le diff",
+      "rollback": "Rollback",
+      "prev_hash": "Hash précédent",
+      "event_hash": "Hash événement",
+      "columns": {
+        "timestamp": "Horodatage",
+        "user": "Utilisateur / email",
+        "action": "Action",
+        "resource": "Workload / resource",
+        "config_hash": "Hash config",
+        "chain": "Chaîne",
+        "detail": "Détail",
+        "links": "Liens"
+      }
+    },
+    "unavailable": {
+      "title": "Aucun sink d’audit lisible n’est configuré.",
+      "body": "L’émission d’audit peut continuer, mais ce déploiement n’a pas de backend d’audit interrogeable."
+    },
+    "empty": {
+      "title": "Aucun événement d’audit ne correspond aux filtres actuels.",
+      "body": "Ajustez les filtres ou élargissez la plage de dates."
     }
   },
   "workloads": {
