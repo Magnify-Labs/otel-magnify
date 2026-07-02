@@ -13,6 +13,7 @@ func TestHas_MatrixPerRole(t *testing.T) {
 		want bool
 	}{
 		{"viewer", PushConfig, false},
+		{"viewer", ViewAudit, false},
 		{"viewer", DeleteWorkload, false},
 		{"viewer", ManageUsers, false},
 		{"editor", PushConfig, true},
@@ -21,8 +22,10 @@ func TestHas_MatrixPerRole(t *testing.T) {
 		{"editor", ResolveAlert, true},
 		{"editor", ArchiveWorkload, true},
 		{"editor", DeleteWorkload, false},
+		{"editor", ViewAudit, false},
 		{"editor", ManageUsers, false},
 		{"administrator", PushConfig, true},
+		{"administrator", ViewAudit, true},
 		{"administrator", DeleteWorkload, true},
 		{"administrator", ManageUsers, true},
 		{"administrator", ManageSettings, true},
