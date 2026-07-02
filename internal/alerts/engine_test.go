@@ -243,6 +243,52 @@ func TestEvaluate_VersionOutdated(t *testing.T) {
 	}
 }
 
+func TestEvaluate_VersionOutdated_UsesSemanticVersionOrdering(t *testing.T) {
+	db := newTestDB(t)
+
+	db.UpsertWorkload(models.Workload{
+		ID: "semver-low", Type: "collector", Version: "0.9.0", Status: "connected",
+		LastSeenAt: time.Now().UTC(),
+		Labels:     models.Labels{}, FingerprintKeys: models.FingerprintKeys{},
+	})
+	db.UpsertWorkload(models.Workload{
+		ID: "semver-equal", Type: "collector", Version: "v0.100.0", Status: "connected",
+		LastSeenAt: time.Now().UTC(),
+		Labels:     models.Labels{}, FingerprintKeys: models.FingerprintKeys{},
+	})
+	db.UpsertWorkload(models.Workload{
+		ID: "semver-invalid", Type: "collector", Version: "not-a-version", Status: "connected",
+		LastSeenAt: time.Now().UTC(),
+		Labels:     models.Labels{}, FingerprintKeys: models.FingerprintKeys{},
+	})
+
+	engine := New(db, nil, 5*time.Minute, "0.10.0")
+	engine.Evaluate()
+
+	alerts, err := db.ListAlerts(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasAlert(alerts, "semver-low", "version_outdated") {
+		t.Fatalf("expected semver-low to be outdated, got %+v", alerts)
+	}
+	if hasAlert(alerts, "semver-equal", "version_outdated") {
+		t.Fatalf("v0.100.0 should equal 0.100.0 and not be outdated: %+v", alerts)
+	}
+	if hasAlert(alerts, "semver-invalid", "version_outdated") {
+		t.Fatalf("invalid versions should be unknown/non-crashing, not outdated: %+v", alerts)
+	}
+}
+
+func hasAlert(alerts []models.Alert, workloadID, rule string) bool {
+	for _, a := range alerts {
+		if a.WorkloadID == workloadID && a.Rule == rule {
+			return true
+		}
+	}
+	return false
+}
+
 func TestEvaluate_VersionOutdated_Resolves(t *testing.T) {
 	db := newTestDB(t)
 

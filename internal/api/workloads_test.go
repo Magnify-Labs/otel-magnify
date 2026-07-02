@@ -309,6 +309,138 @@ func TestListWorkloadInstances_EmptyArrayNotNull(t *testing.T) {
 	}
 }
 
+// --- Fleet version intelligence ---
+
+func TestFleetVersionIntelligence_EmptyFleet(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	req := authedRequest(t, "GET", "/api/workloads/version-intelligence?recommended_version=0.100.0")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["schema_version"] != "fleet-version-intelligence.v1" || body["recommended_version"] != "0.100.0" {
+		t.Fatalf("unexpected body header: %+v", body)
+	}
+	for _, key := range []string{"version_matrix", "collectors_below_recommended", "unsupported_config_components", "invalid_versions", "recommendations"} {
+		if items, ok := body[key].([]any); !ok || len(items) != 0 {
+			t.Fatalf("%s = %#v, want empty array", key, body[key])
+		}
+	}
+}
+
+func TestFleetVersionIntelligence_RequiresAuth(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/workloads/version-intelligence?recommended_version=0.100.0", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestFleetVersionIntelligence_MixedFleetRecommendations(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	workloads := []models.Workload{
+		{ID: "w-old", DisplayName: "collector old", Type: "collector", Version: "0.9.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}},
+		{ID: "w-equal", DisplayName: "collector equal", Type: "collector", Version: "v0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}},
+		{ID: "w-new", DisplayName: "collector new", Type: "collector", Version: "0.101.0", Status: "disconnected", LastSeenAt: now, Labels: models.Labels{"group": "dev"}, FingerprintKeys: models.FingerprintKeys{}},
+		{ID: "w-sdk", DisplayName: "sdk agent", Type: "sdk", Version: "0.1.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}},
+		{ID: "w-invalid", DisplayName: "collector invalid", Type: "collector", Version: "nightly", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}},
+		{ID: "w-empty", DisplayName: "collector empty", Type: "collector", Version: "", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}},
+	}
+	for _, wl := range workloads {
+		if err := db.UpsertWorkload(wl); err != nil {
+			t.Fatalf("UpsertWorkload(%s): %v", wl.ID, err)
+		}
+	}
+	unsupportedConfig := `receivers:
+  otlp: {}
+exporters:
+  datadog: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [datadog]
+`
+	unsupportedHash := configHash(unsupportedConfig)
+	if err := db.CreateConfig(models.Config{ID: unsupportedHash, Name: "unsupported", Content: unsupportedConfig, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w-old", ConfigID: unsupportedHash, AppliedAt: now, Status: "applied"}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := authedRequest(t, "GET", "/api/workloads/version-intelligence?recommended_version=0.100.0")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["recommended_version"] != "0.100.0" {
+		t.Fatalf("recommended_version = %v", body["recommended_version"])
+	}
+	matrix := body["version_matrix"].([]any)
+	if len(matrix) != 6 {
+		t.Fatalf("version_matrix len = %d, matrix=%+v", len(matrix), matrix)
+	}
+	assertVersionMatrixEntry(t, matrix, "prod", "collector", "connected", "0.9.0", 1)
+	assertVersionMatrixEntry(t, matrix, "prod", "sdk", "connected", "0.1.0", 1)
+	below := body["collectors_below_recommended"].([]any)
+	if len(below) != 1 || below[0].(map[string]any)["workload_id"] != "w-old" {
+		t.Fatalf("collectors_below_recommended = %+v", below)
+	}
+	invalid := body["invalid_versions"].([]any)
+	if len(invalid) != 2 || invalid[0].(map[string]any)["workload_id"] != "w-empty" || invalid[1].(map[string]any)["workload_id"] != "w-invalid" {
+		t.Fatalf("invalid_versions = %+v", invalid)
+	}
+	unsupported := body["unsupported_config_components"].([]any)
+	if len(unsupported) != 1 {
+		t.Fatalf("unsupported_config_components = %+v", unsupported)
+	}
+	if got := unsupported[0].(map[string]any)["component_type"]; got != "datadog" {
+		t.Fatalf("unsupported component_type = %v", got)
+	}
+	if got := unsupported[0].(map[string]any)["config_hash"]; got != unsupportedHash {
+		t.Fatalf("unsupported config_hash = %v", got)
+	}
+	assertRecommendationAction(t, body["recommendations"].([]any), "upgrade_collector")
+	assertRecommendationAction(t, body["recommendations"].([]any), "choose_older_config")
+	assertRecommendationAction(t, body["recommendations"].([]any), "remove_component")
+	if strings.Contains(rec.Body.String(), "receivers:") || strings.Contains(rec.Body.String(), "exporters:") {
+		t.Fatalf("response leaked raw config content: %s", rec.Body.String())
+	}
+}
+
+func assertVersionMatrixEntry(t *testing.T, matrix []any, group, typ, status, version string, count float64) {
+	t.Helper()
+	for _, item := range matrix {
+		entry := item.(map[string]any)
+		if entry["group"] == group && entry["type"] == typ && entry["status"] == status && entry["version"] == version && entry["count"] == count {
+			return
+		}
+	}
+	t.Fatalf("missing matrix entry group=%q type=%q status=%q version=%q count=%v in %+v", group, typ, status, version, count, matrix)
+}
+
+func assertRecommendationAction(t *testing.T, recommendations []any, action string) {
+	t.Helper()
+	for _, item := range recommendations {
+		if item.(map[string]any)["action"] == action {
+			return
+		}
+	}
+	t.Fatalf("missing recommendation action %q in %+v", action, recommendations)
+}
+
 // --- Events ---
 
 func TestListWorkloadEvents_NewestFirst(t *testing.T) {

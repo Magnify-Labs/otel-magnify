@@ -9,6 +9,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/magnify-labs/otel-magnify/internal/version"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -161,10 +162,11 @@ func (e *Engine) evaluateVersionOutdated(w models.Workload, now time.Time) {
 		return
 	}
 
-	// Lexicographic comparison works for semver strings with the same number
-	// of digits per segment (e.g. "0.9.0" < "0.10.0" would fail — acceptable
-	// for now; use semver library if stricter comparison is required).
-	isOutdated := w.Version < e.minVersion
+	cmp, ok := version.Compare(w.Version, e.minVersion)
+	if !ok {
+		return
+	}
+	isOutdated := cmp < 0
 
 	existing, _ := e.db.GetUnresolvedAlertByWorkloadAndRule(w.ID, "version_outdated")
 
