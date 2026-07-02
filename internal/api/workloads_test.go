@@ -534,6 +534,78 @@ func TestWorkloadEventsStats(t *testing.T) {
 	}
 }
 
+// --- Config safety drift dashboard ---
+
+func TestListConfigDriftSummarizesCollectorRiskSignals(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	now := time.Now().UTC()
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "wl-drift", DisplayName: "collector-prod", Type: "collector", Version: "0.88.0",
+		Status: "connected", LastSeenAt: now, Labels: models.Labels{"env": "prod"},
+		ActiveConfigHash: "expected-a", AcceptsRemoteConfig: true,
+		AvailableComponents: &models.AvailableComponents{Hash: "components-a", Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"otlp"}}},
+		RemoteConfigStatus:  &models.RemoteConfigStatus{Status: "applied", ConfigHash: "effective-b", UpdatedAt: now.Add(-time.Minute)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake.instances["wl-drift"] = []opamp.Instance{{InstanceUID: "uid-a", PodName: "pod-a", Version: "0.88.0", EffectiveConfigHash: "effective-b", Healthy: true}}
+	if err := db.CreateAlert(models.Alert{ID: "alert-drift", WorkloadID: "wl-drift", Rule: "config_drift", Severity: "critical", Message: "drift", FiredAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateAlert(models.Alert{ID: "alert-version", WorkloadID: "wl-drift", Rule: "version_outdated", Severity: "warning", Message: "old", FiredAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "wl-pending", DisplayName: "collector-staging", Type: "collector", Version: "0.100.0",
+		Status: "connected", LastSeenAt: now, Labels: models.Labels{"env": "staging"},
+		ActiveConfigHash: "expected-p", AcceptsRemoteConfig: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateConfig(models.Config{ID: "expected-p", Name: "pending", Content: validWorkloadConfig, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	sentAt := now.Add(-30 * time.Minute)
+	if err := db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "wl-pending", ConfigID: "expected-p", Status: models.PushStatusSent, AppliedAt: sentAt, SubmittedAt: sentAt, SentAt: &sentAt}); err != nil {
+		t.Fatal(err)
+	}
+	fake.instances["wl-pending"] = []opamp.Instance{{InstanceUID: "uid-p", PodName: "pod-p", Version: "0.100.0", Healthy: true}}
+
+	req := authedRequest(t, "GET", "/api/config-safety/drift")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body models.ConfigDriftDashboard
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode drift dashboard: %v", err)
+	}
+	if body.Summary.TotalCollectors != 2 || body.Summary.DriftedCollectors != 1 || body.Summary.PendingTooLong != 1 || body.Summary.MissingEffectiveConfig != 1 || body.Summary.OutdatedVersions != 1 {
+		t.Fatalf("summary = %+v", body.Summary)
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("items len = %d", len(body.Items))
+	}
+	byID := map[string]models.ConfigDriftItem{}
+	for _, item := range body.Items {
+		byID[item.WorkloadID] = item
+	}
+	drift := byID["wl-drift"]
+	if drift.Env != "prod" || drift.DriftStatus != "drifted" || drift.ExpectedConfigHash != "expected-a" || drift.EffectiveConfigHash != "effective-b" || !drift.HasConfigDriftAlert || !drift.HasVersionOutdatedAlert {
+		t.Fatalf("drift item = %+v", drift)
+	}
+	if len(drift.Actions) == 0 || drift.Actions["view_diff"].Enabled || drift.Actions["view_diff"].Reason == "" || drift.Actions["mark_ignored"].Enabled || drift.Actions["mark_ignored"].Reason == "" {
+		t.Fatalf("drift actions = %+v", drift.Actions)
+	}
+	pending := byID["wl-pending"]
+	if pending.DriftStatus != "missing_effective_config" || !pending.PendingTooLong || pending.LastPush == nil || pending.LastPush.Content != "" || pending.LastPush.PushedBy != "" || len(pending.LastPush.InstanceStatuses) != 0 || pending.Actions["push_expected"].Enabled != false || pending.Actions["rollback"].Enabled != false {
+		t.Fatalf("pending item = %+v", pending)
+	}
+}
+
 // --- Push / Validate ---
 
 func TestPushWorkloadConfig_HappyPath(t *testing.T) {

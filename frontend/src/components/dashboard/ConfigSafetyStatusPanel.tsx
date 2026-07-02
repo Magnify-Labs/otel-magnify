@@ -81,6 +81,9 @@ export default function ConfigSafetyStatusPanel({
           <Link className="config-safety-status-link" to="/inventory?control=supervised">
             {t('dashboard.config_safety.cta')}
           </Link>
+          <Link className="config-safety-status-link" to="/config-safety/drift">
+            {t('dashboard.config_safety.drift_cta')}
+          </Link>
         </>
       )}
     </section>

@@ -232,6 +232,58 @@ type PushActivityPoint struct {
 	Count int    `json:"count"`
 }
 
+// ConfigDriftAction describes whether a dashboard action is currently safe to
+// expose. Disabled actions carry an explicit operator-facing reason instead of
+// pretending the backend can execute an unsafe or unspecified operation.
+type ConfigDriftAction struct {
+	Enabled bool   `json:"enabled"`
+	Reason  string `json:"reason,omitempty"`
+	URL     string `json:"url,omitempty"`
+}
+
+// ConfigDriftSummary aggregates the fleet-level risk counters shown at the top
+// of the dedicated config safety drift dashboard.
+type ConfigDriftSummary struct {
+	TotalCollectors             int `json:"total_collectors"`
+	DriftedCollectors           int `json:"drifted_collectors"`
+	PendingTooLong              int `json:"pending_too_long"`
+	MissingEffectiveConfig      int `json:"missing_effective_config"`
+	RemoteConfigUnsupported     int `json:"remote_config_unsupported"`
+	OutdatedVersions            int `json:"outdated_versions"`
+	UnknownIncompleteComponents int `json:"unknown_incomplete_components"`
+	HeterogeneousGroups         int `json:"heterogeneous_groups"`
+}
+
+// ConfigDriftItem is one collector row in the config safety drift dashboard.
+type ConfigDriftItem struct {
+	WorkloadID                  string                       `json:"workload_id"`
+	Collector                   string                       `json:"collector"`
+	Env                         string                       `json:"env"`
+	Version                     string                       `json:"version"`
+	ExpectedConfigHash          string                       `json:"expected_config_hash,omitempty"`
+	EffectiveConfigHash         string                       `json:"effective_config_hash,omitempty"`
+	EffectiveConfigHashes       []string                     `json:"effective_config_hashes,omitempty"`
+	DriftStatus                 string                       `json:"drift_status"`
+	DriftReasons                []string                     `json:"drift_reasons,omitempty"`
+	LastPush                    *WorkloadConfig              `json:"last_push,omitempty"`
+	LastPushAgeSeconds          int64                        `json:"last_push_age_seconds,omitempty"`
+	PendingTooLong              bool                         `json:"pending_too_long"`
+	AcceptsRemoteConfig         bool                         `json:"accepts_remote_config"`
+	MissingEffectiveConfig      bool                         `json:"missing_effective_config"`
+	UnknownIncompleteComponents bool                         `json:"unknown_incomplete_components"`
+	GroupHeterogeneousConfig    bool                         `json:"group_heterogeneous_config"`
+	HasConfigDriftAlert         bool                         `json:"has_config_drift_alert"`
+	HasVersionOutdatedAlert     bool                         `json:"has_version_outdated_alert"`
+	Actions                     map[string]ConfigDriftAction `json:"actions"`
+}
+
+// ConfigDriftDashboard is the read model returned by /api/config-safety/drift.
+type ConfigDriftDashboard struct {
+	GeneratedAt time.Time          `json:"generated_at"`
+	Summary     ConfigDriftSummary `json:"summary"`
+	Items       []ConfigDriftItem  `json:"items"`
+}
+
 // Alert is one open or resolved alert raised by the alert engine.
 type Alert struct {
 	ID         string     `json:"id"`

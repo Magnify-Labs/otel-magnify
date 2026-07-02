@@ -10,7 +10,8 @@
       "configs": "Configurations",
       "alerts": "Alerts",
       "profile": "Profile",
-      "administration": "Administration"
+      "administration": "Administration",
+      "config_drift": "Config drift"
     },
     "footer": {
       "live": "LIVE"
@@ -49,6 +50,22 @@
     },
     "alerts": {
       "empty": "No active alerts"
+    },
+    "config_safety": {
+      "title": "Config safety status",
+      "hint": "Safe remote config across supervised collectors",
+      "loading": "Loading config safety…",
+      "error": "Unable to load config safety status.",
+      "supervised_collectors": "Supervised collectors",
+      "last_7d_pushes": "Last 7d pushes",
+      "cta": "Review supervised workloads",
+      "drift_cta": "Open fleet drift dashboard",
+      "status": {
+        "ready": "Validation, diff, safe push and rollback are available on workload detail pages.",
+        "empty": "No supervised collectors report remote config yet.",
+        "failed": "At least one collector failed to apply remote config.",
+        "applying": "A remote config change is applying."
+      }
     }
   },
   "workloads": {
@@ -614,6 +631,60 @@
       "id": "ID",
       "none": "—",
       "system": "system"
+    }
+  },
+  "config_drift": {
+    "title": "Fleet drift dashboard",
+    "subtitle": "Track expected vs effective collector config, stalled pushes, unsupported collectors, outdated versions, component gaps and heterogeneous groups.",
+    "summary_aria": "Config drift summary",
+    "table_title": "Collector drift details",
+    "table_hint": "Disabled controls explain what is missing instead of exposing unsafe actions.",
+    "error": "Unable to load config drift dashboard.",
+    "action_unavailable": "Action unavailable.",
+    "outdated": "Outdated",
+    "summary": {
+      "total_collectors": "Total collectors",
+      "drifted_collectors": "Collectors with drift",
+      "pending_too_long": "Push pending too long",
+      "missing_effective_config": "Missing effective config",
+      "remote_config_unsupported": "Remote config unsupported",
+      "outdated_versions": "Outdated versions",
+      "unknown_incomplete_components": "Unknown components",
+      "heterogeneous_groups": "Heterogeneous groups"
+    },
+    "columns": {
+      "collector": "Collector",
+      "env": "Env",
+      "version": "Version",
+      "expected": "Expected config",
+      "effective": "Effective config",
+      "drift": "Drift",
+      "last_push": "Last push",
+      "action": "Action"
+    },
+    "actions": {
+      "view_diff": "View diff",
+      "validate_current": "Validate current",
+      "push_expected": "Push expected",
+      "rollback": "Rollback",
+      "mark_ignored": "Mark ignored"
+    },
+    "status": {
+      "in_sync": "In sync",
+      "drifted": "Drifted",
+      "pending_too_long": "Pending too long",
+      "missing_effective_config": "Missing effective config",
+      "remote_config_unsupported": "Remote config unsupported",
+      "heterogeneous_effective_config": "Heterogeneous effective config"
+    },
+    "action_reasons": {
+      "diff_requires_config_content": "Diff view needs retrievable config content for both expected and effective hashes.",
+      "validate_from_workload_detail": "Dashboard rows expose config hashes only; validate current from the workload detail config editor.",
+      "review_expected_before_push": "Expected config content must be reviewed from workload detail before pushing.",
+      "rollback_from_workload_detail": "Rollback must be prepared from workload detail so config history and confirmation checks are visible.",
+      "ignore_not_implemented": "Ignore persistence is not implemented yet.",
+      "remote_config_unsupported": "Remote config is not supported by this collector.",
+      "push_pending_too_long": "A config push is already pending too long; review status before retrying."
     }
   }
 }

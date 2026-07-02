@@ -29,6 +29,7 @@ import type {
   CanarySelection,
   CanaryStatus,
   CanaryValidationResult,
+  ConfigDriftDashboard,
 } from '../types'
 
 declare module 'axios' {
@@ -239,6 +240,10 @@ export const pushesAPI = {
   groups: () => api.get<PushGroup[]>('/push-groups').then((r) => r.data ?? []),
   preview: (request: PushPreviewRequest) =>
     api.post<PushPreview>('/pushes/preview', request).then((r) => r.data),
+}
+
+export const configSafetyAPI = {
+  drift: () => api.get<ConfigDriftDashboard>('/config-safety/drift').then((r) => r.data),
 }
 
 export const authAPI = {
