@@ -339,8 +339,11 @@ test.describe('Dashboard', () => {
 
     await expect(page.getByText('collector-payments-a is running 0.99.0')).toBeVisible()
     await expect(page.getByText('receivers.kafka uses unsupported kafka')).toBeVisible()
+    await expect(recommendations.getByText('Upgrade collector', { exact: true })).toBeVisible()
     await expect(recommendations.getByText('Upgrade collector before applying config requiring kafka.')).toBeVisible()
+    await expect(recommendations.getByText('Choose older config', { exact: true })).toBeVisible()
     await expect(recommendations.getByText('Choose a config built for collector 0.99.0.')).toBeVisible()
+    await expect(recommendations.getByText('Remove or replace component', { exact: true })).toBeVisible()
     await expect(recommendations.getByText('Remove kafka from this config before applying it.')).toBeVisible()
   })
 
