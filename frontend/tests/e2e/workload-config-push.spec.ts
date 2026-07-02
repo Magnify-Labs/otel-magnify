@@ -4,34 +4,69 @@ import { safeRemoteErrorText } from '../../src/lib/safeRemoteErrorText'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const ACTIVE_CONFIG_ID = 'abc123'
+const WORKLOAD_INSTANCES = [
+  {
+    instance_uid: 'inst-a',
+    pod_name: 'otel-a',
+    version: '0.98.0',
+    connected_at: '2026-07-01T10:00:00Z',
+    last_message_at: '2026-07-01T10:01:00Z',
+    healthy: true,
+  },
+  {
+    instance_uid: 'inst-b',
+    pod_name: 'otel-b',
+    version: '0.98.0',
+    connected_at: '2026-07-01T10:00:00Z',
+    last_message_at: '2026-07-01T10:01:00Z',
+    healthy: true,
+  },
+  {
+    instance_uid: 'inst-c',
+    pod_name: 'otel-c',
+    version: '0.98.0',
+    connected_at: '2026-07-01T10:00:00Z',
+    last_message_at: '2026-07-01T10:01:00Z',
+    healthy: false,
+  },
+]
 
 function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
-  return page.route(`**/api/workloads/${WORKLOAD_ID}`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        id: WORKLOAD_ID,
-        fingerprint_source: 'k8s',
-        fingerprint_keys: { cluster: 'prod', namespace: 'obs', kind: 'deployment', name: 'otel' },
-        display_name: 'test-collector',
-        type: 'collector',
-        version: '0.98.0',
-        status: 'connected',
-        last_seen_at: new Date().toISOString(),
-        labels: {},
-        active_config_id: ACTIVE_CONFIG_ID,
-        accepts_remote_config: true,
-        available_components: {
-          components: {
-            receivers: ['otlp'],
-            exporters: ['logging', 'debug'],
+  return Promise.all([
+    page.route(`**/api/workloads/${WORKLOAD_ID}`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: WORKLOAD_ID,
+          fingerprint_source: 'k8s',
+          fingerprint_keys: { cluster: 'prod', namespace: 'obs', kind: 'deployment', name: 'otel' },
+          display_name: 'test-collector',
+          type: 'collector',
+          version: '0.98.0',
+          status: 'connected',
+          last_seen_at: new Date().toISOString(),
+          labels: {},
+          active_config_id: ACTIVE_CONFIG_ID,
+          accepts_remote_config: true,
+          available_components: {
+            components: {
+              receivers: ['otlp'],
+              exporters: ['logging', 'debug'],
+            },
           },
-        },
-        ...overrides,
+          ...overrides,
+        }),
       }),
-    }),
-  )
+    ),
+    page.route(`**/api/workloads/${WORKLOAD_ID}/instances`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(WORKLOAD_INSTANCES),
+      }),
+    ),
+  ])
 }
 
 function mockConfig(page: Page, content: string) {
