@@ -81,7 +81,9 @@ function matrixKey(row: FleetVersionMatrixEntry) {
 }
 
 export default function FleetVersionIntelligencePanel({ intelligence, isLoading, isError }: Props) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const canUseBackendReason =
+    i18n.resolvedLanguage?.startsWith('en') ?? i18n.language.startsWith('en')
 
   const matrix = intelligence?.version_matrix ?? []
   const belowRecommended = intelligence?.collectors_below_recommended ?? []
@@ -164,7 +166,11 @@ export default function FleetVersionIntelligencePanel({ intelligence, isLoading,
                           version: collector.version,
                         })}
                       </div>
-                      <p>{upgrade?.reason ?? t('dashboard.version_intelligence.below_reason')}</p>
+                      <p>
+                        {canUseBackendReason && upgrade?.reason
+                          ? upgrade.reason
+                          : t('dashboard.version_intelligence.below_reason')}
+                      </p>
                     </div>
                     <span className="version-intelligence-action">
                       {t('dashboard.version_intelligence.action.upgrade_collector', {
@@ -199,7 +205,9 @@ function UnsupportedComponentFinding({
   component: FleetUnsupportedComponentFinding
   recommendations: FleetVersionRecommendation[]
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const canUseBackendReason =
+    i18n.resolvedLanguage?.startsWith('en') ?? i18n.language.startsWith('en')
   const chooseOlder = recommendationByAction(
     recommendations,
     'choose_older_config',
@@ -229,24 +237,27 @@ function UnsupportedComponentFinding({
       action: 'upgrade_collector',
       label: t('dashboard.version_intelligence.action_label.upgrade_collector'),
       reason:
-        upgradeCollector?.reason ??
-        t('dashboard.version_intelligence.recommendation.upgrade_collector'),
+        canUseBackendReason && upgradeCollector?.reason
+          ? upgradeCollector.reason
+          : t('dashboard.version_intelligence.recommendation.upgrade_collector'),
     },
     {
       action: 'choose_older_config',
       label: t('dashboard.version_intelligence.action_label.choose_older_config'),
       reason:
-        chooseOlder?.reason ??
-        t('dashboard.version_intelligence.recommendation.choose_older_config'),
+        canUseBackendReason && chooseOlder?.reason
+          ? chooseOlder.reason
+          : t('dashboard.version_intelligence.recommendation.choose_older_config'),
     },
     {
       action: 'remove_component',
       label: t('dashboard.version_intelligence.action_label.remove_component'),
       reason:
-        removeComponent?.reason ??
-        t('dashboard.version_intelligence.recommendation.remove_component', {
-          component: component.component_type,
-        }),
+        canUseBackendReason && removeComponent?.reason
+          ? removeComponent.reason
+          : t('dashboard.version_intelligence.recommendation.remove_component', {
+              component: component.component_type,
+            }),
     },
   ]
 
