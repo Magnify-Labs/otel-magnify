@@ -114,6 +114,10 @@ func (a *API) handlePromoteCanary(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 404, "canary not found")
 		return
 	}
+	if status.Status != models.CanaryStatusSucceeded {
+		respondJSON(w, http.StatusConflict, map[string]any{"error": "canary is not in a promotable state", "canary": status})
+		return
+	}
 	if status.Counts.Failed > 0 || len(status.StopReasons) > 0 {
 		respondJSON(w, http.StatusConflict, status)
 		return
@@ -276,19 +280,23 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 		}
 	case "count", "n":
 		n := selection.Count
-		if n > len(instances) {
-			n = len(instances)
+		if n <= 0 {
+			return nil, nil, []string{"count must be positive"}
 		}
-		if n > 0 {
-			selected = append(selected, instances[:n]...)
+		if n >= len(instances) {
+			return nil, nil, []string{"canary target count must be smaller than eligible instances"}
 		}
+		selected = append(selected, instances[:n]...)
 	case "percentage":
-		n := int(math.Ceil(float64(len(instances)) * float64(selection.Percentage) / 100))
-		if n < 1 && len(instances) > 0 && selection.Percentage > 0 {
-			n = 1
+		if selection.Percentage <= 0 {
+			return nil, nil, []string{"percentage must be positive"}
 		}
-		if n > len(instances) {
-			n = len(instances)
+		if selection.Percentage >= 100 {
+			return nil, nil, []string{"percentage must be less than 100"}
+		}
+		n := int(math.Ceil(float64(len(instances)) * float64(selection.Percentage) / 100))
+		if n < 1 && len(instances) > 0 {
+			n = 1
 		}
 		if n > 0 {
 			selected = append(selected, instances[:n]...)
@@ -298,9 +306,11 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 			selected = instances
 		}
 	case "instances":
+		seen := map[string]bool{}
 		for _, uid := range selection.InstanceUIDs {
-			if inst, ok := byUID[uid]; ok {
+			if inst, ok := byUID[uid]; ok && !seen[uid] {
 				selected = append(selected, inst)
+				seen[uid] = true
 			}
 		}
 	default:
@@ -308,6 +318,9 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 	}
 	if len(selected) == 0 {
 		return nil, nil, []string{"canary target set is empty"}
+	}
+	if len(selected) >= len(instances) {
+		return nil, nil, []string{"canary target set must be smaller than eligible instances"}
 	}
 	var targets []models.CanaryTarget
 	var reasons []string
