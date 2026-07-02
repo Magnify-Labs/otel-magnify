@@ -978,7 +978,8 @@ h4 {
 
 /* Read-only notes under the YAML/config controls */
 .config-readonly-note,
-.config-permission-note {
+.config-permission-note,
+.push-scope-permission-note {
   margin-top: 0.75rem;
   padding: 0.65rem 0.8rem;
   border: 1px solid var(--border);
@@ -990,13 +991,15 @@ h4 {
   line-height: 1.5;
 }
 .config-readonly-note a,
-.config-permission-note a {
+.config-permission-note a,
+.push-scope-permission-note a {
   color: var(--gold);
   text-decoration: none;
   border-bottom: 1px dotted var(--gold);
 }
 .config-readonly-note a:hover,
-.config-permission-note a:hover {
+.config-permission-note a:hover,
+.push-scope-permission-note a:hover {
   color: var(--gold-soft);
 }
 

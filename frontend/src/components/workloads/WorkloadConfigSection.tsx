@@ -15,6 +15,7 @@ import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
 import type {
+  PushGroup,
   PushGroupSelector,
   PushPreview,
   PushPreviewRequest,
@@ -88,6 +89,14 @@ function hasDynamicSelector(fields: DynamicSelectorState): boolean {
 function previewBlockedCount(preview: PushPreview | null): number {
   if (!preview) return 0
   return preview.breakdown.read_only + preview.breakdown.incompatible + preview.breakdown.offline
+}
+
+function translationLookupKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
 }
 
 function shortHash(hash?: string) {
@@ -471,7 +480,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
     queryFn: configsAPI.list,
   })
 
-  const { data: pushGroups, isError: pushGroupsError } = useQuery({
+  const {
+    data: pushGroups,
+    isLoading: pushGroupsLoading,
+    isError: pushGroupsError,
+  } = useQuery({
     queryKey: ['push-groups'],
     queryFn: pushesAPI.groups,
     enabled: editMode && scopeMode === 'saved',
@@ -693,6 +706,10 @@ export default function WorkloadConfigSection({ workload }: Props) {
   }
 
   function previewTargets() {
+    if (!canPreview) {
+      setPushError(previewDisabledReason || t('workloads.config.scope.preview_failed'))
+      return
+    }
     const request: PushPreviewRequest = { config_content: draftYaml }
     if (scopeMode === 'saved') {
       request.group_id = selectedPushGroupId
@@ -702,6 +719,43 @@ export default function WorkloadConfigSection({ workload }: Props) {
       return
     }
     previewMutation.mutate(request)
+  }
+
+  function validateConfig() {
+    if (!canValidateConfig) {
+      setPushError(t('workloads.config.permission.validate_blocked'))
+      return
+    }
+    if (!draftYaml || validateMutation.isPending || pendingHash) return
+    validateMutation.mutate()
+  }
+
+  function generateApplicationPlan() {
+    if (!canGeneratePlan) {
+      setPushError(planDisabledReason || t('workloads.config.scope.disabled.generate_valid_plan'))
+      return
+    }
+    planMutation.mutate()
+  }
+
+  function submitPush() {
+    if (!canPush) {
+      setPushError(pushDisabledReason || t('workloads.config.scope.disabled.plan_blocks_push'))
+      return
+    }
+    pushMutation.mutate()
+  }
+
+  function formatPushGroupName(group: PushGroup): string {
+    return t(`workloads.config.scope.group.${translationLookupKey(group.id)}`, {
+      defaultValue: group.name,
+    })
+  }
+
+  function formatPreviewReason(reason: string): string {
+    return t(`workloads.config.scope.reason.${translationLookupKey(reason)}`, {
+      defaultValue: reason,
+    })
   }
 
   const currentPush = configStatus?.push_status ?? pendingPush ?? workload.current_config_push
@@ -746,6 +800,62 @@ export default function WorkloadConfigSection({ workload }: Props) {
       (scopeMode === 'dynamic' && hasDynamicSelector(dynamicSelector)))
   const isBulkScope = scopeMode !== 'single'
   const blockedCount = previewBlockedCount(pushPreview)
+  const savedGroupsEmpty =
+    scopeMode === 'saved' &&
+    !pushGroupsLoading &&
+    !pushGroupsError &&
+    (pushGroups?.length ?? 0) === 0
+  const validateDisabledReason = !canValidateConfig
+    ? t('workloads.config.permission.validate_blocked')
+    : !draftYaml
+      ? t('workloads.config.scope.disabled.enter_yaml_validate')
+      : pendingHash
+        ? t('workloads.config.scope.disabled.wait_current_validate')
+        : ''
+  const previewDisabledReason = !hasPushPermission
+    ? t('workloads.config.permission.push_blocked')
+    : !canValidateConfig
+      ? t('workloads.config.permission.validate_blocked')
+      : !draftYaml
+        ? t('workloads.config.scope.disabled.enter_yaml_preview')
+        : validation === null
+          ? t('workloads.config.scope.disabled.validate_first')
+          : !validation.valid
+            ? t('workloads.config.scope.disabled.fix_validation_preview')
+            : pendingHash
+              ? t('workloads.config.scope.disabled.wait_current_preview')
+              : scopeMode === 'saved' && !selectedPushGroupId
+                ? t('workloads.config.scope.disabled.select_saved_group')
+                : scopeMode === 'dynamic' && !hasDynamicSelector(dynamicSelector)
+                  ? t('workloads.config.scope.disabled.enter_selector')
+                  : ''
+  const planDisabledReason =
+    validation === null
+      ? t('workloads.config.scope.disabled.validate_first')
+      : !validation.valid
+        ? t('workloads.config.scope.disabled.fix_validation_plan')
+        : pendingHash
+          ? t('workloads.config.scope.disabled.wait_current_plan')
+          : !canValidateConfig
+            ? t('workloads.config.permission.validate_blocked')
+            : ''
+  const pushDisabledReason = !hasPushPermission
+    ? t('workloads.config.permission.push_blocked')
+    : validation === null
+      ? t('workloads.config.scope.disabled.validate_first')
+      : !validation.valid
+        ? t('workloads.config.scope.disabled.fix_validation_push')
+        : isBulkScope
+          ? t('workloads.config.scope.bulk_push_unavailable')
+          : !applicationPlan
+            ? t('workloads.config.scope.disabled.generate_plan')
+            : applicationPlan.hard_failures.length > 0 ||
+                !applicationPlan.can_push ||
+                !applicationPlan.apply_allowed
+              ? t('workloads.config.scope.disabled.plan_blocks_push')
+              : pendingHash
+                ? t('workloads.config.scope.disabled.wait_current_push')
+                : ''
 
   const canRollback = hasPushPermission
   const knownGoodMissing = knownGoodIsError && isNotFoundError(knownGoodError)
@@ -907,6 +1017,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
               value={scopeMode}
               onChange={(e) => updateScopeMode(e.target.value as PushScopeMode)}
               disabled={!!pendingHash || !hasPushPermission}
+              title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
+              aria-describedby={!hasPushPermission ? 'push-scope-permission-note' : undefined}
             >
               <option value="single">{t('workloads.config.scope.single')}</option>
               <option value="saved">{t('workloads.config.scope.saved')}</option>
@@ -921,19 +1033,26 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 className="filter-select push-saved-group-select"
                 value={selectedPushGroupId}
                 onChange={(e) => {
+                  if (!hasPushPermission) return
                   setSelectedPushGroupId(e.target.value)
                   setPushPreview(null)
                 }}
                 disabled={!!pendingHash || !hasPushPermission || pushGroupsError}
+                title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
+                aria-describedby={!hasPushPermission ? 'push-scope-permission-note' : undefined}
               >
                 <option value="">
                   {pushGroupsError
                     ? t('workloads.config.scope.groups_error')
-                    : t('workloads.config.scope.saved_placeholder')}
+                    : pushGroupsLoading
+                      ? t('workloads.config.scope.groups_loading')
+                      : savedGroupsEmpty
+                        ? t('workloads.config.scope.groups_empty')
+                        : t('workloads.config.scope.saved_placeholder')}
                 </option>
                 {(pushGroups ?? []).map((group) => (
                   <option key={group.id} value={group.id}>
-                    {group.name}
+                    {formatPushGroupName(group)}
                   </option>
                 ))}
               </select>
@@ -948,6 +1067,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.cluster}
                 onChange={(e) => updateDynamicSelector('cluster', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
             <label>
@@ -955,6 +1075,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.namespace}
                 onChange={(e) => updateDynamicSelector('namespace', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
             <label>
@@ -962,6 +1083,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.env}
                 onChange={(e) => updateDynamicSelector('env', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
             <label>
@@ -969,6 +1091,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.team}
                 onChange={(e) => updateDynamicSelector('team', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
             <label>
@@ -976,6 +1099,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.workloadType}
                 onChange={(e) => updateDynamicSelector('workloadType', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
             <label>
@@ -984,6 +1108,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.version}
                 onChange={(e) => updateDynamicSelector('version', e.target.value)}
                 placeholder="0.98.0"
+                disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
             <label className="push-dynamic-wide">
@@ -992,6 +1117,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.capabilities}
                 onChange={(e) => updateDynamicSelector('capabilities', e.target.value)}
                 placeholder="otlp, debug"
+                disabled={!!pendingHash || !hasPushPermission}
               />
             </label>
           </div>
@@ -1037,7 +1163,15 @@ export default function WorkloadConfigSection({ workload }: Props) {
                       <li key={target.workload_id}>
                         <strong>{target.display_name || target.workload_id}</strong>
                         <span>{t(`workloads.config.scope.bucket.${target.bucket}`)}</span>
-                        {target.reason && <em>{target.reason}</em>}
+                        <span>
+                          {t(
+                            `workloads.config.scope.status.${translationLookupKey(target.status)}`,
+                            {
+                              defaultValue: target.status,
+                            },
+                          )}
+                        </span>
+                        {target.reason && <em>{formatPreviewReason(target.reason)}</em>}
                       </li>
                     ))}
                 </ul>
@@ -1045,6 +1179,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
             ) : (
               <div className="push-preview-ready">{t('workloads.config.scope.ready')}</div>
             )}
+          </div>
+        )}
+        {!hasPushPermission && (
+          <div className="push-scope-permission-note" id="push-scope-permission-note" role="note">
+            {t('workloads.config.permission.push_blocked')}
           </div>
         )}
       </section>
@@ -1055,48 +1194,35 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <div className="btn-row">
         <button
           className="btn"
-          onClick={() => validateMutation.mutate()}
+          onClick={validateConfig}
           disabled={!canValidateConfig || !draftYaml || validateMutation.isPending || !!pendingHash}
-          title={!canValidateConfig ? t('workloads.config.permission.validate_blocked') : ''}
+          title={validateDisabledReason}
         >
           {validateMutation.isPending ? 'Validating...' : 'Validate for this collector'}
         </button>
-        <button className="btn" onClick={previewTargets} disabled={!canPreview}>
+        <button
+          className="btn"
+          onClick={previewTargets}
+          disabled={!canPreview}
+          title={previewDisabledReason}
+        >
           {previewMutation.isPending
             ? t('workloads.config.scope.previewing')
             : t('workloads.config.scope.preview_button')}
         </button>
         <button
           className="btn btn-primary"
-          onClick={() => planMutation.mutate()}
+          onClick={generateApplicationPlan}
           disabled={!canGeneratePlan}
-          title={
-            validation === null
-              ? 'Validate the configuration first'
-              : !validation.valid
-                ? 'Fix validation errors before generating a plan'
-                : ''
-          }
+          title={planDisabledReason}
         >
           {planMutation.isPending ? 'Generating plan...' : 'Generate safety plan'}
         </button>
         <button
           className="btn btn-primary"
-          onClick={() => pushMutation.mutate()}
+          onClick={submitPush}
           disabled={!canPush}
-          title={
-            validation === null
-              ? 'Validate the configuration first'
-              : !validation.valid
-                ? 'Fix validation errors before pushing'
-                : isBulkScope
-                  ? t('workloads.config.scope.bulk_push_unavailable')
-                  : !applicationPlan
-                    ? 'Generate the safety plan before pushing'
-                    : !canPush
-                      ? 'Config safety plan blocks this push'
-                      : ''
-          }
+          title={pushDisabledReason}
         >
           {pendingHash ? 'Applying...' : pushMutation.isPending ? 'Pushing...' : 'Push'}
         </button>
@@ -1132,6 +1258,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
         loadConfigMutation.mutate(id)
       }}
       aria-label="Apply a saved config"
+      aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
+      title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
       disabled={
         !hasPushPermission ||
         loadConfigMutation.isPending ||
@@ -1150,7 +1278,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   )
 
   const permissionNote = !hasPushPermission ? (
-    <div className="config-permission-note" role="note">
+    <div className="config-permission-note" id="config-permission-note" role="note">
       {t('workloads.config.permission.push_blocked')}
     </div>
   ) : null
