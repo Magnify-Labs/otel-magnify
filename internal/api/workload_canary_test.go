@@ -61,7 +61,7 @@ func postCanary(t *testing.T, router http.Handler, workloadID, body string) *htt
 	return rec
 }
 
-func TestCanaryValidateSupportsOneNPercentageAndLabelSelector(t *testing.T) {
+func TestCanaryValidateSupportsOneNAndPercentage(t *testing.T) {
 	db, router, fake := newTestAPI(t)
 	seedCanaryWorkload(t, db, "wl-canary", models.Labels{"env": "prod"})
 	seedCanaryInstances(fake, "wl-canary")
@@ -73,7 +73,6 @@ func TestCanaryValidateSupportsOneNPercentageAndLabelSelector(t *testing.T) {
 		{"one", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"one","instance_uid":"inst-b"}}`, 1},
 		{"count", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"count","count":2}}`, 2},
 		{"percentage", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"percentage","percentage":50}}`, 2},
-		{"label", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"label_selector","labels":{"env":"prod"}}}`, 3},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,6 +89,37 @@ func TestCanaryValidateSupportsOneNPercentageAndLabelSelector(t *testing.T) {
 			}
 			if !got.Valid || len(got.Targets) != tc.want {
 				t.Fatalf("valid=%v targets=%d want %d body=%s", got.Valid, len(got.Targets), tc.want, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestCanaryRejectsBroadTargetSelectionWithoutPush(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{"env": "prod"})
+	seedCanaryInstances(fake, "wl-canary")
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"count_all", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"count","count":3}}`},
+		{"count_too_large", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"count","count":4}}`},
+		{"percentage_all", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"percentage","percentage":100}}`},
+		{"percentage_rounds_to_all", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"percentage","percentage":99}}`},
+		{"percentage_too_large", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"percentage","percentage":150}}`},
+		{"label_selector_all", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"label_selector","labels":{"env":"prod"}}}`},
+		{"instances_all", `{"config":"` + jsonEsc(validCanaryConfig) + `","selection":{"strategy":"instances","instance_uids":["inst-a","inst-b","inst-c"]}}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := postCanary(t, router, "wl-canary", tc.body)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if len(fake.pushed) != 0 {
+				t.Fatalf("broad selection pushed unexpectedly: %+v", fake.pushed)
 			}
 		})
 	}
@@ -183,6 +213,7 @@ func TestCanaryPromoteAbortRollbackAndAuditFailure(t *testing.T) {
 
 	// Simulate canary success before promote.
 	status.Targets[0].Status = models.InstanceStatusApplied
+	status.Status = models.CanaryStatusSucceeded
 	if err := db.UpdateCanaryStatus(status); err != nil {
 		t.Fatal(err)
 	}
@@ -247,6 +278,42 @@ func TestCanaryPromoteAbortRollbackAndAuditFailure(t *testing.T) {
 	failRec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one","instance_uid":"inst-a"}}`)
 	if failRec.Code != http.StatusServiceUnavailable || !strings.Contains(failRec.Body.String(), "side_effect_status") {
 		t.Fatalf("audit failure=%d %s", failRec.Code, failRec.Body.String())
+	}
+}
+
+func TestCanaryPromoteRejectsAbortedCanaryWithoutPushingRemaining(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	seedCanaryInstances(fake, "wl-canary")
+	start := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one","instance_uid":"inst-a"}}`)
+	if start.Code != http.StatusAccepted {
+		t.Fatalf("start=%d %s", start.Code, start.Body.String())
+	}
+	var status models.CanaryStatus
+	if err := json.NewDecoder(start.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+
+	status.Targets[0].Status = models.InstanceStatusApplied
+	status.Status = models.CanaryStatusSucceeded
+	if err := db.UpdateCanaryStatus(status); err != nil {
+		t.Fatal(err)
+	}
+	abortReq := authedRequestForGroups(t, "POST", "/api/workloads/wl-canary/config/canary/"+status.ID+"/abort", "", []string{"administrator"})
+	abortRec := httptest.NewRecorder()
+	router.ServeHTTP(abortRec, abortReq)
+	if abortRec.Code != http.StatusOK {
+		t.Fatalf("abort=%d %s", abortRec.Code, abortRec.Body.String())
+	}
+
+	promoteReq := authedRequestForGroups(t, "POST", "/api/workloads/wl-canary/config/canary/"+status.ID+"/promote", "", []string{"administrator"})
+	promoteRec := httptest.NewRecorder()
+	router.ServeHTTP(promoteRec, promoteReq)
+	if promoteRec.Code != http.StatusConflict {
+		t.Fatalf("promote=%d want %d body=%s", promoteRec.Code, http.StatusConflict, promoteRec.Body.String())
+	}
+	if len(fake.pushed) != 1 || fake.pushed[0].Target != "inst-a" {
+		t.Fatalf("promote after abort pushed remaining instances: %+v", fake.pushed)
 	}
 }
 
