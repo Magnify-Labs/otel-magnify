@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { configsAPI, workloadsAPI } from '../../api/client'
+import { configsAPI, pushesAPI, workloadsAPI } from '../../api/client'
 import { DOCS_BASE_URL } from '../../constants'
 import YamlEditor from '../config/YamlEditor'
 import PushStatusBanner from './PushStatusBanner'
@@ -15,6 +15,10 @@ import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
 import type {
+  PushGroup,
+  PushGroupSelector,
+  PushPreview,
+  PushPreviewRequest,
   ValidationCheck,
   ConfigApplicationPlan,
   ValidationMessage,
@@ -30,8 +34,70 @@ interface Props {
 
 type Tab = 'edit' | 'diff'
 type PlanExportStatus = 'idle' | 'ready' | 'error'
+type PushScopeMode = 'single' | 'saved' | 'dynamic'
+
+interface DynamicSelectorState {
+  cluster: string
+  namespace: string
+  env: string
+  team: string
+  workloadType: string
+  version: string
+  capabilities: string
+}
 
 const PUSH_TIMEOUT_MS = 30_000
+
+const emptyDynamicSelector: DynamicSelectorState = {
+  cluster: '',
+  namespace: '',
+  env: '',
+  team: '',
+  workloadType: '',
+  version: '',
+  capabilities: '',
+}
+
+function splitList(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function buildDynamicSelector(fields: DynamicSelectorState): PushGroupSelector {
+  const matchLabels: Record<string, string> = {}
+  if (fields.cluster.trim()) matchLabels.cluster = fields.cluster.trim()
+  if (fields.namespace.trim()) matchLabels.namespace = fields.namespace.trim()
+  if (fields.env.trim()) matchLabels.env = fields.env.trim()
+  if (fields.team.trim()) matchLabels.team = fields.team.trim()
+  if (fields.workloadType.trim()) matchLabels.workload_type = fields.workloadType.trim()
+
+  const selector: PushGroupSelector = { types: ['collector'] }
+  if (Object.keys(matchLabels).length > 0) selector.match_labels = matchLabels
+  const versions = splitList(fields.version)
+  if (versions.length > 0) selector.versions = versions
+  const capabilities = splitList(fields.capabilities)
+  if (capabilities.length > 0) selector.capabilities = capabilities
+  return selector
+}
+
+function hasDynamicSelector(fields: DynamicSelectorState): boolean {
+  return Object.values(fields).some((value) => value.trim().length > 0)
+}
+
+function previewBlockedCount(preview: PushPreview | null): number {
+  if (!preview) return 0
+  return preview.breakdown.read_only + preview.breakdown.incompatible + preview.breakdown.offline
+}
+
+function translationLookupKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
 
 function shortHash(hash?: string) {
   return hash ? hash.substring(0, 8) : '—'
@@ -376,6 +442,7 @@ function ConfigApplicationPlanPanel({
 }
 
 export default function WorkloadConfigSection({ workload }: Props) {
+  const { t } = useTranslation()
   const configStatus = useStore((s) => s.configStatus[workload.id])
   const rollback = useStore((s) => s.lastRollback[workload.id])
   const clearRollback = useStore((s) => s.clearAutoRollback)
@@ -392,6 +459,10 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const [applicationPlan, setApplicationPlan] = useState<ConfigApplicationPlan | null>(null)
   const [planExportStatus, setPlanExportStatus] = useState<PlanExportStatus>('idle')
   const [selectedConfigId, setSelectedConfigId] = useState('')
+  const [scopeMode, setScopeMode] = useState<PushScopeMode>('single')
+  const [selectedPushGroupId, setSelectedPushGroupId] = useState('')
+  const [dynamicSelector, setDynamicSelector] = useState<DynamicSelectorState>(emptyDynamicSelector)
+  const [pushPreview, setPushPreview] = useState<PushPreview | null>(null)
   const [defaultRollbackTarget, setDefaultRollbackTarget] = useState<WorkloadConfig | null>(null)
 
   const {
@@ -407,6 +478,16 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const { data: savedConfigs, isError: configsListError } = useQuery({
     queryKey: ['configs'],
     queryFn: configsAPI.list,
+  })
+
+  const {
+    data: pushGroups,
+    isLoading: pushGroupsLoading,
+    isError: pushGroupsError,
+  } = useQuery({
+    queryKey: ['push-groups'],
+    queryFn: pushesAPI.groups,
+    enabled: editMode && hasPerm(me?.groups, 'workload:push_config') && scopeMode === 'saved',
   })
 
   const { data: history = [], isLoading: historyLoading } = useQuery({
@@ -503,6 +584,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       setPendingHash(nextHash)
       setPendingPush(res)
       setTimedOut(false)
+      setPushPreview(null)
       setPushError(null)
       setPlanExportStatus('idle')
     },
@@ -516,6 +598,21 @@ export default function WorkloadConfigSection({ workload }: Props) {
         ? (err.response?.data?.error ?? err.message)
         : 'Failed to push configuration'
       setPushError(msg)
+    },
+  })
+
+  const previewMutation = useMutation({
+    mutationFn: (request: PushPreviewRequest) => pushesAPI.preview(request),
+    onSuccess: (preview) => {
+      setPushPreview(preview)
+      setPushError(null)
+    },
+    onError: (err: unknown) => {
+      const msg = axios.isAxiosError(err)
+        ? (err.response?.data?.error ?? err.message)
+        : t('workloads.config.scope.preview_failed')
+      setPushError(msg)
+      setPushPreview(null)
     },
   })
 
@@ -550,6 +647,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       setDraftYaml('')
       setValidation(null)
       setApplicationPlan(null)
+      setPushPreview(null)
     } else if (configStatus.status === 'failed') {
       // keep editMode + draftYaml so the user can fix and retry
       setPendingHash(null)
@@ -571,6 +669,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setValidation(null)
     setApplicationPlan(null)
     setPlanExportStatus('idle')
+    setPushPreview(null)
     setPushError(null)
   }
 
@@ -580,6 +679,10 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setValidation(null)
     setApplicationPlan(null)
     setPlanExportStatus('idle')
+    setPushPreview(null)
+    setScopeMode('single')
+    setSelectedPushGroupId('')
+    setDynamicSelector(emptyDynamicSelector)
     setPushError(null)
   }
 
@@ -587,7 +690,80 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setDraftYaml(next)
     if (validation !== null) setValidation(null)
     if (applicationPlan !== null) setApplicationPlan(null)
+    if (pushPreview !== null) setPushPreview(null)
     if (planExportStatus !== 'idle') setPlanExportStatus('idle')
+  }
+
+  function updateScopeMode(next: PushScopeMode) {
+    if (!hasPushPermission) {
+      setPushError(t('workloads.config.permission.push_blocked'))
+      return
+    }
+    setScopeMode(next)
+    setPushPreview(null)
+    setPushError(null)
+  }
+
+  function updateDynamicSelector(field: keyof DynamicSelectorState, value: string) {
+    if (!hasPushPermission) {
+      setPushError(t('workloads.config.permission.push_blocked'))
+      return
+    }
+    setDynamicSelector((current) => ({ ...current, [field]: value }))
+    setPushPreview(null)
+  }
+
+  function previewTargets() {
+    if (!canPreview) {
+      setPushError(previewDisabledReason || t('workloads.config.scope.preview_failed'))
+      return
+    }
+    const request: PushPreviewRequest = { config_content: draftYaml }
+    if (scopeMode === 'saved') {
+      request.group_id = selectedPushGroupId
+    } else if (scopeMode === 'dynamic') {
+      request.selector = buildDynamicSelector(dynamicSelector)
+    } else {
+      return
+    }
+    previewMutation.mutate(request)
+  }
+
+  function validateConfig() {
+    if (!canValidateConfig) {
+      setPushError(t('workloads.config.permission.validate_blocked'))
+      return
+    }
+    if (!draftYaml || validateMutation.isPending || pendingHash) return
+    validateMutation.mutate()
+  }
+
+  function generateApplicationPlan() {
+    if (!canGeneratePlan) {
+      setPushError(planDisabledReason || t('workloads.config.scope.disabled.generate_valid_plan'))
+      return
+    }
+    planMutation.mutate()
+  }
+
+  function submitPush() {
+    if (!canPush) {
+      setPushError(pushDisabledReason || t('workloads.config.scope.disabled.plan_blocks_push'))
+      return
+    }
+    pushMutation.mutate()
+  }
+
+  function formatPushGroupName(group: PushGroup): string {
+    return t(`workloads.config.scope.group.${translationLookupKey(group.id)}`, {
+      defaultValue: group.name,
+    })
+  }
+
+  function formatPreviewReason(reason: string): string {
+    return t(`workloads.config.scope.reason.${translationLookupKey(reason)}`, {
+      defaultValue: reason,
+    })
   }
 
   const currentPush = configStatus?.push_status ?? pendingPush ?? workload.current_config_push
@@ -603,22 +779,103 @@ export default function WorkloadConfigSection({ workload }: Props) {
         }
       : undefined)
 
+  const hasPushPermission = hasPerm(me?.groups, 'workload:push_config')
+  const canValidateConfig = hasPerm(me?.groups, 'workload:validate_config')
   const canGeneratePlan =
+    canValidateConfig &&
     !!draftYaml &&
     !pendingHash &&
     !planMutation.isPending &&
     validation !== null &&
     validation.valid === true
   const canPush =
+    hasPushPermission &&
+    scopeMode === 'single' &&
     canGeneratePlan &&
     !!applicationPlan &&
     applicationPlan.can_push &&
     applicationPlan.apply_allowed &&
     applicationPlan.hard_failures.length === 0 &&
     !pushMutation.isPending
+  const canPreview =
+    canValidateConfig &&
+    hasPushPermission &&
+    !!draftYaml &&
+    validation?.valid === true &&
+    !pendingHash &&
+    !previewMutation.isPending &&
+    ((scopeMode === 'saved' && !!selectedPushGroupId) ||
+      (scopeMode === 'dynamic' && hasDynamicSelector(dynamicSelector)))
+  const isBulkScope = scopeMode !== 'single'
+  const blockedCount = previewBlockedCount(pushPreview)
+  const savedGroupsEmpty =
+    scopeMode === 'saved' &&
+    !pushGroupsLoading &&
+    !pushGroupsError &&
+    (pushGroups?.length ?? 0) === 0
+  const validateDisabledReason = !canValidateConfig
+    ? t('workloads.config.permission.validate_blocked')
+    : !draftYaml
+      ? t('workloads.config.scope.disabled.enter_yaml_validate')
+      : pendingHash
+        ? t('workloads.config.scope.disabled.wait_current_validate')
+        : ''
+  const previewDisabledReason = !hasPushPermission
+    ? t('workloads.config.permission.push_blocked')
+    : !canValidateConfig
+      ? t('workloads.config.permission.validate_blocked')
+      : !draftYaml
+        ? t('workloads.config.scope.disabled.enter_yaml_preview')
+        : validation === null
+          ? t('workloads.config.scope.disabled.validate_first')
+          : !validation.valid
+            ? t('workloads.config.scope.disabled.fix_validation_preview')
+            : pendingHash
+              ? t('workloads.config.scope.disabled.wait_current_preview')
+              : scopeMode === 'saved' && !selectedPushGroupId
+                ? t('workloads.config.scope.disabled.select_saved_group')
+                : scopeMode === 'dynamic' && !hasDynamicSelector(dynamicSelector)
+                  ? t('workloads.config.scope.disabled.enter_selector')
+                  : ''
+  const planDisabledReason =
+    validation === null
+      ? t('workloads.config.scope.disabled.validate_first')
+      : !validation.valid
+        ? t('workloads.config.scope.disabled.fix_validation_plan')
+        : pendingHash
+          ? t('workloads.config.scope.disabled.wait_current_plan')
+          : !canValidateConfig
+            ? t('workloads.config.permission.validate_blocked')
+            : ''
+  const pushDisabledReason = !hasPushPermission
+    ? t('workloads.config.permission.push_blocked')
+    : validation === null
+      ? t('workloads.config.scope.disabled.validate_first')
+      : !validation.valid
+        ? t('workloads.config.scope.disabled.fix_validation_push')
+        : isBulkScope
+          ? t('workloads.config.scope.bulk_push_unavailable')
+          : !applicationPlan
+            ? t('workloads.config.scope.disabled.generate_plan')
+            : applicationPlan.hard_failures.length > 0 ||
+                !applicationPlan.can_push ||
+                !applicationPlan.apply_allowed
+              ? t('workloads.config.scope.disabled.plan_blocks_push')
+              : pendingHash
+                ? t('workloads.config.scope.disabled.wait_current_push')
+                : ''
 
-  const hasPushPermission = hasPerm(me?.groups, 'workload:push_config')
   const canRollback = hasPushPermission
+  const scopePermissionDescription = !hasPushPermission ? 'push-scope-permission-note' : undefined
+  const scopePermissionTitle = !hasPushPermission
+    ? t('workloads.config.permission.push_blocked')
+    : ''
+  const scopeInputReadOnlyProps = !hasPushPermission
+    ? {
+        title: scopePermissionTitle,
+        'aria-describedby': scopePermissionDescription,
+      }
+    : {}
   const knownGoodMissing = knownGoodIsError && isNotFoundError(knownGoodError)
   const recoveryPanel = (
     <ConfigRecoveryPanel
@@ -744,7 +1001,13 @@ export default function WorkloadConfigSection({ workload }: Props) {
         </button>
       </div>
 
-      {tab === 'edit' && <YamlEditor value={draftYaml} onChange={onDraftChange} />}
+      {tab === 'edit' && (
+        <YamlEditor
+          value={draftYaml}
+          onChange={hasPushPermission ? onDraftChange : undefined}
+          readOnly={!hasPushPermission}
+        />
+      )}
       {tab === 'diff' && <ConfigDiffView oldYaml={activeContent} newYaml={draftYaml} />}
 
       {validation && <ValidationDetails validation={validation} />}
@@ -756,6 +1019,209 @@ export default function WorkloadConfigSection({ workload }: Props) {
         canPush={hasPushPermission}
         safetyPlanReady={canPush}
       />
+
+      <section
+        className={`push-scope-panel ${!hasPushPermission ? 'push-scope-panel-readonly' : ''}`}
+        aria-labelledby="push-scope-title"
+        aria-describedby={scopePermissionDescription}
+      >
+        <div className="push-scope-header">
+          <div>
+            <h3 id="push-scope-title">{t('workloads.config.scope.title')}</h3>
+            <p>{t('workloads.config.scope.help')}</p>
+          </div>
+          {isBulkScope && (
+            <span className="push-scope-mode-badge">
+              {t('workloads.config.scope.preview_only')}
+            </span>
+          )}
+        </div>
+
+        <div className="push-scope-controls">
+          <label>
+            <span>{t('workloads.config.scope.mode_label')}</span>
+            <select
+              className="filter-select push-scope-mode-select"
+              value={scopeMode}
+              onChange={(e) => updateScopeMode(e.target.value as PushScopeMode)}
+              disabled={!!pendingHash || !hasPushPermission}
+              title={scopePermissionTitle}
+              aria-describedby={scopePermissionDescription}
+            >
+              <option value="single">{t('workloads.config.scope.single')}</option>
+              <option value="saved">{t('workloads.config.scope.saved')}</option>
+              <option value="dynamic">{t('workloads.config.scope.dynamic')}</option>
+            </select>
+          </label>
+
+          {scopeMode === 'saved' && (
+            <label>
+              <span>{t('workloads.config.scope.saved_label')}</span>
+              <select
+                className="filter-select push-saved-group-select"
+                value={selectedPushGroupId}
+                onChange={(e) => {
+                  if (!hasPushPermission) return
+                  setSelectedPushGroupId(e.target.value)
+                  setPushPreview(null)
+                }}
+                disabled={!!pendingHash || !hasPushPermission || pushGroupsError}
+                title={scopePermissionTitle}
+                aria-describedby={scopePermissionDescription}
+              >
+                <option value="">
+                  {pushGroupsError
+                    ? t('workloads.config.scope.groups_error')
+                    : pushGroupsLoading
+                      ? t('workloads.config.scope.groups_loading')
+                      : savedGroupsEmpty
+                        ? t('workloads.config.scope.groups_empty')
+                        : t('workloads.config.scope.saved_placeholder')}
+                </option>
+                {(pushGroups ?? []).map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {formatPushGroupName(group)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
+        {scopeMode === 'dynamic' && (
+          <div className="push-dynamic-grid">
+            <label>
+              <span>{t('workloads.config.scope.field.cluster')}</span>
+              <input
+                value={dynamicSelector.cluster}
+                onChange={(e) => updateDynamicSelector('cluster', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
+              />
+            </label>
+            <label>
+              <span>{t('workloads.config.scope.field.namespace')}</span>
+              <input
+                value={dynamicSelector.namespace}
+                onChange={(e) => updateDynamicSelector('namespace', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
+              />
+            </label>
+            <label>
+              <span>{t('workloads.config.scope.field.env')}</span>
+              <input
+                value={dynamicSelector.env}
+                onChange={(e) => updateDynamicSelector('env', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
+              />
+            </label>
+            <label>
+              <span>{t('workloads.config.scope.field.team')}</span>
+              <input
+                value={dynamicSelector.team}
+                onChange={(e) => updateDynamicSelector('team', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
+              />
+            </label>
+            <label>
+              <span>{t('workloads.config.scope.field.workload_type')}</span>
+              <input
+                value={dynamicSelector.workloadType}
+                onChange={(e) => updateDynamicSelector('workloadType', e.target.value)}
+                disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
+              />
+            </label>
+            <label>
+              <span>{t('workloads.config.scope.field.version')}</span>
+              <input
+                value={dynamicSelector.version}
+                onChange={(e) => updateDynamicSelector('version', e.target.value)}
+                placeholder={t('workloads.config.scope.placeholder.version')}
+                disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
+              />
+            </label>
+            <label className="push-dynamic-wide">
+              <span>{t('workloads.config.scope.field.capabilities')}</span>
+              <input
+                value={dynamicSelector.capabilities}
+                onChange={(e) => updateDynamicSelector('capabilities', e.target.value)}
+                placeholder={t('workloads.config.scope.placeholder.capabilities')}
+                disabled={!!pendingHash || !hasPushPermission}
+                {...scopeInputReadOnlyProps}
+              />
+            </label>
+          </div>
+        )}
+
+        {pushPreview && (
+          <div className="push-preview-panel" aria-live="polite">
+            <div className="push-preview-counts">
+              <span>
+                {t('workloads.config.scope.count.targeted', { count: pushPreview.targeted_count })}
+              </span>
+              <span>
+                {t('workloads.config.scope.count.capable', {
+                  count: pushPreview.breakdown.remote_config_capable,
+                })}
+              </span>
+              <span>
+                {t('workloads.config.scope.count.readonly', {
+                  count: pushPreview.breakdown.read_only,
+                })}
+              </span>
+              <span>
+                {t('workloads.config.scope.count.incompatible', {
+                  count: pushPreview.breakdown.incompatible,
+                })}
+              </span>
+              <span>
+                {t('workloads.config.scope.count.offline', {
+                  count: pushPreview.breakdown.offline,
+                })}
+              </span>
+            </div>
+            {blockedCount > 0 ? (
+              <>
+                <div className="push-preview-warning">
+                  {t('workloads.config.scope.blocked_warning')}
+                </div>
+                <ul className="push-preview-blocked">
+                  {pushPreview.targets
+                    .filter((target) => target.bucket !== 'remote_config_capable')
+                    .slice(0, 5)
+                    .map((target) => (
+                      <li key={target.workload_id}>
+                        <strong>{target.display_name || target.workload_id}</strong>
+                        <span>{t(`workloads.config.scope.bucket.${target.bucket}`)}</span>
+                        <span>
+                          {t(
+                            `workloads.config.scope.status.${translationLookupKey(target.status)}`,
+                            {
+                              defaultValue: target.status,
+                            },
+                          )}
+                        </span>
+                        {target.reason && <em>{formatPreviewReason(target.reason)}</em>}
+                      </li>
+                    ))}
+                </ul>
+              </>
+            ) : (
+              <div className="push-preview-ready">{t('workloads.config.scope.ready')}</div>
+            )}
+          </div>
+        )}
+        {!hasPushPermission && (
+          <div className="push-scope-permission-note" id="push-scope-permission-note" role="note">
+            {t('workloads.config.permission.push_blocked')}
+          </div>
+        )}
+      </section>
       {applicationPlanPanel}
 
       {pushError && <div className="error-text error-text-push">{pushError}</div>}
@@ -763,40 +1229,36 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <div className="btn-row">
         <button
           className="btn"
-          onClick={() => validateMutation.mutate()}
-          disabled={!draftYaml || validateMutation.isPending || !!pendingHash}
+          onClick={validateConfig}
+          disabled={!canValidateConfig || !draftYaml || validateMutation.isPending || !!pendingHash}
+          title={validateDisabledReason}
         >
           {validateMutation.isPending ? 'Validating...' : 'Validate for this collector'}
         </button>
         <button
+          className="btn"
+          onClick={previewTargets}
+          disabled={!canPreview}
+          title={previewDisabledReason}
+          aria-describedby={!hasPushPermission ? 'push-scope-permission-note' : undefined}
+        >
+          {previewMutation.isPending
+            ? t('workloads.config.scope.previewing')
+            : t('workloads.config.scope.preview_button')}
+        </button>
+        <button
           className="btn btn-primary"
-          onClick={() => planMutation.mutate()}
+          onClick={generateApplicationPlan}
           disabled={!canGeneratePlan}
-          title={
-            validation === null
-              ? 'Validate the configuration first'
-              : !validation.valid
-                ? 'Fix validation errors before generating a plan'
-                : ''
-          }
+          title={planDisabledReason}
         >
           {planMutation.isPending ? 'Generating plan...' : 'Generate safety plan'}
         </button>
         <button
           className="btn btn-primary"
-          onClick={() => pushMutation.mutate()}
+          onClick={submitPush}
           disabled={!canPush}
-          title={
-            validation === null
-              ? 'Validate the configuration first'
-              : !validation.valid
-                ? 'Fix validation errors before pushing'
-                : !applicationPlan
-                  ? 'Generate the safety plan before pushing'
-                  : !canPush
-                    ? 'Config safety plan blocks this push'
-                    : ''
-          }
+          title={pushDisabledReason}
         >
           {pendingHash ? 'Applying...' : pushMutation.isPending ? 'Pushing...' : 'Push'}
         </button>
@@ -813,11 +1275,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
   )
 
   const isConfigsEmpty = !configsListError && (savedConfigs?.length ?? 0) === 0
-  let placeholderLabel = '— Apply a saved config —'
+  let placeholderLabel = t('workloads.config.apply.placeholder')
   if (configsListError) {
-    placeholderLabel = '— Failed to load configs —'
+    placeholderLabel = t('workloads.config.apply.error')
   } else if (isConfigsEmpty) {
-    placeholderLabel = '— No saved configs (create one in Config Library) —'
+    placeholderLabel = t('workloads.config.apply.empty')
   }
 
   const applySelector = (
@@ -825,22 +1287,39 @@ export default function WorkloadConfigSection({ workload }: Props) {
       className="filter-select apply-config-select"
       value={selectedConfigId}
       onChange={(e) => {
+        if (!hasPushPermission) return
         const id = e.target.value
         if (!id) return
         setSelectedConfigId(id)
         loadConfigMutation.mutate(id)
       }}
-      aria-label="Apply a saved config"
-      disabled={loadConfigMutation.isPending || !!pendingHash || isConfigsEmpty || configsListError}
+      aria-label={t('workloads.config.apply.aria')}
+      aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
+      title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
+      disabled={
+        !hasPushPermission ||
+        loadConfigMutation.isPending ||
+        !!pendingHash ||
+        isConfigsEmpty ||
+        configsListError
+      }
     >
       <option value="">{placeholderLabel}</option>
       {(savedConfigs ?? []).map((c) => (
         <option key={c.id} value={c.id}>
-          {c.id === workload.active_config_id ? `${c.name} (currently applied)` : c.name}
+          {c.id === workload.active_config_id
+            ? t('workloads.config.apply.currently_applied', { name: c.name })
+            : c.name}
         </option>
       ))}
     </select>
   )
+
+  const permissionNote = !hasPushPermission ? (
+    <div className="config-permission-note" id="config-permission-note" role="note">
+      {t('workloads.config.permission.push_blocked')}
+    </div>
+  ) : null
 
   // ── Collector without active config ──────────────────────────────────────
   if (!workload.active_config_id) {
@@ -851,11 +1330,18 @@ export default function WorkloadConfigSection({ workload }: Props) {
         {defaultRollbackDialog}
         <p className="section-title">Configuration</p>
         {applySelector}
+        {permissionNote}
         {editMode ? (
           editorPanel
         ) : (
-          <button className="btn" onClick={() => enterEditMode('')}>
-            Push a config
+          <button
+            className="btn"
+            onClick={() => enterEditMode('')}
+            disabled={!hasPushPermission}
+            title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
+            aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
+          >
+            {t('workloads.config.action.push_config')}
           </button>
         )}
         <PushStatusBanner
@@ -899,13 +1385,20 @@ export default function WorkloadConfigSection({ workload }: Props) {
       {defaultRollbackDialog}
       <p className="section-title">Configuration</p>
       {applySelector}
+      {permissionNote}
 
       {!editMode ? (
         <div>
           <YamlEditor value={activeContent} readOnly />
           <div className="btn-row btn-row-top">
-            <button className="btn" onClick={() => enterEditMode(activeContent)}>
-              Edit
+            <button
+              className="btn"
+              onClick={() => enterEditMode(activeContent)}
+              disabled={!hasPushPermission}
+              title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
+              aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
+            >
+              {t('common.edit')}
             </button>
           </div>
         </div>

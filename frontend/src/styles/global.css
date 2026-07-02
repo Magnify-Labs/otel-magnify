@@ -684,6 +684,146 @@ h4 {
   margin-left: 6px;
 }
 
+.push-scope-panel {
+  margin-top: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.push-scope-panel-readonly {
+  border-style: dashed;
+}
+
+.push-scope-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.push-scope-header h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.push-scope-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.push-scope-mode-badge {
+  align-self: flex-start;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  color: var(--gold);
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.push-scope-controls,
+.push-dynamic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.65rem;
+}
+
+.push-scope-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.push-scope-panel input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  padding: 0.42rem 0.55rem;
+}
+
+.push-scope-panel input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.push-scope-panel input:disabled,
+.push-scope-panel select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.push-dynamic-grid {
+  margin-top: 0.75rem;
+}
+
+.push-dynamic-wide {
+  grid-column: span 2;
+}
+
+.push-preview-panel {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.push-preview-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.push-preview-counts span {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+
+.push-preview-warning {
+  margin-top: 0.65rem;
+  color: var(--danger);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.push-preview-ready {
+  margin-top: 0.65rem;
+  color: var(--green);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.push-preview-blocked {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--text);
+  font-size: 0.76rem;
+}
+
+.push-preview-blocked li {
+  margin-top: 0.25rem;
+}
+
+.push-preview-blocked span,
+.push-preview-blocked em {
+  margin-left: 0.45rem;
+  color: var(--muted);
+}
+
 .validation-details {
   display: flex;
   flex-direction: column;
@@ -846,8 +986,10 @@ h4 {
   margin-top: 3px;
 }
 
-/* Read-only note under the YAML when a collector does not accept remote config */
-.config-readonly-note {
+/* Read-only notes under the YAML/config controls */
+.config-readonly-note,
+.config-permission-note,
+.push-scope-permission-note {
   margin-top: 0.75rem;
   padding: 0.65rem 0.8rem;
   border: 1px solid var(--border);
@@ -858,12 +1000,16 @@ h4 {
   font-size: 0.82rem;
   line-height: 1.5;
 }
-.config-readonly-note a {
+.config-readonly-note a,
+.config-permission-note a,
+.push-scope-permission-note a {
   color: var(--gold);
   text-decoration: none;
   border-bottom: 1px dotted var(--gold);
 }
-.config-readonly-note a:hover {
+.config-readonly-note a:hover,
+.config-permission-note a:hover,
+.push-scope-permission-note a:hover {
   color: var(--gold-soft);
 }
 

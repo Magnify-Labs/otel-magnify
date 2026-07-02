@@ -575,6 +575,34 @@ service:
 	}
 }
 
+func TestPushWorkloadConfig_RejectsViewerBeforePushing(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	_ = db.UpsertWorkload(models.Workload{
+		ID: "w-viewer", Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+		AcceptsRemoteConfig: true,
+	})
+
+	req := authedRequestForGroups(t, http.MethodPost, "/api/workloads/w-viewer/config", validWorkloadConfig, []string{"viewer"})
+	req.Header.Set("Content-Type", "text/yaml")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("viewer push should not reach OpAMP, got %+v", fake.pushed)
+	}
+	history, err := db.GetWorkloadConfigHistory("w-viewer")
+	if err != nil {
+		t.Fatalf("GetWorkloadConfigHistory: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("viewer push should not record history, got %+v", history)
+	}
+}
+
 func TestPushWorkloadConfig_OpAMPFailureResponseDoesNotLeakRawError(t *testing.T) {
 	db, router, fake := newTestAPI(t)
 	fake.err = errors.New(sensitiveOpAMPErrorFixture)

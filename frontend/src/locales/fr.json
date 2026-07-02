@@ -299,6 +299,110 @@
           "save_rollout": "Enregistrer comme rollout",
           "rollout_title": "Le stockage de rollouts persistés n’est pas encore implémenté côté backend."
         }
+      },
+      "apply": {
+        "aria": "Appliquer une configuration sauvegardée",
+        "placeholder": "— Appliquer une configuration sauvegardée —",
+        "error": "— Échec du chargement des configurations —",
+        "empty": "— Aucune configuration sauvegardée (créez-en une dans Configurations) —",
+        "currently_applied": "{{name}} (actuellement appliquée)"
+      },
+      "action": {
+        "push_config": "Pousser la config"
+      },
+      "permission": {
+        "push_blocked": "Vous n'avez pas la permission de pousser des configurations de workload. Cette configuration est en lecture seule pour votre compte.",
+        "validate_blocked": "Vous n'avez pas la permission de valider des configurations de workload."
+      },
+      "scope": {
+        "title": "Portée cible du push",
+        "help": "Prévisualisez les groupes sauvegardés ou dynamiques avant le push. Le push exécutable reste limité au workload courant.",
+        "preview_only": "Prévisualisation seule",
+        "mode_label": "Portée",
+        "single": "Workload courant",
+        "saved": "Groupe sauvegardé",
+        "dynamic": "Sélecteur dynamique",
+        "saved_label": "Groupe sauvegardé",
+        "saved_placeholder": "— Choisir un groupe sauvegardé —",
+        "groups_loading": "— Chargement des groupes sauvegardés —",
+        "groups_empty": "— Aucun groupe sauvegardé disponible —",
+        "groups_error": "— Échec du chargement des groupes —",
+        "preview_failed": "Échec de la prévisualisation des cibles",
+        "preview_button": "Prévisualiser les cibles",
+        "previewing": "Prévisualisation…",
+        "bulk_push_unavailable": "Le push groupé nécessite un endpoint backend dédié ; utilisez la prévisualisation pour vérifier la portée.",
+        "blocked_warning": "Les cibles bloquées doivent être exclues avant un push sûr.",
+        "ready": "Prêt pour le push : toutes les cibles prévisualisées acceptent la remote config.",
+        "disabled": {
+          "enter_yaml_validate": "Saisissez le YAML avant de valider.",
+          "wait_current_validate": "Attendez la fin du push en cours avant de revalider.",
+          "enter_yaml_preview": "Saisissez le YAML avant de prévisualiser les cibles.",
+          "validate_first": "Validez d’abord la configuration.",
+          "fix_validation_preview": "Corrigez les erreurs de validation avant de prévisualiser les cibles.",
+          "wait_current_preview": "Attendez la fin du push en cours avant de prévisualiser les cibles.",
+          "select_saved_group": "Choisissez un groupe sauvegardé avant de prévisualiser les cibles.",
+          "enter_selector": "Renseignez au moins un champ du sélecteur avant de prévisualiser les cibles.",
+          "fix_validation_plan": "Corrigez les erreurs de validation avant de générer un plan.",
+          "wait_current_plan": "Attendez la fin du push en cours avant de générer un plan.",
+          "generate_valid_plan": "Générez une configuration valide avant de planifier un push.",
+          "fix_validation_push": "Corrigez les erreurs de validation avant le push.",
+          "generate_plan": "Générez le plan de sécurité avant le push.",
+          "plan_blocks_push": "Le plan de sécurité de config bloque ce push.",
+          "wait_current_push": "Attendez la fin du push en cours."
+        },
+        "field": {
+          "cluster": "Cluster",
+          "namespace": "Namespace",
+          "env": "Environnement",
+          "team": "Équipe",
+          "workload_type": "Label de type de workload",
+          "version": "Version collector",
+          "capabilities": "Capabilities"
+        },
+        "placeholder": {
+          "version": "0.98.0",
+          "capabilities": "otlp, debug"
+        },
+        "count": {
+          "targeted": "{{count}} ciblées",
+          "targeted_one": "{{count}} ciblée",
+          "targeted_other": "{{count}} ciblées",
+          "capable": "{{count}} compatibles",
+          "capable_one": "{{count}} compatible",
+          "capable_other": "{{count}} compatibles",
+          "readonly": "{{count}} lecture seule",
+          "readonly_one": "{{count}} lecture seule",
+          "readonly_other": "{{count}} lecture seule",
+          "incompatible": "{{count}} incompatibles",
+          "incompatible_one": "{{count}} incompatible",
+          "incompatible_other": "{{count}} incompatibles",
+          "offline": "{{count}} hors ligne",
+          "offline_one": "{{count}} hors ligne",
+          "offline_other": "{{count}} hors ligne"
+        },
+        "bucket": {
+          "read_only": "lecture seule",
+          "incompatible": "incompatible",
+          "offline": "hors ligne",
+          "remote_config_capable": "compatible"
+        },
+        "status": {
+          "connected": "connecté",
+          "degraded": "dégradé",
+          "disconnected": "déconnecté"
+        },
+        "reason": {
+          "read_only": "Le workload n’accepte pas la config distante.",
+          "incompatible": "Le workload est incompatible avec cette config.",
+          "offline": "Le workload n’est pas connecté.",
+          "workload_does_not_accept_remote_config": "Le workload n’accepte pas la config distante.",
+          "collector_lacks_the_debug_exporter": "Le collecteur n’a pas l’exporter debug.",
+          "workload_is_not_connected": "Le workload n’est pas connecté."
+        },
+        "group": {
+          "payments": "Collecteurs paiements",
+          "read_only": "Collecteurs en lecture seule"
+        }
       }
     }
   },

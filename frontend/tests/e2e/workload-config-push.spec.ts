@@ -1,35 +1,39 @@
-import { test, expect, mockMe } from './fixtures'
+import {
+  buildCollectorWorkload,
+  mockPushGroups,
+  mockPushPreview,
+  test,
+  expect,
+  mockMe,
+} from './fixtures'
 import type { Page } from '@playwright/test'
 import { safeRemoteErrorText } from '../../src/lib/safeRemoteErrorText'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const ACTIVE_CONFIG_ID = 'abc123'
 
+const editorGroup = {
+  id: 'grp_system_editor',
+  name: 'editor' as const,
+  role: 'editor' as const,
+  is_system: true,
+  created_at: new Date().toISOString(),
+}
+
+const viewerGroup = {
+  id: 'grp_system_viewer',
+  name: 'viewer' as const,
+  role: 'viewer' as const,
+  is_system: true,
+  created_at: new Date().toISOString(),
+}
+
 function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
   return page.route(`**/api/workloads/${WORKLOAD_ID}`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        id: WORKLOAD_ID,
-        fingerprint_source: 'k8s',
-        fingerprint_keys: { cluster: 'prod', namespace: 'obs', kind: 'deployment', name: 'otel' },
-        display_name: 'test-collector',
-        type: 'collector',
-        version: '0.98.0',
-        status: 'connected',
-        last_seen_at: new Date().toISOString(),
-        labels: {},
-        active_config_id: ACTIVE_CONFIG_ID,
-        accepts_remote_config: true,
-        available_components: {
-          components: {
-            receivers: ['otlp'],
-            exporters: ['logging', 'debug'],
-          },
-        },
-        ...overrides,
-      }),
+      body: JSON.stringify(buildCollectorWorkload({ id: WORKLOAD_ID, ...overrides })),
     }),
   )
 }
@@ -210,6 +214,7 @@ const VALIDATION_CHECKS_SUCCESS = [
 ]
 
 test.beforeEach(async ({ loggedInPage: page }) => {
+  await mockMe(page, { groups: [editorGroup] })
   await mockConfigsList(page, [])
   await mockKnownGoodMissing(page)
 })
@@ -565,9 +570,7 @@ test('canary status panel shows stop reasons and action states', async ({ logged
   await expect(page.getByRole('button', { name: 'Rollback', exact: true })).toBeEnabled()
 })
 
-test('viewer can inspect canary status but cannot start or act on it', async ({
-  loggedInPage: page,
-}) => {
+test('canary start stays disabled until a safety plan is ready', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -577,7 +580,7 @@ test('viewer can inspect canary status but cannot start or act on it', async ({
   await expect(page.getByRole('button', { name: 'Start canary' })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Start canary' })).toHaveAttribute(
     'title',
-    /Requires workload:push_config permission/,
+    /Generate a non-blocking Config Safety Plan before starting a canary/,
   )
 })
 
@@ -675,7 +678,7 @@ test('plan surfaces high-risk changes reported by backend', async ({ loggedInPag
   )
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
 
@@ -696,7 +699,7 @@ test('export plan action exposes an accessible markdown download affordance', as
   await mockPlanExport(page)
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
 
@@ -729,7 +732,7 @@ test('export plan falls back to client-side JSON when backend export is unavaila
   )
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
 
@@ -1243,7 +1246,7 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   // Edit mode closed — the editor toolbar buttons are gone, the Edit entry-point is back
   await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Validate for this collector' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
 
   // Banner reflects the applied status
   await expect(page.locator('.push-banner-applied')).toBeVisible()
@@ -1534,7 +1537,7 @@ test('empty configs list disables selector with explanatory text', async ({
   await expect(selector.locator('option').first()).toContainText('No saved configs')
 
   // Editor copy-paste flow still functional: Edit button visible
-  await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
 })
 
 test('configs list fetch error shows disabled selector with retry', async ({
@@ -1554,7 +1557,7 @@ test('configs list fetch error shows disabled selector with retry', async ({
   await expect(selector.locator('option').first()).toContainText('Failed to load configs')
 
   // Editor copy-paste flow still works
-  await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
 })
 
 test('selector is absent in read-only collector branch', async ({ loggedInPage: page }) => {
@@ -1651,4 +1654,170 @@ test('selecting a config overwrites in-progress draft silently (no confirm)', as
   await expect(page.locator('.cm-mergeView .cm-content').nth(1)).not.toContainText(
     'user-typed-mess',
   )
+})
+
+test('capable user sees enabled push scope selector and preview buckets', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await mockPushPreview(page)
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await expect(page.locator('.validation-ok')).toBeVisible()
+
+  await expect(page.locator('.push-scope-panel')).toContainText('Push target scope')
+  await expect(page.locator('select.push-scope-mode-select')).toBeEnabled()
+  await expect(page.locator('select.push-scope-mode-select')).toContainText('Current workload')
+  await expect(page.locator('select.push-scope-mode-select')).toContainText('Saved group')
+  await expect(page.locator('select.push-scope-mode-select')).toContainText('Dynamic selector')
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+  await expect(page.locator('.push-scope-mode-badge')).toContainText('Preview only')
+  await expect(page.locator('select.push-saved-group-select')).toBeEnabled()
+  await expect(page.locator('select.push-saved-group-select option[value="payments"]')).toHaveText(
+    'Payments collectors',
+  )
+  await page.locator('select.push-saved-group-select').selectOption('payments')
+  await page.getByRole('button', { name: 'Preview targets' }).click()
+
+  await expect(page.locator('.push-preview-panel')).toContainText('8 targeted')
+  await expect(page.locator('.push-preview-panel')).toContainText('5 capable')
+  await expect(page.locator('.push-preview-panel')).toContainText('1 read-only')
+  await expect(page.locator('.push-preview-panel')).toContainText('1 incompatible')
+  await expect(page.locator('.push-preview-panel')).toContainText('1 offline')
+  await expect(page.locator('.push-preview-blocked')).toContainText('payments-ro')
+  await expect(page.locator('.push-preview-blocked')).toContainText('payments-incompatible')
+  await expect(page.locator('.push-preview-warning')).toContainText(
+    'Blocked targets must be excluded',
+  )
+  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+})
+
+test('viewer permission keeps config push controls read-only', async ({ loggedInPage: page }) => {
+  await mockMe(page, { groups: [viewerGroup] })
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockConfigsList(page, [
+    { id: ACTIVE_CONFIG_ID, name: 'collector-prod-eu' },
+    { id: 'cfg-us', name: 'collector-prod-us' },
+  ])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  await expect(page.getByText('Configuration', { exact: true })).toBeVisible()
+  await expect(page.locator('.cm-content').first()).toContainText('receivers')
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
+    'title',
+    /don't have permission to push workload configurations/,
+  )
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
+    'aria-describedby',
+    'config-permission-note',
+  )
+  await expect(page.locator('select.apply-config-select')).toBeDisabled()
+  await expect(page.locator('select.apply-config-select')).toHaveAttribute(
+    'title',
+    /don't have permission to push workload configurations/,
+  )
+  await expect(page.locator('select.apply-config-select')).toHaveAttribute(
+    'aria-describedby',
+    'config-permission-note',
+  )
+  await expect(page.locator('select.apply-config-select option').nth(1)).toContainText(
+    'collector-prod-eu (currently applied)',
+  )
+  await expect(page.locator('select.apply-config-select option').nth(2)).toContainText(
+    'collector-prod-us',
+  )
+  await expect(page.locator('.config-permission-note')).toContainText('permission')
+  await expect(page.locator('.push-scope-panel')).toHaveCount(0)
+  await expect(page.locator('.push-preview-panel')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Validate for this collector' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
+})
+
+test('French scope UX renders translated labels and blocked preview copy', async ({
+  loggedInPage: page,
+}) => {
+  await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await mockPushPreview(page)
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Modifier' }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+  await expect(page.locator('select.push-saved-group-select option[value="payments"]')).toHaveText(
+    'Collecteurs paiements',
+  )
+  await page.locator('select.push-saved-group-select').selectOption('payments')
+  await page.getByRole('button', { name: 'Prévisualiser les cibles' }).click()
+
+  await expect(page.locator('.push-scope-panel')).toContainText('Portée cible du push')
+  await expect(page.locator('.push-scope-mode-badge')).toContainText('Prévisualisation seule')
+  await expect(page.locator('.push-preview-panel')).toContainText('8 ciblées')
+  await expect(page.locator('.push-preview-panel')).toContainText('1 lecture seule')
+  await expect(page.locator('.push-preview-blocked')).toContainText('connecté')
+  await expect(page.locator('.push-preview-blocked')).toContainText(
+    'Le workload n’accepte pas la config distante.',
+  )
+  await expect(page.locator('.push-preview-warning')).toContainText('cibles bloquées')
+  await expect(page.locator('body')).not.toContainText('workloads.config.scope')
+})
+
+test('dynamic push selector posts labels version and capability for safe preview', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await mockPushPreview(page)
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await expect(page.locator('.validation-ok')).toBeVisible()
+
+  await page.locator('select.push-scope-mode-select').selectOption('dynamic')
+  await page.getByLabel('Cluster').fill('prod-eu')
+  await page.getByLabel('Namespace').fill('observability')
+  await page.getByLabel('Environment').fill('prod')
+  await page.getByLabel('Team').fill('platform')
+  await page.getByLabel('Workload type').fill('daemonset')
+  await page.getByLabel('Collector version').fill('0.98.0')
+  await page.getByLabel('Capabilities').fill('otlp, debug')
+  const previewRequest = page.waitForRequest('**/api/pushes/preview')
+  await page.getByRole('button', { name: 'Preview targets' }).click()
+
+  const request = await previewRequest
+  expect(request.postDataJSON()).toMatchObject({
+    selector: {
+      match_labels: {
+        cluster: 'prod-eu',
+        namespace: 'observability',
+        env: 'prod',
+        team: 'platform',
+        workload_type: 'daemonset',
+      },
+      types: ['collector'],
+      versions: ['0.98.0'],
+      capabilities: ['otlp', 'debug'],
+    },
+  })
+  await expect(page.locator('.push-preview-panel')).toContainText('3 targeted')
+  await expect(page.locator('.push-preview-panel')).toContainText('Ready to push')
 })

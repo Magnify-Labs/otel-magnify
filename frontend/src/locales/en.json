@@ -299,6 +299,110 @@
           "save_rollout": "Save as rollout",
           "rollout_title": "Persisted rollout storage is not implemented by the backend yet."
         }
+      },
+      "apply": {
+        "aria": "Apply a saved config",
+        "placeholder": "— Apply a saved config —",
+        "error": "— Failed to load configs —",
+        "empty": "— No saved configs (create one in Configs) —",
+        "currently_applied": "{{name}} (currently applied)"
+      },
+      "action": {
+        "push_config": "Push config"
+      },
+      "permission": {
+        "push_blocked": "You don't have permission to push workload configurations. This config is read-only for your account.",
+        "validate_blocked": "You don't have permission to validate workload configurations."
+      },
+      "scope": {
+        "title": "Push target scope",
+        "help": "Preview saved or dynamic groups before pushing. The current workload path remains the only executable push action.",
+        "preview_only": "Preview only",
+        "mode_label": "Scope",
+        "single": "Current workload",
+        "saved": "Saved group",
+        "dynamic": "Dynamic selector",
+        "saved_label": "Saved group",
+        "saved_placeholder": "— Select a saved group —",
+        "groups_loading": "— Loading saved groups —",
+        "groups_empty": "— No saved groups available —",
+        "groups_error": "— Failed to load groups —",
+        "preview_failed": "Failed to preview push targets",
+        "preview_button": "Preview targets",
+        "previewing": "Previewing…",
+        "bulk_push_unavailable": "Bulk push requires a backend push endpoint; use preview to verify scope safety.",
+        "blocked_warning": "Blocked targets must be excluded before a safe push.",
+        "ready": "Ready to push: every previewed target is remote-config capable.",
+        "disabled": {
+          "enter_yaml_validate": "Enter YAML before validating.",
+          "wait_current_validate": "Wait for the current push to finish before validating again.",
+          "enter_yaml_preview": "Enter YAML before previewing targets.",
+          "validate_first": "Validate the configuration first.",
+          "fix_validation_preview": "Fix validation errors before previewing targets.",
+          "wait_current_preview": "Wait for the current push to finish before previewing targets.",
+          "select_saved_group": "Select a saved group before previewing targets.",
+          "enter_selector": "Enter at least one selector field before previewing targets.",
+          "fix_validation_plan": "Fix validation errors before generating a plan.",
+          "wait_current_plan": "Wait for the current push to finish before generating a plan.",
+          "generate_valid_plan": "Generate a valid configuration before planning a push.",
+          "fix_validation_push": "Fix validation errors before pushing.",
+          "generate_plan": "Generate the safety plan before pushing.",
+          "plan_blocks_push": "Config safety plan blocks this push.",
+          "wait_current_push": "Wait for the current push to finish."
+        },
+        "field": {
+          "cluster": "Cluster",
+          "namespace": "Namespace",
+          "env": "Environment",
+          "team": "Team",
+          "workload_type": "Workload type label",
+          "version": "Collector version",
+          "capabilities": "Capabilities"
+        },
+        "placeholder": {
+          "version": "0.98.0",
+          "capabilities": "otlp, debug"
+        },
+        "count": {
+          "targeted": "{{count}} targeted",
+          "targeted_one": "{{count}} targeted",
+          "targeted_other": "{{count}} targeted",
+          "capable": "{{count}} capable",
+          "capable_one": "{{count}} capable",
+          "capable_other": "{{count}} capable",
+          "readonly": "{{count}} read-only",
+          "readonly_one": "{{count}} read-only",
+          "readonly_other": "{{count}} read-only",
+          "incompatible": "{{count}} incompatible",
+          "incompatible_one": "{{count}} incompatible",
+          "incompatible_other": "{{count}} incompatible",
+          "offline": "{{count}} offline",
+          "offline_one": "{{count}} offline",
+          "offline_other": "{{count}} offline"
+        },
+        "bucket": {
+          "read_only": "read-only",
+          "incompatible": "incompatible",
+          "offline": "offline",
+          "remote_config_capable": "capable"
+        },
+        "status": {
+          "connected": "connected",
+          "degraded": "degraded",
+          "disconnected": "disconnected"
+        },
+        "reason": {
+          "read_only": "Workload does not accept remote config.",
+          "incompatible": "Workload is incompatible with this config.",
+          "offline": "Workload is not connected.",
+          "workload_does_not_accept_remote_config": "Workload does not accept remote config.",
+          "collector_lacks_the_debug_exporter": "Collector lacks the debug exporter.",
+          "workload_is_not_connected": "Workload is not connected."
+        },
+        "group": {
+          "payments": "Payments collectors",
+          "read_only": "Read-only collectors"
+        }
       }
     }
   },

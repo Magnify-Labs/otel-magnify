@@ -16,6 +16,9 @@ import type {
   ConfigApplicationPlanExportFormat,
   ValidationResult,
   PushActivityPoint,
+  PushGroup,
+  PushPreview,
+  PushPreviewRequest,
   MeResponse,
   UserPreferences,
   RollbackPrepareResponse,
@@ -233,6 +236,9 @@ export const pushesAPI = {
     api
       .get<PushActivityPoint[]>('/pushes/activity', { params: { window } })
       .then((r) => r.data ?? []),
+  groups: () => api.get<PushGroup[]>('/push-groups').then((r) => r.data ?? []),
+  preview: (request: PushPreviewRequest) =>
+    api.post<PushPreview>('/pushes/preview', request).then((r) => r.data),
 }
 
 export const authAPI = {
