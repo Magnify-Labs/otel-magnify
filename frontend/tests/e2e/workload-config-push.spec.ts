@@ -570,9 +570,7 @@ test('canary status panel shows stop reasons and action states', async ({ logged
   await expect(page.getByRole('button', { name: 'Rollback', exact: true })).toBeEnabled()
 })
 
-test('canary start stays disabled until a safety plan is ready', async ({
-  loggedInPage: page,
-}) => {
+test('canary start stays disabled until a safety plan is ready', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1700,6 +1698,14 @@ test('viewer permission keeps config push controls read-only', async ({ loggedIn
   await page.goto(`/workloads/${WORKLOAD_ID}`)
 
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
+    'title',
+    /don't have permission to push workload configurations/,
+  )
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
+    'aria-describedby',
+    'config-permission-note',
+  )
   await expect(page.locator('select.apply-config-select')).toBeDisabled()
   await expect(page.locator('select.apply-config-select')).toHaveAttribute(
     'title',
@@ -1710,6 +1716,8 @@ test('viewer permission keeps config push controls read-only', async ({ loggedIn
     'config-permission-note',
   )
   await expect(page.locator('.config-permission-note')).toContainText('permission')
+  await expect(page.locator('.push-scope-panel')).toHaveCount(0)
+  await expect(page.locator('.push-preview-panel')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Validate for this collector' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Push' })).toHaveCount(0)
 })
