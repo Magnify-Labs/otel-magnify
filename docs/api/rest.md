@@ -25,6 +25,8 @@ All endpoints return JSON. Most expect JSON request bodies; the two config endpo
 | `GET` | `/api/configs/{id}` | Yes | Fetch a config by ID. |
 | `GET` | `/api/alerts` | Yes | List active alerts. |
 | `POST` | `/api/alerts/{id}/resolve` | Yes | Resolve an alert. |
+| `POST` | `/api/reports/evidence-pack` | Yes | Preview a deterministic evidence-pack JSON payload. |
+| `POST` | `/api/reports/evidence-pack/export` | Yes | Export an evidence pack as Markdown, CSV, or PDF (`?format=`). |
 | `GET` | `/ws?token={jwt}` | Yes | WebSocket hub (see [WebSocket](websocket.md)). |
 | `GET` | `/healthz` | No | Liveness probe. |
 
