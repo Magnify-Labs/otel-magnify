@@ -412,11 +412,25 @@ func (s *Server) upsertWorkloadFromDescription(_, workloadID string, fp Fingerpr
 	w.AcceptsRemoteConfig = msg.Capabilities&acceptsRemoteConfigCap != 0
 
 	// Rebuild labels from scratch to match the current attribute set. Skip
-	// keys already projected into dedicated columns.
+	// keys already projected into dedicated columns. Preserve reserved trusted
+	// selector labels only from existing DB state; never accept them from
+	// self-reported OpAMP attributes.
+	trustedLabels := models.Labels{}
+	for k, v := range w.Labels {
+		if strings.HasPrefix(k, models.TrustedSelectorLabelPrefix) {
+			trustedLabels[k] = v
+		}
+	}
 	w.Labels = models.Labels{}
+	for k, v := range trustedLabels {
+		w.Labels[k] = v
+	}
 	for k, v := range attrs {
 		switch k {
 		case "service.name", "service.version":
+			continue
+		}
+		if strings.HasPrefix(k, models.TrustedSelectorLabelPrefix) {
 			continue
 		}
 		w.Labels[k] = v

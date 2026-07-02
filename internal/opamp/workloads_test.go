@@ -265,6 +265,39 @@ func TestOnMessageUpsertsWorkloadWithFingerprint(t *testing.T) {
 	}
 }
 
+func TestUpsertWorkloadFromDescriptionPreservesTrustedSelectorLabels(t *testing.T) {
+	store := newFakeStore()
+	store.workloads["w-trusted"] = models.Workload{
+		ID:     "w-trusted",
+		Labels: models.Labels{"otel.magnify/selector.env": "prod"},
+	}
+	srv := New(store, &fakeNotifier{}, opts20())
+
+	srv.upsertWorkloadFromDescription("", "w-trusted", FingerprintResult{Source: "uid", Keys: map[string]string{"instance_uid": "uid-1"}}, map[string]string{
+		"service.name":                  "spoof",
+		"service.version":               "1.0.0",
+		"env":                           "staging",
+		"otel.magnify/selector.env":     "staging",
+		"otel.magnify/selector.cluster": "prod-eu",
+	}, &protobufs.AgentToServer{})
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.upsertCalls) == 0 {
+		t.Fatal("expected UpsertWorkload to be called")
+	}
+	got := store.upsertCalls[len(store.upsertCalls)-1]
+	if got.Labels["otel.magnify/selector.env"] != "prod" {
+		t.Fatalf("trusted env label = %q, want preserved prod", got.Labels["otel.magnify/selector.env"])
+	}
+	if _, ok := got.Labels["otel.magnify/selector.cluster"]; ok {
+		t.Fatal("agent-reported trusted selector label should be ignored")
+	}
+	if got.Labels["env"] != "staging" {
+		t.Fatalf("ordinary agent label = %q, want staging", got.Labels["env"])
+	}
+}
+
 func TestConnectedEventEmittedOnFreshBind(t *testing.T) {
 	store := newFakeStore()
 	n := &fakeNotifier{}
