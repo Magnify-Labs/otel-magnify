@@ -932,6 +932,78 @@ export interface ConfigDriftDashboard {
   items: ConfigDriftItem[]
 }
 
+export interface EvidenceReportSummary {
+  config_changes: number
+  validation_failures: number
+  rollbacks: number
+  drifted_collectors: number
+  outdated_collectors: number
+  audit_events: number
+}
+
+export interface EvidenceConfigChange {
+  workload_id: string
+  display_name?: string
+  config_hash: string
+  previous_hash?: string
+  status: PushStatus | string
+  pushed_by?: string
+  applied_at: string
+  content_available: boolean
+  diff_summary?: string
+}
+
+export interface EvidenceValidationFailure {
+  workload_id: string
+  display_name?: string
+  config_hash: string
+  status: PushStatus | string
+  error: string
+  occurred_at: string
+}
+
+export interface EvidenceRollback {
+  workload_id: string
+  display_name?: string
+  config_hash: string
+  rollback_of_push_id?: string
+  status: PushStatus | string
+  occurred_at: string
+}
+
+export interface EvidenceAuditTrailEntry {
+  action: string
+  resource: string
+  resource_id?: string
+  detail?: string
+  at: string
+}
+
+export interface EvidenceReportSignature {
+  algorithm: string
+  payload_digest_sha256: string
+  key_id?: string
+  signature?: string
+  verification_hint: string
+}
+
+export interface EvidenceReport {
+  schema_version: 'config_safety_evidence_report.v1'
+  report_id: string
+  generated_at: string
+  recommended_version?: string
+  summary: EvidenceReportSummary
+  config_changes: EvidenceConfigChange[]
+  validation_failures: EvidenceValidationFailure[]
+  rollbacks: EvidenceRollback[]
+  drift: ConfigDriftDashboard
+  outdated_collectors: FleetCollectorVersionFinding[]
+  audit_trail: EvidenceAuditTrailEntry[]
+  signature: EvidenceReportSignature
+}
+
+export type EvidenceReportExportFormat = 'json' | 'markdown' | 'csv' | 'pdf'
+
 export interface Group {
   id: string
   name: string
