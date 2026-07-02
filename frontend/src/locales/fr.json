@@ -83,17 +83,6 @@
       "action": {
         "upgrade_collector": "Mettre à niveau vers {{version}}",
         "unsupported_component": "Choisir une config plus ancienne, mettre à niveau le collecteur ou retirer {{component}}."
-      },
-      "recommendations_label": "Recommandations actionnables",
-      "action_label": {
-        "upgrade_collector": "Mettre à niveau le collecteur",
-        "choose_older_config": "Choisir une config plus ancienne",
-        "remove_component": "Retirer ou remplacer le composant"
-      },
-      "recommendation": {
-        "upgrade_collector": "Mettez à niveau le collecteur avant d’appliquer cette config.",
-        "choose_older_config": "Choisissez une config plus ancienne compatible avec les capacités actuelles du collecteur.",
-        "remove_component": "Retirez ou remplacez {{component}} avant d’appliquer cette config."
       }
     },
     "alerts": {
@@ -165,6 +154,40 @@
           "empty_endpoints": "Aucun endpoint modifié.",
           "empty_sampling": "Aucun changement de sampling.",
           "empty_auth": "Aucun changement auth ou header."
+        },
+        "requires_push_permission": "Nécessite la permission workload:push_config",
+        "known_good_only_applied": "Seules les révisions appliquées peuvent être marquées known-good",
+        "content_unavailable": "Contenu de config indisponible",
+        "rollback_only_applied": "Seules les révisions appliquées peuvent être restaurées. Les révisions échouées ou en attente ne sont pas des cibles sûres.",
+        "known_good_load_error": "Échec du chargement de l’état Last known-good.",
+        "col_actions": "Actions",
+        "states_for": "États pour {{hash}}",
+        "clear_known_good": "Effacer Last known-good",
+        "mark_known_good": "Marquer known-good",
+        "mark_known_good_confirm_title": "Marquer cette révision comme Last known-good ?",
+        "mark_known_good_confirm_body": "Les rollbacks par défaut cibleront cette config pour ce workload jusqu’à ce qu’une autre révision soit marquée.",
+        "mark_known_good_replaces": "Cela remplace {{hash}} comme Last known-good.",
+        "marking_known_good": "Marquage…",
+        "mark_as_last_known_good": "Marquer Last known-good",
+        "mark_known_good_failed": "Échec du marquage known-good",
+        "clear_known_good_failed": "Échec de l’effacement known-good",
+        "state": {
+          "current": "Courante",
+          "previous": "Précédente",
+          "last_known_good": "Last known-good",
+          "failed_candidate": "Candidate échouée"
+        },
+        "status": {
+          "applied": "Appliquée",
+          "applying": "Application",
+          "failed": "Échec",
+          "pending": "En attente",
+          "validated": "Validée",
+          "submitted": "Soumise",
+          "sent": "Envoyée",
+          "rollback_started": "Rollback en cours",
+          "rollback_applied": "Rollback appliqué",
+          "rollback_failed": "Rollback échoué"
         }
       },
       "safety": {
@@ -370,7 +393,15 @@
         "placeholder": "— Appliquer une configuration sauvegardée —",
         "error": "— Échec du chargement des configurations —",
         "empty": "— Aucune configuration sauvegardée (créez-en une dans Configurations) —",
-        "currently_applied": "{{name}} (actuellement appliquée)"
+        "currently_applied": "{{name}} (actuellement appliquée)",
+        "reason": {
+          "read_only": "Lecture seule",
+          "validation_failed": "Validation échouée",
+          "all_targets_excluded": "Toutes les cibles sont exclues",
+          "empty_config": "Config vide",
+          "non_collector_target": "Cible non-collector",
+          "workload_not_connected": "Le workload n’est pas connecté"
+        }
       },
       "action": {
         "push_config": "Pousser la config"
@@ -467,6 +498,148 @@
         "group": {
           "payments": "Collecteurs paiements",
           "read_only": "Collecteurs en lecture seule"
+        }
+      },
+      "recovery": {
+        "aria_label": "États de récupération de configuration",
+        "title": "États de récupération de configuration",
+        "help": "Vérifiez la cible de récupération effective avant de pousser des changements Collector risqués.",
+        "rollback_last_known_good": "Restaurer Last known-good",
+        "rollback_previous": "Restaurer Précédente",
+        "requires_push_permission": "Nécessite la permission workload:push_config",
+        "known_good_unavailable": "Le contenu Last known-good est indisponible. Marquez une autre révision appliquée avant le rollback.",
+        "no_recovery_target": "Aucune config Last known-good ou Précédente n’est disponible pour rollback.",
+        "loading": "Chargement des états de récupération…",
+        "current": "Courante",
+        "previous": "Précédente",
+        "last_known_good": "Last known-good",
+        "no_current_config": "Aucune config courante",
+        "none_yet": "Aucune pour le moment",
+        "unknown_marker": "Marqueur inconnu",
+        "content_unavailable": "Contenu indisponible",
+        "last_known_good_none": "Last known-good : aucune",
+        "not_loaded": "Non chargée",
+        "previous_fallback": "Le rollback utilisera Précédente jusqu’à ce qu’une révision known-good soit marquée.",
+        "failed_candidate": "Candidate échouée",
+        "candidate_failed": "Candidate échouée",
+        "known_good_load_error": "Échec du chargement de la configuration Last known-good."
+      },
+      "editor": {
+        "validation_request_failed": "Échec de la requête de validation",
+        "plan_failed": "Échec de génération du plan de sécurité",
+        "plan_loading": "Chargement du plan de sécurité…",
+        "plan_load_failed": "Échec du chargement du plan de sécurité.",
+        "loading": "Chargement de la configuration…",
+        "load_failed": "Échec du chargement de la configuration",
+        "no_reported_config": "Aucune config reportée.",
+        "validating": "Validation…",
+        "validate_for_collector": "Valider pour ce collecteur",
+        "generating_plan": "Génération du plan…",
+        "generate_safety_plan": "Générer le plan de sécurité",
+        "applying": "Application…",
+        "pushing": "Push…",
+        "push": "Pousser"
+      },
+      "title": "Configuration",
+      "readonly_note": {
+        "before": "Lecture seule — ce collecteur utilise l’extension",
+        "after": "qui ne peut que reporter sa configuration. Lancez-le sous l’OpAMP Supervisor pour activer les pushes de config distante."
+      },
+      "validation": {
+        "aria_label": "Résultat de validation de configuration",
+        "versions_aria": "Versions de validation",
+        "otelcol_unavailable": "otelcol indisponible",
+        "blocking_errors": "Erreurs bloquantes",
+        "warnings": "Avertissements",
+        "required": "Requis",
+        "advisory": "Conseil",
+        "binary": "Binaire",
+        "target": "Cible",
+        "path": "Chemin",
+        "failed": "Validation échouée",
+        "passed_with_warnings": "Validation réussie avec avertissements",
+        "passed": "Validation réussie",
+        "configuration_validation": "Validation de configuration",
+        "configuration_valid": "La configuration est valide.",
+        "status": {
+          "passed": "Réussi",
+          "warning": "Avertissement",
+          "failed": "Échec",
+          "skipped": "Ignoré"
+        }
+      },
+      "push_status": {
+        "panel_aria": "Statut du push de config",
+        "empty_title": "Aucun push de config en cours",
+        "empty_copy": "Validez une config puis poussez-la pour voir le statut de livraison ici.",
+        "updated": "Mis à jour {{time}}",
+        "no_opamp_status": "Aucun statut OpAMP après 30s",
+        "timeout_copy": "otel-magnify a envoyé la config mais n’a pas encore reçu de statut OpAMP du workload.",
+        "hide_instance_details": "Masquer les détails des instances",
+        "view_instance_details": "Voir les détails des instances",
+        "auto_rolled_back": "Auto-rollback effectué",
+        "dismiss": "Fermer",
+        "timeline_aria": "Chronologie du push",
+        "error_groups_aria": "Erreurs de config distante groupées",
+        "error_groups_heading": "Erreurs de config distante groupées par cause",
+        "instance_count": "{{count}} instance",
+        "instance_count_one": "{{count}} instance",
+        "instance_count_other": "{{count}} instances",
+        "severity": "Sévérité : {{severity}}",
+        "aggregate": {
+          "applied_count": "{{applied}}/{{total}} appliquées",
+          "failed_count": "{{count}} échouées",
+          "pending_count": "{{count}} en attente",
+          "pending": "Le push est en attente de soumission.",
+          "submitted": "Requête acceptée. En attente de livraison OpAMP.",
+          "sent": "Envoyé via OpAMP. En attente du statut distant.",
+          "applying": "Le workload applique cette config.",
+          "applied": "Config appliquée avec succès.",
+          "failed": "Push de config échoué. Vérifiez les erreurs et instances affectées.",
+          "rollback_started": "Rollback en cours.",
+          "rollback_applied": "Rollback appliqué avec succès.",
+          "rollback_failed": "Rollback échoué. Vérifiez les détails avant de réessayer.",
+          "validated": "Validation réussie. Prêt à pousser.",
+          "default": "Statut de push disponible."
+        },
+        "status": {
+          "validated": "Validée",
+          "submitted": "Soumise",
+          "sent": "Envoyée via OpAMP",
+          "applying": "Application",
+          "applied": "✓ Appliquée",
+          "failed": "✗ Échec",
+          "rollback_started": "Rollback en cours",
+          "rollback_applied": "Rollback appliqué",
+          "rollback_failed": "Rollback échoué",
+          "pending": "En attente"
+        },
+        "instance": {
+          "col_instance": "Instance",
+          "col_target": "Cible",
+          "col_status": "Statut",
+          "col_updated": "Mise à jour",
+          "col_hash": "Hash",
+          "col_error": "Erreur",
+          "best_effort": "Best effort",
+          "required": "Requise",
+          "status": {
+            "no_status": "Aucun statut",
+            "sent": "Envoyée",
+            "applying": "Application",
+            "applied": "Appliquée",
+            "failed": "Échec",
+            "unknown": "Inconnu"
+          }
+        },
+        "error_cause": {
+          "collector_validation": "Le collecteur a rejeté la config",
+          "opamp_send_failed": "Échec de livraison OpAMP",
+          "apply_timeout": "Aucun statut OpAMP après 30s",
+          "capability_mismatch": "Capacité collecteur incompatible",
+          "permission_or_policy": "Permission ou règle bloque la config",
+          "rollback_unavailable": "Statut de rollback indisponible",
+          "redacted": "Détails d’erreur de config distante masqués"
         }
       }
     }
