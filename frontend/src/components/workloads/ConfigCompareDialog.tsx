@@ -78,6 +78,18 @@ export default function ConfigCompareDialog({ workloadId, history, onClose }: Pr
     retry: false,
   })
 
+  const policyQuery = useQuery({
+    queryKey: ['config-policy-preview', workloadId, leftRev?.hash, rightRev?.hash],
+    queryFn: () =>
+      configsAPI.previewPolicy({
+        current_yaml: leftYaml,
+        candidate_yaml: rightYaml,
+        target: { workload_id: workloadId },
+      }),
+    enabled: canCompare,
+    retry: false,
+  })
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
@@ -142,6 +154,9 @@ export default function ConfigCompareDialog({ workloadId, history, onClose }: Pr
               otelDiff={otelDiffQuery.data}
               otelDiffLoading={otelDiffQuery.isLoading}
               otelDiffUnavailable={otelDiffQuery.isError}
+              policy={policyQuery.data}
+              policyLoading={policyQuery.isLoading}
+              policyUnavailable={policyQuery.isError}
             />
           )}
         </div>

@@ -2455,6 +2455,10 @@ code {
   padding: 1rem;
 }
 
+.config-policy-panel {
+  margin-top: 1rem;
+}
+
 .otel-impact-panel-high {
   border-left-color: var(--red);
   box-shadow: 0 0 0 1px var(--red-dim);

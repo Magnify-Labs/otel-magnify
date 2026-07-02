@@ -7,6 +7,7 @@ import { DOCS_BASE_URL } from '../../constants'
 import YamlEditor from '../config/YamlEditor'
 import PushStatusBanner from './PushStatusBanner'
 import ConfigDiffView from './ConfigDiffView'
+import ConfigPolicyPanel from './ConfigPolicyPanel'
 import PushHistoryTable from './PushHistoryTable'
 import ConfigSafetySection from './ConfigSafetySection'
 import GuidedRollbackDialog from './GuidedRollbackDialog'
@@ -363,6 +364,8 @@ function ConfigApplicationPlanPanel({
           </ul>
         </div>
       )}
+
+      <ConfigPolicyPanel policy={plan.policy} />
 
       <div className="config-plan-target-list">
         {plan.targets.map((target) => {

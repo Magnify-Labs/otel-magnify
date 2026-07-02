@@ -6,7 +6,9 @@ import { EditorView } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
 import { yaml } from '@codemirror/lang-yaml'
 import { signalDeckYaml } from '../config/yamlTheme'
+import ConfigPolicyPanel from './ConfigPolicyPanel'
 import type {
+  ConfigPolicyEvaluation,
   OTelComponentDiff,
   OTelConfigDiffResponse,
   OTelDiffRisk,
@@ -22,6 +24,9 @@ interface Props {
   otelDiff?: OTelConfigDiffResponse
   otelDiffLoading?: boolean
   otelDiffUnavailable?: boolean
+  policy?: ConfigPolicyEvaluation
+  policyLoading?: boolean
+  policyUnavailable?: boolean
 }
 
 const riskOrder: OTelDiffRisk[] = ['high', 'medium', 'low', 'none']
@@ -32,6 +37,9 @@ export default function ConfigDiffView({
   otelDiff,
   otelDiffLoading = false,
   otelDiffUnavailable = false,
+  policy,
+  policyLoading = false,
+  policyUnavailable = false,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const viewRef = useRef<MergeView | null>(null)
@@ -65,6 +73,7 @@ export default function ConfigDiffView({
         loading={otelDiffLoading}
         unavailable={otelDiffUnavailable}
       />
+      <ConfigPolicyPanel policy={policy} loading={policyLoading} unavailable={policyUnavailable} />
       <div className="raw-diff-warning" role="note">
         {t('workloads.config.versioning.raw_diff_warning')}
       </div>

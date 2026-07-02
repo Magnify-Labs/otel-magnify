@@ -402,7 +402,7 @@ export interface ConfigApplicationPlan {
   config_hash: string
   summary: ConfigApplicationPlanSummary
   targets: ConfigApplicationPlanTarget[]
-  policy: ConfigPolicyEvaluation
+  policy?: ConfigPolicyEvaluation | null
   hard_failures: string[]
   can_push: boolean
   apply_allowed: boolean
