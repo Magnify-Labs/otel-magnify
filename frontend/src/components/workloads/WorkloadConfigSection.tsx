@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { configsAPI, workloadsAPI } from '../../api/client'
 import { DOCS_BASE_URL } from '../../constants'
 import YamlEditor from '../config/YamlEditor'
@@ -15,6 +16,7 @@ import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
 import type {
   ValidationCheck,
+  ConfigApplicationPlan,
   ValidationMessage,
   ValidationResult,
   Workload,
@@ -27,6 +29,7 @@ interface Props {
 }
 
 type Tab = 'edit' | 'diff'
+type PlanExportStatus = 'idle' | 'ready' | 'error'
 
 const PUSH_TIMEOUT_MS = 30_000
 
@@ -197,6 +200,181 @@ function ConfigStateCard({
   )
 }
 
+function ConfigApplicationPlanPanel({
+  plan,
+  isExporting,
+  exportStatus,
+  onExport,
+}: {
+  plan: ConfigApplicationPlan
+  isExporting: boolean
+  exportStatus: PlanExportStatus
+  onExport: () => void
+}) {
+  const { t } = useTranslation()
+  const blocked = !plan.can_push || !plan.apply_allowed || plan.hard_failures.length > 0
+  const summary = plan.summary
+  const hasBackendExport = plan.export.supported && plan.export.formats.includes('markdown')
+  const counters = [
+    [t('workloads.config.application_plan.counter.targets'), summary.target_count],
+    [t('workloads.config.application_plan.counter.collectors'), summary.collector_target_count],
+    [
+      t('workloads.config.application_plan.counter.remote_config'),
+      summary.remote_config_capable_count,
+    ],
+    [t('workloads.config.application_plan.counter.readonly'), summary.read_only_count],
+    [t('workloads.config.application_plan.counter.validation_ok'), summary.validation_ok_count],
+    [
+      t('workloads.config.application_plan.counter.validation_failed'),
+      summary.validation_failed_count,
+    ],
+    [
+      t('workloads.config.application_plan.counter.components_missing'),
+      summary.components_missing_count,
+    ],
+    [t('workloads.config.application_plan.counter.high_risk'), summary.high_risk_change_count],
+    [t('workloads.config.application_plan.counter.excluded'), summary.excluded_count],
+  ] as const
+
+  return (
+    <section
+      className={`config-application-plan ${blocked ? 'config-application-plan-blocked' : ''}`}
+      aria-labelledby="config-application-plan-title"
+    >
+      <div className="config-plan-header">
+        <div>
+          <p className="section-title" id="config-application-plan-title">
+            {t('workloads.config.application_plan.title')}
+          </p>
+          <p className="config-plan-help">
+            {blocked
+              ? t('workloads.config.application_plan.blocked_help')
+              : t('workloads.config.application_plan.ready_help')}
+          </p>
+        </div>
+        <div className={`config-plan-status ${blocked ? 'config-plan-status-blocked' : ''}`}>
+          {blocked
+            ? t('workloads.config.application_plan.status.blocked')
+            : t('workloads.config.application_plan.status.ready')}
+        </div>
+      </div>
+
+      <div
+        className="config-plan-counter-grid"
+        aria-label={t('workloads.config.application_plan.counter_aria')}
+      >
+        {counters.map(([label, value]) => (
+          <div className="config-plan-counter" key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+
+      {summary.high_risk_change_count > 0 && (
+        <div className="config-plan-warning" role="note">
+          {t('workloads.config.application_plan.high_risk_note')}
+        </div>
+      )}
+
+      {plan.hard_failures.length > 0 && (
+        <div className="config-plan-failures" role="alert">
+          <strong>{t('workloads.config.application_plan.hard_failures')}</strong>
+          <ul>
+            {plan.hard_failures.map((failure) => (
+              <li key={failure}>{humanizePlanReason(failure)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="config-plan-target-list">
+        {plan.targets.map((target) => {
+          const reasons = [...target.exclusion_reasons, ...target.hard_failures]
+          return (
+            <article
+              className={`config-plan-target ${target.excluded ? 'config-plan-target-excluded' : ''}`}
+              key={target.workload_id}
+            >
+              <div className="config-plan-target-topline">
+                <div>
+                  <h3>{target.display_name || target.workload_id}</h3>
+                  <code>{target.workload_id}</code>
+                </div>
+                <span
+                  className={`config-plan-target-status config-plan-target-${target.validation_status}`}
+                >
+                  {target.excluded
+                    ? t('workloads.config.application_plan.target.excluded')
+                    : target.validation_status === 'ok'
+                      ? t('workloads.config.application_plan.target.valid')
+                      : t('workloads.config.application_plan.target.invalid')}
+                </span>
+              </div>
+              <div className="config-plan-target-meta">
+                <span>
+                  {target.accepts_remote_config
+                    ? t('workloads.config.application_plan.target.remote_capable')
+                    : t('workloads.config.application_plan.target.readonly')}
+                </span>
+                <span>
+                  {t('workloads.config.application_plan.target.components_missing', {
+                    count: target.components_missing_count,
+                  })}
+                </span>
+                <span>
+                  {t('workloads.config.application_plan.target.high_risk', {
+                    count: target.high_risk_change_count,
+                  })}
+                </span>
+              </div>
+              {(reasons.length > 0 || (target.validation_errors ?? []).length > 0) && (
+                <ul className="config-plan-reason-list">
+                  {Array.from(new Set(reasons)).map((reason) => (
+                    <li key={reason}>{humanizePlanReason(reason)}</li>
+                  ))}
+                  {(target.validation_errors ?? []).map((error) => (
+                    <li key={error}>{error}</li>
+                  ))}
+                </ul>
+              )}
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="config-plan-actions">
+        <button
+          className="btn"
+          onClick={onExport}
+          disabled={isExporting}
+          aria-describedby="config-plan-export-status"
+        >
+          {isExporting
+            ? t('workloads.config.application_plan.action.exporting')
+            : t('workloads.config.application_plan.action.export')}
+        </button>
+        <button
+          className="btn"
+          disabled
+          title={t('workloads.config.application_plan.action.rollout_title')}
+        >
+          {t('workloads.config.application_plan.action.save_rollout')}
+        </button>
+        <span id="config-plan-export-status" className="config-plan-action-status" role="status">
+          {exportStatus === 'ready'
+            ? t('workloads.config.application_plan.export_ready')
+            : exportStatus === 'error'
+              ? t('workloads.config.application_plan.export_error')
+              : hasBackendExport
+                ? t('workloads.config.application_plan.rollout_not_persisted')
+                : t('workloads.config.application_plan.export_fallback')}
+        </span>
+      </div>
+    </section>
+  )
+}
+
 export default function WorkloadConfigSection({ workload }: Props) {
   const configStatus = useStore((s) => s.configStatus[workload.id])
   const rollback = useStore((s) => s.lastRollback[workload.id])
@@ -211,6 +389,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const [timedOut, setTimedOut] = useState(false)
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
+  const [applicationPlan, setApplicationPlan] = useState<ConfigApplicationPlan | null>(null)
+  const [planExportStatus, setPlanExportStatus] = useState<PlanExportStatus>('idle')
   const [selectedConfigId, setSelectedConfigId] = useState('')
   const [defaultRollbackTarget, setDefaultRollbackTarget] = useState<WorkloadConfig | null>(null)
 
@@ -249,10 +429,23 @@ export default function WorkloadConfigSection({ workload }: Props) {
 
   const activeContent = config?.content ?? ''
 
+  const {
+    data: readOnlyPlan,
+    isLoading: readOnlyPlanLoading,
+    isError: readOnlyPlanError,
+  } = useQuery({
+    queryKey: ['workload-config-plan-readonly', workload.id, activeContent],
+    queryFn: () => workloadsAPI.planConfig(workload.id, activeContent),
+    enabled: workload.type === 'collector' && isReadOnlyCollector(workload) && !!activeContent,
+    retry: false,
+  })
+
   const validateMutation = useMutation({
     mutationFn: () => workloadsAPI.validateConfig(workload.id, draftYaml),
     onSuccess: (result) => {
       setValidation(result)
+      setApplicationPlan(null)
+      setPlanExportStatus('idle')
       setPushError(null)
     },
     onError: (err: unknown) => {
@@ -263,6 +456,46 @@ export default function WorkloadConfigSection({ workload }: Props) {
     },
   })
 
+  const planMutation = useMutation({
+    mutationFn: () => workloadsAPI.planConfig(workload.id, draftYaml),
+    onSuccess: (plan) => {
+      setApplicationPlan(plan)
+      setPlanExportStatus('idle')
+      setPushError(null)
+    },
+    onError: (err: unknown) => {
+      const msg = axios.isAxiosError(err)
+        ? (err.response?.data?.error ?? err.message)
+        : 'Failed to generate config safety plan'
+      setPushError(msg)
+    },
+  })
+
+  const exportPlanMutation = useMutation({
+    mutationFn: () =>
+      workloadsAPI.exportConfigPlanMarkdown(workload.id, draftYaml || activeContent),
+    onSuccess: (blob) => {
+      downloadBlob(blob, 'config-safety-plan.md')
+      setPlanExportStatus('ready')
+    },
+    onError: () => {
+      setPlanExportStatus('error')
+    },
+  })
+
+  function exportApplicationPlan(plan: ConfigApplicationPlan) {
+    if (plan.export.supported && plan.export.formats.includes('markdown')) {
+      exportPlanMutation.mutate()
+      return
+    }
+
+    downloadBlob(
+      new Blob([JSON.stringify(plan, null, 2)], { type: 'application/json' }),
+      'config-safety-plan.json',
+    )
+    setPlanExportStatus('ready')
+  }
+
   const pushMutation = useMutation({
     mutationFn: () => workloadsAPI.pushConfig(workload.id, draftYaml),
     onSuccess: (res) => {
@@ -271,6 +504,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       setPendingPush(res)
       setTimedOut(false)
       setPushError(null)
+      setPlanExportStatus('idle')
     },
     onError: (err: unknown) => {
       if (axios.isAxiosError(err) && err.response?.data?.validation_errors) {
@@ -315,6 +549,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       setEditMode(false)
       setDraftYaml('')
       setValidation(null)
+      setApplicationPlan(null)
     } else if (configStatus.status === 'failed') {
       // keep editMode + draftYaml so the user can fix and retry
       setPendingHash(null)
@@ -334,6 +569,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setEditMode(true)
     setTab(targetTab)
     setValidation(null)
+    setApplicationPlan(null)
+    setPlanExportStatus('idle')
     setPushError(null)
   }
 
@@ -341,12 +578,16 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setEditMode(false)
     setDraftYaml('')
     setValidation(null)
+    setApplicationPlan(null)
+    setPlanExportStatus('idle')
     setPushError(null)
   }
 
   function onDraftChange(next: string) {
     setDraftYaml(next)
     if (validation !== null) setValidation(null)
+    if (applicationPlan !== null) setApplicationPlan(null)
+    if (planExportStatus !== 'idle') setPlanExportStatus('idle')
   }
 
   const currentPush = configStatus?.push_status ?? pendingPush ?? workload.current_config_push
@@ -362,12 +603,19 @@ export default function WorkloadConfigSection({ workload }: Props) {
         }
       : undefined)
 
-  const canPush =
+  const canGeneratePlan =
     !!draftYaml &&
     !pendingHash &&
-    !pushMutation.isPending &&
+    !planMutation.isPending &&
     validation !== null &&
     validation.valid === true
+  const canPush =
+    canGeneratePlan &&
+    !!applicationPlan &&
+    applicationPlan.can_push &&
+    applicationPlan.apply_allowed &&
+    applicationPlan.hard_failures.length === 0 &&
+    !pushMutation.isPending
 
   const hasPushPermission = hasPerm(me?.groups, 'workload:push_config')
   const canRollback = hasPushPermission
@@ -390,6 +638,20 @@ export default function WorkloadConfigSection({ workload }: Props) {
       target={defaultRollbackTarget}
       onClose={() => setDefaultRollbackTarget(null)}
     />
+  ) : null
+
+  const visiblePlan = applicationPlan ?? readOnlyPlan ?? null
+  const applicationPlanPanel = visiblePlan ? (
+    <ConfigApplicationPlanPanel
+      plan={visiblePlan}
+      isExporting={exportPlanMutation.isPending}
+      exportStatus={planExportStatus}
+      onExport={() => exportApplicationPlan(visiblePlan)}
+    />
+  ) : readOnlyPlanLoading ? (
+    <div className="loading">Loading config safety plan...</div>
+  ) : readOnlyPlanError ? (
+    <div className="error-text">Failed to load config safety plan.</div>
   ) : null
 
   const safetySection = (
@@ -435,6 +697,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <>
         {safetySection}
         {recoveryPanel}
+        {applicationPlanPanel}
         {defaultRollbackDialog}
         <p className="section-title">Configuration</p>
         {hasConfig && isLoading ? (
@@ -491,7 +754,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
         draftYaml={draftYaml}
         disabled={!!pendingHash || pushMutation.isPending}
         canPush={hasPushPermission}
+        safetyPlanReady={canPush}
       />
+      {applicationPlanPanel}
 
       {pushError && <div className="error-text error-text-push">{pushError}</div>}
 
@@ -505,6 +770,20 @@ export default function WorkloadConfigSection({ workload }: Props) {
         </button>
         <button
           className="btn btn-primary"
+          onClick={() => planMutation.mutate()}
+          disabled={!canGeneratePlan}
+          title={
+            validation === null
+              ? 'Validate the configuration first'
+              : !validation.valid
+                ? 'Fix validation errors before generating a plan'
+                : ''
+          }
+        >
+          {planMutation.isPending ? 'Generating plan...' : 'Generate safety plan'}
+        </button>
+        <button
+          className="btn btn-primary"
           onClick={() => pushMutation.mutate()}
           disabled={!canPush}
           title={
@@ -512,7 +791,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
               ? 'Validate the configuration first'
               : !validation.valid
                 ? 'Fix validation errors before pushing'
-                : ''
+                : !applicationPlan
+                  ? 'Generate the safety plan before pushing'
+                  : !canPush
+                    ? 'Config safety plan blocks this push'
+                    : ''
           }
         >
           {pendingHash ? 'Applying...' : pushMutation.isPending ? 'Pushing...' : 'Push'}
@@ -851,6 +1134,37 @@ function humanizeStatus(status: ValidationCheck['status']) {
     default:
       return status
   }
+}
+
+function humanizePlanReason(reason: string) {
+  switch (reason) {
+    case 'read_only':
+      return 'Read-only'
+    case 'validation_failed':
+      return 'Validation failed'
+    case 'all_targets_excluded':
+      return 'All targets excluded'
+    case 'empty_config':
+      return 'Empty config'
+    case 'non_collector':
+      return 'Non-collector target'
+    default:
+      return reason
+        .split('_')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ')
+  }
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.URL.revokeObjectURL(url)
 }
 
 function humanizeCheckId(id: string) {

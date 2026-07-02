@@ -1,5 +1,7 @@
 import axios from 'axios'
 import type {
+  APIErrorDetails,
+  APIErrorResponse,
   Workload,
   Instance,
   WorkloadEvent,
@@ -10,6 +12,8 @@ import type {
   WorkloadKnownGoodConfig,
   MarkKnownGoodResponse,
   DefaultRollbackResponse,
+  ConfigApplicationPlan,
+  ConfigApplicationPlanExportFormat,
   ValidationResult,
   PushActivityPoint,
   MeResponse,
@@ -44,6 +48,35 @@ export type AuthMethod = {
 }
 
 const api = axios.create({ baseURL: '/api' })
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+export function isAPIErrorResponse(value: unknown): value is APIErrorResponse {
+  return (
+    isRecord(value) &&
+    (typeof value.error === 'string' ||
+      typeof value.code === 'string' ||
+      Array.isArray(value.validation_errors))
+  )
+}
+
+export function getAPIErrorDetails(err: unknown, fallback = 'Request failed'): APIErrorDetails {
+  if (axios.isAxiosError<APIErrorResponse>(err)) {
+    const data = err.response?.data
+    if (isAPIErrorResponse(data)) {
+      return {
+        status: err.response?.status,
+        message: data.error ?? err.message ?? fallback,
+        code: data.code,
+        validation_errors: data.validation_errors,
+      }
+    }
+    return { status: err.response?.status, message: err.message || fallback }
+  }
+  return { message: fallback }
+}
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
@@ -88,6 +121,27 @@ export const workloadsAPI = {
     api
       .post<ValidationResult>(`/workloads/${id}/config/validate`, yaml, {
         headers: { 'Content-Type': 'text/yaml' },
+      })
+      .then((r) => r.data),
+  planConfig: (id: string, yaml: string) =>
+    api
+      .post<ConfigApplicationPlan>(`/workloads/${id}/config/plan`, yaml, {
+        headers: { 'Content-Type': 'text/yaml' },
+      })
+      .then((r) => r.data),
+  exportConfigPlanMarkdown: (id: string, yaml: string) =>
+    api
+      .post<Blob>(`/workloads/${id}/config/plan/export`, yaml, {
+        headers: { 'Content-Type': 'text/yaml' },
+        params: { format: 'markdown' satisfies ConfigApplicationPlanExportFormat },
+        responseType: 'blob',
+      })
+      .then((r) => r.data),
+  exportConfigPlanJson: (id: string, yaml: string) =>
+    api
+      .post<ConfigApplicationPlan>(`/workloads/${id}/config/plan/export`, yaml, {
+        headers: { 'Content-Type': 'text/yaml' },
+        params: { format: 'json' satisfies ConfigApplicationPlanExportFormat },
       })
       .then((r) => r.data),
   getConfigHistory: (id: string) =>

@@ -10,6 +10,7 @@ interface Props {
   draftYaml: string
   disabled: boolean
   canPush: boolean
+  safetyPlanReady: boolean
 }
 
 type Strategy = CanarySelection['strategy']
@@ -67,7 +68,13 @@ function useCanaryActionMutation(
   })
 }
 
-export default function ManualCanaryPanel({ workloadId, draftYaml, disabled, canPush }: Props) {
+export default function ManualCanaryPanel({
+  workloadId,
+  draftYaml,
+  disabled,
+  canPush,
+  safetyPlanReady,
+}: Props) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [strategy, setStrategy] = useState<Strategy>('one')
@@ -158,7 +165,8 @@ export default function ManualCanaryPanel({ workloadId, draftYaml, disabled, can
     (message) => setActionError(message || null),
   )
 
-  const canSubmit = canPush && !!currentValidation?.valid && !startMutation.isPending
+  const canaryBlocked = !canPush || !safetyPlanReady
+  const canSubmit = !canaryBlocked && !!currentValidation?.valid && !startMutation.isPending
   const actionDisabled = !canPush || !status
   const promoteDisabled =
     actionDisabled ||
@@ -181,8 +189,14 @@ export default function ManualCanaryPanel({ workloadId, draftYaml, disabled, can
         <button
           className="btn"
           onClick={() => setOpen((next) => !next)}
-          disabled={disabled || !draftYaml || !canPush}
-          title={!canPush ? t('workloads.config.canary.permission_required') : undefined}
+          disabled={disabled || !draftYaml || canaryBlocked}
+          title={
+            !canPush
+              ? t('workloads.config.canary.permission_required')
+              : !safetyPlanReady
+                ? t('workloads.config.canary.safety_plan_required')
+                : undefined
+          }
         >
           {open ? t('workloads.config.canary.close') : t('workloads.config.canary.start')}
         </button>
@@ -271,7 +285,7 @@ export default function ManualCanaryPanel({ workloadId, draftYaml, disabled, can
             <button
               className="btn"
               onClick={() => validateMutation.mutate()}
-              disabled={validateMutation.isPending || !canPush}
+              disabled={validateMutation.isPending || canaryBlocked}
             >
               {validateMutation.isPending
                 ? t('workloads.config.canary.validating')

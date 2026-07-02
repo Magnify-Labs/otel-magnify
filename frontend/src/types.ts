@@ -267,6 +267,72 @@ export interface DefaultRollbackResponse {
   target_kind: 'last_known_good' | 'previous' | string
 }
 
+export type ConfigApplicationPlanSchemaVersion = 'config_application_plan.v1'
+export type ConfigApplicationPlanExportFormat = 'json' | 'markdown'
+export type ConfigApplicationPlanPersistedRolloutStatus = 'not_persisted'
+
+export interface ConfigApplicationPlanSummary {
+  target_count: number
+  collector_target_count: number
+  remote_config_capable_count: number
+  read_only_count: number
+  validation_ok_count: number
+  validation_failed_count: number
+  components_missing_count: number
+  high_risk_change_count: number
+  excluded_count: number
+}
+
+export interface ConfigApplicationPlanTarget {
+  workload_id: string
+  display_name: string
+  type: string
+  accepts_remote_config: boolean
+  read_only: boolean
+  validation_status: 'ok' | 'failed' | string
+  validation_errors?: string[]
+  components_missing_count: number
+  high_risk_change_count: number
+  excluded: boolean
+  exclusion_reasons: string[]
+  hard_failures: string[]
+  active_config_hash?: string
+  active_config_unavailable: boolean
+}
+
+export interface ConfigApplicationPlanExport {
+  supported: boolean
+  formats: ConfigApplicationPlanExportFormat[]
+  json_endpoint: string
+  markdown_endpoint: string
+  persisted_rollout: ConfigApplicationPlanPersistedRolloutStatus
+}
+
+export interface ConfigApplicationPlan {
+  schema_version: ConfigApplicationPlanSchemaVersion
+  workload_id: string
+  config_hash: string
+  summary: ConfigApplicationPlanSummary
+  targets: ConfigApplicationPlanTarget[]
+  hard_failures: string[]
+  can_push: boolean
+  apply_allowed: boolean
+  export: ConfigApplicationPlanExport
+}
+
+export interface APIErrorResponse {
+  error?: string
+  code?: string
+  validation_errors?: ValidationError[]
+}
+
+export interface APIErrorDetails {
+  status?: number
+  message: string
+  code?: string
+  validation_errors?: ValidationError[]
+}
+
 export type RollbackValidationStatus = 'valid' | 'valid_with_warnings' | 'invalid' | 'unavailable'
 export type ValidationSeverity = 'error' | 'warning' | 'info'
 export type RollbackApplyStatus = 'accepted' | 'applying' | 'applied' | 'failed' | 'unknown'

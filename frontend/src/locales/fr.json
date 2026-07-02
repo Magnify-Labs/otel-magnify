@@ -189,6 +189,7 @@
         "start": "Démarrer un canary",
         "close": "Fermer le canary",
         "permission_required": "Nécessite la permission workload:push_config",
+        "safety_plan_required": "Générez un plan de sécurité de config non bloquant avant de démarrer un canary.",
         "validating": "Validation du canary…",
         "validate": "Valider les cibles canary",
         "push": "Pousser le canary",
@@ -255,6 +256,48 @@
         "errors": {
           "start": "Échec du démarrage canary",
           "action": "Action canary échouée"
+        }
+      },
+      "application_plan": {
+        "title": "Plan de sécurité de config",
+        "ready_help": "Vérifiez l’éligibilité des cibles, la validation, les composants manquants et le risque avant le push.",
+        "blocked_help": "Le push est bloqué tant que les échecs durs ne sont pas corrigés ou que les cibles invalides ne sont pas exclues.",
+        "counter_aria": "Compteurs du plan de sécurité de config",
+        "high_risk_note": "Vérifiez les changements à haut risque avant de pousser.",
+        "hard_failures": "Échecs bloquants",
+        "rollout_not_persisted": "L’enregistrement en rollout n’est pas encore disponible ; exportez en JSON/Markdown.",
+        "export_fallback": "L’export JSON sera généré dans votre navigateur car l’endpoint d’export backend est indisponible.",
+        "export_ready": "Export du plan prêt",
+        "export_error": "Échec de l’export du plan",
+        "status": {
+          "ready": "Prêt au push",
+          "blocked": "Push bloqué"
+        },
+        "counter": {
+          "targets": "Collecteurs ciblés",
+          "collectors": "Collecteurs",
+          "remote_config": "Compatibles config distante",
+          "readonly": "Lecture seule",
+          "validation_ok": "Validation OK",
+          "validation_failed": "Validation échouée",
+          "components_missing": "Composants manquants",
+          "high_risk": "Changements à haut risque",
+          "excluded": "Exclus"
+        },
+        "target": {
+          "excluded": "Exclue",
+          "valid": "Valide",
+          "invalid": "Invalide",
+          "remote_capable": "Compatible config distante",
+          "readonly": "Lecture seule",
+          "components_missing": "{{count}} composants manquants",
+          "high_risk": "{{count}} changements à haut risque"
+        },
+        "action": {
+          "export": "Exporter le plan",
+          "exporting": "Export du plan…",
+          "save_rollout": "Enregistrer comme rollout",
+          "rollout_title": "Le stockage de rollouts persistés n’est pas encore implémenté côté backend."
         }
       }
     }
