@@ -407,12 +407,13 @@ type FleetVersionIntelligence struct {
 // FleetVersionMatrixEntry groups workloads by group, type, status, and
 // reported version for fleet-level posture summaries.
 type FleetVersionMatrixEntry struct {
-	Group       string   `json:"group"`
-	Type        string   `json:"type"`
-	Status      string   `json:"status"`
-	Version     string   `json:"version"`
-	Count       int      `json:"count"`
-	WorkloadIDs []string `json:"workload_ids"`
+	Group         string   `json:"group"`
+	Type          string   `json:"type"`
+	Status        string   `json:"status"`
+	Version       string   `json:"version"`
+	VersionStatus string   `json:"version_status"`
+	Count         int      `json:"count"`
+	WorkloadIDs   []string `json:"workload_ids"`
 }
 
 // FleetCollectorVersionFinding identifies one collector running below the

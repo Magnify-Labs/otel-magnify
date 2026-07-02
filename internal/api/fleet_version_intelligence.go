@@ -15,6 +15,10 @@ const fleetVersionIntelligenceSchema = "fleet-version-intelligence.v1"
 
 func (a *API) handleFleetVersionIntelligence(w http.ResponseWriter, r *http.Request) {
 	recommended := strings.TrimSpace(r.URL.Query().Get("recommended_version"))
+	recommendedComparable := false
+	if recommended != "" {
+		_, recommendedComparable = version.Compare(recommended, recommended)
+	}
 	items, err := a.db.ListWorkloads(false)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to list workloads")
@@ -38,15 +42,17 @@ func (a *API) handleFleetVersionIntelligence(w http.ResponseWriter, r *http.Requ
 		if versionValue == "" {
 			versionValue = "unknown"
 		}
+		versionStatus := fleetVersionStatus(wl, recommended, recommendedComparable)
 		key := group + "\x00" + wl.Type + "\x00" + wl.Status + "\x00" + versionValue
 		entry := matrix[key]
 		if entry == nil {
 			entry = &models.FleetVersionMatrixEntry{
-				Group:       group,
-				Type:        wl.Type,
-				Status:      wl.Status,
-				Version:     versionValue,
-				WorkloadIDs: []string{},
+				Group:         group,
+				Type:          wl.Type,
+				Status:        wl.Status,
+				Version:       versionValue,
+				VersionStatus: versionStatus,
+				WorkloadIDs:   []string{},
 			}
 			matrix[key] = entry
 		}
@@ -56,11 +62,11 @@ func (a *API) handleFleetVersionIntelligence(w http.ResponseWriter, r *http.Requ
 		if wl.Type != "collector" {
 			continue
 		}
-		if recommended != "" && strings.TrimSpace(wl.Version) == "" {
+		if recommendedComparable && strings.TrimSpace(wl.Version) == "" {
 			out.InvalidVersions = append(out.InvalidVersions, models.FleetInvalidVersionFinding{
 				WorkloadID: wl.ID, DisplayName: wl.DisplayName, Version: wl.Version, Reason: "empty_version",
 			})
-		} else if recommended != "" {
+		} else if recommendedComparable {
 			cmp, ok := version.Compare(wl.Version, recommended)
 			if !ok {
 				out.InvalidVersions = append(out.InvalidVersions, models.FleetInvalidVersionFinding{
@@ -105,6 +111,27 @@ func (a *API) handleFleetVersionIntelligence(w http.ResponseWriter, r *http.Requ
 		return strings.Join([]string{a.Group, a.Type, a.Status, a.Version}, "\x00") < strings.Join([]string{b.Group, b.Type, b.Status, b.Version}, "\x00")
 	})
 	respondJSON(w, http.StatusOK, out)
+}
+
+func fleetVersionStatus(wl models.Workload, recommended string, recommendedComparable bool) string {
+	if wl.Type != "collector" {
+		return "not_applicable"
+	}
+	if strings.TrimSpace(recommended) == "" || !recommendedComparable || strings.TrimSpace(wl.Version) == "" {
+		return "unknown"
+	}
+	cmp, ok := version.Compare(wl.Version, recommended)
+	if !ok {
+		return "unknown"
+	}
+	switch {
+	case cmp < 0:
+		return "below_recommended"
+	case cmp > 0:
+		return "above_recommended"
+	default:
+		return "at_recommended"
+	}
 }
 
 func workloadGroup(wl models.Workload) string {
