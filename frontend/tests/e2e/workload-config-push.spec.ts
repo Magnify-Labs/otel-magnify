@@ -2,6 +2,7 @@ import {
   buildCollectorWorkload,
   mockPushGroups,
   mockPushPreview,
+  pushPreviewScenarios,
   test,
   expect,
   mockMe,
@@ -154,7 +155,9 @@ function mockPlanExport(page: Page) {
 }
 
 async function generateSafetyPlan(page: Page) {
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
   await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
 }
@@ -395,7 +398,9 @@ test('validate exposes errors and blocks push', async ({ loggedInPage: page }) =
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type('bad: yaml')
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
 
   await expect(page.locator('.validation-errors')).toContainText('undefined_component')
   // Push stays disabled
@@ -414,7 +419,9 @@ test('valid config shows plan counters before push', async ({ loggedInPage: page
   await page.locator('.cm-content').first().click()
   await page.keyboard.press('End')
   await page.keyboard.type(' # touched')
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
 
   await expect(page.locator('.validation-ok')).toContainText('valid')
   await expect(page.getByRole('button', { name: 'Generate safety plan' })).toBeEnabled()
@@ -679,7 +686,9 @@ test('plan surfaces high-risk changes reported by backend', async ({ loggedInPag
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
 
   const plan = page.locator('.config-application-plan')
@@ -700,7 +709,9 @@ test('export plan action exposes an accessible markdown download affordance', as
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
 
   await expect(page.getByRole('button', { name: 'Export plan' })).toBeEnabled()
@@ -733,7 +744,9 @@ test('export plan falls back to client-side JSON when backend export is unavaila
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
 
   await expect(page.locator('.config-application-plan')).toContainText(
@@ -763,7 +776,9 @@ test('validation details show separated static component and runtime checks', as
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
 
   const details = page.locator('.validation-details')
   await expect(details).toContainText('Validation passed')
@@ -843,7 +858,9 @@ test('validation details separate non-blocking warnings from blocking errors', a
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
 
   const details = page.locator('.validation-details')
   await expect(details).toContainText('Blocking errors')
@@ -900,7 +917,9 @@ test('validation details explain when otelcol runtime check is skipped', async (
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
 
   const details = page.locator('.validation-details')
   await expect(details).toContainText('Validation passed with warnings')
@@ -1114,7 +1133,9 @@ test('push failed shows error banner and preserves draft', async ({ loggedInPage
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type(' # touched')
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await expect(page.locator('.validation-ok')).toBeVisible()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
   await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
@@ -1220,7 +1241,9 @@ test('push applied closes edit mode, clears draft, shows applied banner', async 
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.locator('.cm-content').first().click()
   await page.keyboard.type(' # applied-flow')
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await expect(page.locator('.validation-ok')).toBeVisible()
   await page.getByRole('button', { name: 'Generate safety plan' }).click()
   await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
@@ -1668,7 +1691,9 @@ test('capable user sees enabled push scope selector and preview buckets', async 
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await expect(page.locator('.validation-ok')).toBeVisible()
 
   await expect(page.locator('.push-scope-panel')).toContainText('Push target scope')
@@ -1696,6 +1721,123 @@ test('capable user sees enabled push scope selector and preview buckets', async 
     'Blocked targets must be excluded',
   )
   await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+})
+
+test('saved group blocked preview cannot submit an accidental config push', async ({
+  loggedInPage: page,
+}) => {
+  let pushRequestCount = 0
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await mockPushPreview(page)
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) => {
+    pushRequestCount += 1
+    return route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'config push initiated', config_hash: 'should-not-push' }),
+    })
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
+  await page.locator('select.push-scope-mode-select').selectOption('saved')
+  await page.locator('select.push-saved-group-select').selectOption('payments')
+  await page.getByRole('button', { name: 'Preview targets' }).click()
+
+  await expect(page.locator('.push-preview-panel')).toContainText('8 targeted')
+  await expect(page.locator('.push-preview-warning')).toContainText(
+    'Blocked targets must be excluded',
+  )
+  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Push' })).toHaveAttribute(
+    'title',
+    'Bulk push requires a backend push endpoint; use preview to verify scope safety.',
+  )
+  await page.getByRole('button', { name: 'Push' }).dispatchEvent('click')
+  expect(pushRequestCount).toBe(0)
+})
+
+test('dynamic all-capable preview stays preview-only and does not push bulk targets', async ({
+  loggedInPage: page,
+}) => {
+  let pushRequestCount = 0
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPushGroups(page)
+  await mockPushPreview(page, {
+    dynamicPreview: pushPreviewScenarios.dynamicCapableCollectors,
+  })
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) => {
+    pushRequestCount += 1
+    return route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'config push initiated', config_hash: 'should-not-push' }),
+    })
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
+  await page.locator('select.push-scope-mode-select').selectOption('dynamic')
+  await page.getByLabel('Cluster').fill('prod-eu')
+  await page.getByRole('button', { name: 'Preview targets' }).click()
+
+  await expect(page.locator('.push-preview-panel')).toContainText('3 targeted')
+  await expect(page.locator('.push-preview-panel')).toContainText('3 capable')
+  await expect(page.locator('.push-preview-ready')).toContainText('Ready to push')
+  await expect(page.getByRole('button', { name: 'Push' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Push' })).toHaveAttribute(
+    'title',
+    'Bulk push requires a backend push endpoint; use preview to verify scope safety.',
+  )
+  await page.getByRole('button', { name: 'Push' }).dispatchEvent('click')
+  expect(pushRequestCount).toBe(0)
+})
+
+test('single collector scope still generates a plan and submits the workload config push', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config`, (route) =>
+    route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'config push initiated', config_hash: 'feedfacefeedface' }),
+    }),
+  )
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.locator('.cm-content').first().click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' # single-scope-regression')
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+  await expect(page.locator('.config-application-plan')).toContainText('Ready to push')
+
+  const pushRequest = page.waitForRequest(`**/api/workloads/${WORKLOAD_ID}/config`)
+  await page.getByRole('button', { name: 'Push' }).click()
+  const request = await pushRequest
+
+  expect(request.postData()).toContain('# single-scope-regression')
 })
 
 test('viewer permission keeps config push controls read-only', async ({ loggedInPage: page }) => {
@@ -1756,7 +1898,9 @@ test('French scope UX renders translated labels and blocked preview copy', async
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Modifier' }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
 
   await page.locator('select.push-scope-mode-select').selectOption('saved')
   await expect(page.locator('select.push-saved-group-select option[value="payments"]')).toHaveText(
@@ -1788,7 +1932,9 @@ test('saved scope selector reports empty and failed group states', async ({
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await page.locator('select.push-scope-mode-select').selectOption('saved')
 
   await expect(page.locator('select.push-saved-group-select option').first()).toHaveText(
@@ -1824,7 +1970,9 @@ test('French saved scope selector reports localized empty and failed group state
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Modifier' }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await page.locator('select.push-scope-mode-select').selectOption('saved')
 
   await expect(page.locator('select.push-saved-group-select option').first()).toHaveText(
@@ -1867,7 +2015,9 @@ test('saved scope preview failure shows inline error and clears preview panel', 
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await page.locator('select.push-scope-mode-select').selectOption('saved')
   await page.locator('select.push-saved-group-select').selectOption('payments')
   await page.getByRole('button', { name: 'Preview targets' }).click()
@@ -1888,7 +2038,9 @@ test('dynamic push selector posts labels version and capability for safe preview
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('button', { name: 'Validate for this collector' }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
   await expect(page.locator('.validation-ok')).toBeVisible()
 
   await page.locator('select.push-scope-mode-select').selectOption('dynamic')
