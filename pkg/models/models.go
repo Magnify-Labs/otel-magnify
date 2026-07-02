@@ -213,6 +213,41 @@ type WorkloadKnownGoodConfig struct {
 	ContentAvailable bool       `json:"content_available"`
 }
 
+const (
+	ConfigApprovalStatusPending  = "pending"
+	ConfigApprovalStatusApproved = "approved"
+	ConfigApprovalStatusPushed   = "pushed"
+)
+
+// ConfigApprovalRequest tracks a validated draft config that must be approved
+// before it is pushed to a workload. It is intentionally part of the community
+// domain model so enterprise/pro frontends can build gated UX on the same safe
+// backend contract without forking the push pipeline.
+type ConfigApprovalRequest struct {
+	ID                  string     `json:"id"`
+	WorkloadID          string     `json:"workload_id"`
+	DraftYAML           string     `json:"draft_yaml"`
+	TargetGroup         string     `json:"target_group"`
+	TargetEnv           string     `json:"target_env,omitempty"`
+	Requester           string     `json:"requester"`
+	RequestComment      string     `json:"request_comment"`
+	Approver            string     `json:"approver,omitempty"`
+	ApprovalComment     string     `json:"approval_comment,omitempty"`
+	Status              string     `json:"status"`
+	ApprovedBy          *string    `json:"approved_by,omitempty"`
+	ApprovedAt          *time.Time `json:"approved_at,omitempty"`
+	PushComment         *string    `json:"push_comment,omitempty"`
+	ProdTarget          bool       `json:"prod_target"`
+	ProdConfirmation    bool       `json:"prod_confirmation"`
+	ProdDoubleConfirmed bool       `json:"prod_double_confirmed"`
+	BreakGlass          bool       `json:"break_glass"`
+	BreakGlassReason    *string    `json:"break_glass_reason,omitempty"`
+	ConfigHash          *string    `json:"config_hash,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	PushedAt            *time.Time `json:"pushed_at,omitempty"`
+}
+
 // SetKnownGoodResult describes whether a mark-known-good call changed the
 // active pointer and which config, if any, it replaced.
 type SetKnownGoodResult struct {
