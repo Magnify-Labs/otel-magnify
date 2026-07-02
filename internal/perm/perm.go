@@ -15,6 +15,7 @@ const (
 	ValidateConfig  Permission = "workload:validate_config"
 	CreateConfigTpl Permission = "config:create"
 	ResolveAlert    Permission = "alert:resolve"
+	ExportReports   Permission = "reports:export"
 	ArchiveWorkload Permission = "workload:archive"
 	DeleteWorkload  Permission = "workload:delete"
 	ManageUsers     Permission = "users:manage"    // réservé Spec B

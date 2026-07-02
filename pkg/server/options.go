@@ -43,6 +43,15 @@ func WithAuditLogger(l ext.AuditLogger) Option {
 	}
 }
 
+// WithReportSigner wires an enterprise report signer/verifier into evidence-pack exports.
+func WithReportSigner(signer ext.ReportSigner) Option {
+	return func(s *Server) {
+		if signer != nil {
+			s.reportSigner = signer
+		}
+	}
+}
+
 // WithStaticFS sets the embedded frontend assets for SPA serving.
 func WithStaticFS(fsys fs.FS) Option {
 	return func(s *Server) {
