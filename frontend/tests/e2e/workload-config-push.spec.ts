@@ -1656,7 +1656,7 @@ test('selecting a config overwrites in-progress draft silently (no confirm)', as
   )
 })
 
-test('saved push group selection renders preview buckets and blocked targets', async ({
+test('capable user sees enabled push scope selector and preview buckets', async ({
   loggedInPage: page,
 }) => {
   await mockWorkload(page)
@@ -1671,7 +1671,17 @@ test('saved push group selection renders preview buckets and blocked targets', a
   await page.getByRole('button', { name: 'Validate for this collector' }).click()
   await expect(page.locator('.validation-ok')).toBeVisible()
 
+  await expect(page.locator('.push-scope-panel')).toContainText('Push target scope')
+  await expect(page.locator('select.push-scope-mode-select')).toBeEnabled()
+  await expect(page.locator('select.push-scope-mode-select')).toContainText('Current workload')
+  await expect(page.locator('select.push-scope-mode-select')).toContainText('Saved group')
+  await expect(page.locator('select.push-scope-mode-select')).toContainText('Dynamic selector')
   await page.locator('select.push-scope-mode-select').selectOption('saved')
+  await expect(page.locator('.push-scope-mode-badge')).toContainText('Preview only')
+  await expect(page.locator('select.push-saved-group-select')).toBeEnabled()
+  await expect(page.locator('select.push-saved-group-select option[value="payments"]')).toHaveText(
+    'Payments collectors',
+  )
   await page.locator('select.push-saved-group-select').selectOption('payments')
   await page.getByRole('button', { name: 'Preview targets' }).click()
 
@@ -1693,10 +1703,15 @@ test('viewer permission keeps config push controls read-only', async ({ loggedIn
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
-  await mockConfigsList(page, [{ id: 'cfg-eu', name: 'collector-prod-eu' }])
+  await mockConfigsList(page, [
+    { id: ACTIVE_CONFIG_ID, name: 'collector-prod-eu' },
+    { id: 'cfg-us', name: 'collector-prod-us' },
+  ])
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
 
+  await expect(page.getByText('Configuration', { exact: true })).toBeVisible()
+  await expect(page.locator('.cm-content').first()).toContainText('receivers')
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
     'title',
@@ -1714,6 +1729,12 @@ test('viewer permission keeps config push controls read-only', async ({ loggedIn
   await expect(page.locator('select.apply-config-select')).toHaveAttribute(
     'aria-describedby',
     'config-permission-note',
+  )
+  await expect(page.locator('select.apply-config-select option').nth(1)).toContainText(
+    'collector-prod-eu (currently applied)',
+  )
+  await expect(page.locator('select.apply-config-select option').nth(2)).toContainText(
+    'collector-prod-us',
   )
   await expect(page.locator('.config-permission-note')).toContainText('permission')
   await expect(page.locator('.push-scope-panel')).toHaveCount(0)
