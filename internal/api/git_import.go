@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"net/url"
@@ -87,15 +88,24 @@ func importGitConfig(ctx context.Context, req gitImportRequest) (gitImportResult
 		return gitImportResult{}, err
 	}
 
-	filePath := filepath.Join(dir, filepath.FromSlash(req.GitPath))
-	info, err := os.Stat(filePath)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return gitImportResult{}, fmt.Errorf("open git worktree root: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	file, err := root.Open(req.GitPath)
+	if err != nil {
+		return gitImportResult{}, fmt.Errorf("open git file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
 	if err != nil {
 		return gitImportResult{}, fmt.Errorf("stat git file: %w", err)
 	}
 	if info.Size() > gitFileSizeLimit {
 		return gitImportResult{}, errGitFileTooLarge
 	}
-	content, err := os.ReadFile(filePath)
+	content, err := io.ReadAll(io.LimitReader(file, gitFileSizeLimit+1))
 	if err != nil {
 		return gitImportResult{}, fmt.Errorf("read git file: %w", err)
 	}
@@ -115,6 +125,7 @@ func importGitConfig(ctx context.Context, req gitImportRequest) (gitImportResult
 
 func appendGitRemoteConfig(dir, gitURL, ref string) error {
 	configPath := filepath.Join(dir, ".git", "config")
+	// #nosec G304 -- configPath is under a freshly-created temporary git repository.
 	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("open git config: %w", err)
