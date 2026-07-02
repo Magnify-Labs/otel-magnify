@@ -10,6 +10,11 @@ import (
 // Labels is a map[string]string stored as JSON TEXT in the DB.
 type Labels map[string]string
 
+// TrustedSelectorLabelPrefix marks server-controlled labels that may be used
+// for authorization-sensitive saved push group targeting. OpAMP agent-reported
+// attributes using this prefix are ignored at ingest time.
+const TrustedSelectorLabelPrefix = "otel.magnify/selector."
+
 // Value JSON-encodes the labels for storage as TEXT.
 func (l Labels) Value() (string, error) {
 	b, err := json.Marshal(l)

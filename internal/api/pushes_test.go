@@ -159,10 +159,10 @@ func TestPushPreview_BucketsSavedGroupTargets(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	now := time.Now().UTC()
 	seed := []models.Workload{
-		{ID: "payments-capable", DisplayName: "payments-capable", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"team": "payments", "env": "prod", "cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}},
-		{ID: "payments-read-only", DisplayName: "payments-read-only", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"team": "payments", "env": "prod", "cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: false},
-		{ID: "payments-incompatible", DisplayName: "payments-incompatible", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.74.0", Labels: models.Labels{"team": "payments", "env": "prod", "cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"otlp"}}}},
-		{ID: "payments-offline", DisplayName: "payments-offline", Type: "collector", Status: "disconnected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"team": "payments", "env": "prod", "cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}},
+		{ID: "payments-capable", DisplayName: "payments-capable", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"otel.magnify/selector.team": "payments", "otel.magnify/selector.env": "prod", "otel.magnify/selector.cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}},
+		{ID: "payments-read-only", DisplayName: "payments-read-only", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"otel.magnify/selector.team": "payments", "otel.magnify/selector.env": "prod", "otel.magnify/selector.cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: false},
+		{ID: "payments-incompatible", DisplayName: "payments-incompatible", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.74.0", Labels: models.Labels{"otel.magnify/selector.team": "payments", "otel.magnify/selector.env": "prod", "otel.magnify/selector.cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"otlp"}}}},
+		{ID: "payments-offline", DisplayName: "payments-offline", Type: "collector", Status: "disconnected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"otel.magnify/selector.team": "payments", "otel.magnify/selector.env": "prod", "otel.magnify/selector.cluster": "prod-eu"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true, AvailableComponents: &models.AvailableComponents{Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}},
 		{ID: "checkout", DisplayName: "checkout", Type: "collector", Status: "connected", LastSeenAt: now, Version: "0.98.0", Labels: models.Labels{"team": "checkout", "env": "prod"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true},
 	}
 	for _, workload := range seed {
@@ -192,6 +192,9 @@ func TestPushPreview_BucketsSavedGroupTargets(t *testing.T) {
 	if got.GroupID != "payments" {
 		t.Fatalf("group_id = %q, want payments", got.GroupID)
 	}
+	if got.SelectorSource != "trusted_labels" {
+		t.Fatalf("selector_source = %q, want trusted_labels", got.SelectorSource)
+	}
 	if got.TargetedCount != 4 {
 		t.Fatalf("targeted_count = %d, want 4", got.TargetedCount)
 	}
@@ -200,6 +203,50 @@ func TestPushPreview_BucketsSavedGroupTargets(t *testing.T) {
 	}
 	if len(got.Targets) != 4 {
 		t.Fatalf("targets len = %d, want 4", len(got.Targets))
+	}
+}
+
+func TestPushPreview_SavedGroupUsesTrustedSelectorLabels(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	for _, workload := range []models.Workload{
+		{
+			ID: "spoofed-payments", DisplayName: "spoofed-payments", Type: "collector", Status: "connected", LastSeenAt: now,
+			Labels: models.Labels{"team": "payments", "env": "prod"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true,
+		},
+		{
+			ID: "trusted-payments", DisplayName: "trusted-payments", Type: "collector", Status: "connected", LastSeenAt: now,
+			Labels: models.Labels{"otel.magnify/selector.team": "payments", "otel.magnify/selector.env": "prod"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true,
+		},
+	} {
+		if err := db.UpsertWorkload(workload); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := []byte(`{"group_id":"payments","config_content":""}`)
+	req := authedRequest(t, "POST", "/api/pushes/preview")
+	req.Body = ioNopCloser{Reader: bytes.NewReader(body)}
+	req.ContentLength = int64(len(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var got pushPreviewResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TargetedCount != 1 {
+		t.Fatalf("targeted_count = %d, want 1: %#v", got.TargetedCount, got.Targets)
+	}
+	if got.SelectorSource != "trusted_labels" {
+		t.Fatalf("selector_source = %q, want trusted_labels", got.SelectorSource)
+	}
+	if got.Targets[0].WorkloadID != "trusted-payments" {
+		t.Fatalf("target = %q, want trusted-payments", got.Targets[0].WorkloadID)
 	}
 }
 
@@ -233,6 +280,42 @@ func TestPushPreview_BucketsDynamicSelectorTargets(t *testing.T) {
 	}
 	if got.TargetedCount != 1 || got.Breakdown.RemoteConfigCapable != 1 {
 		t.Fatalf("preview = %#v, want one capable dynamic target", got)
+	}
+	if got.SelectorSource != "collector_labels" {
+		t.Fatalf("selector_source = %q, want collector_labels", got.SelectorSource)
+	}
+}
+
+func TestPushPreview_DynamicSelectorDoesNotUseTrustedLabels(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "trusted-prod", DisplayName: "trusted-prod", Type: "collector", Status: "connected", LastSeenAt: now,
+		Labels: models.Labels{"otel.magnify/selector.env": "prod", "env": "staging"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"selector":{"match_labels":{"otel.magnify/selector.env":"prod"}},"config_content":""}`)
+	req := authedRequest(t, "POST", "/api/pushes/preview")
+	req.Body = ioNopCloser{Reader: bytes.NewReader(body)}
+	req.ContentLength = int64(len(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var got pushPreviewResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.SelectorSource != "collector_labels" {
+		t.Fatalf("selector_source = %q, want collector_labels", got.SelectorSource)
+	}
+	if got.TargetedCount != 0 {
+		t.Fatalf("targeted_count = %d, want 0: %#v", got.TargetedCount, got.Targets)
 	}
 }
 
