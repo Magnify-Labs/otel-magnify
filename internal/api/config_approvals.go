@@ -45,6 +45,7 @@ func (a *API) handleCreateOrUpdateConfigApproval(w http.ResponseWriter, r *http.
 		respondError(w, http.StatusBadRequest, "invalid approval request body")
 		return
 	}
+	//nolint:errcheck // deferred cleanup of request body; net/http server also closes it
 	defer r.Body.Close()
 
 	draft := strings.TrimSpace(req.DraftYAML)
@@ -127,6 +128,7 @@ func (a *API) handleApproveConfigApproval(w http.ResponseWriter, r *http.Request
 		respondError(w, http.StatusBadRequest, "invalid approval body")
 		return
 	}
+	//nolint:errcheck // deferred cleanup of request body; net/http server also closes it
 	defer r.Body.Close()
 	if strings.TrimSpace(req.Comment) == "" {
 		respondError(w, http.StatusBadRequest, "comment is required")
@@ -176,6 +178,7 @@ func (a *API) handlePushConfigApproval(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid approval push body")
 		return
 	}
+	//nolint:errcheck // deferred cleanup of request body; net/http server also closes it
 	defer r.Body.Close()
 	if strings.TrimSpace(req.Comment) == "" {
 		respondError(w, http.StatusBadRequest, "comment is required")

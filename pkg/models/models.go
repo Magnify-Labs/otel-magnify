@@ -214,9 +214,12 @@ type WorkloadKnownGoodConfig struct {
 }
 
 const (
-	ConfigApprovalStatusPending  = "pending"
+	// ConfigApprovalStatusPending means a draft is waiting for approval.
+	ConfigApprovalStatusPending = "pending"
+	// ConfigApprovalStatusApproved means a draft was approved and can be pushed normally.
 	ConfigApprovalStatusApproved = "approved"
-	ConfigApprovalStatusPushed   = "pushed"
+	// ConfigApprovalStatusPushed means the approval request has already produced a push.
+	ConfigApprovalStatusPushed = "pushed"
 )
 
 // ConfigApprovalRequest tracks a validated draft config that must be approved

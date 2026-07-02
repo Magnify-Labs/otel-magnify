@@ -4,18 +4,21 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
+// CreateOrUpdateConfigApprovalRequest creates a new pending approval request, or updates the
+// existing pending request for the same workload and target group.
 func (d *DB) CreateOrUpdateConfigApprovalRequest(req models.ConfigApprovalRequest) (models.ConfigApprovalRequest, error) {
 	now := time.Now().UTC()
 	if req.ID == "" {
 		if existing, err := d.getPendingConfigApprovalRequest(req.WorkloadID, req.TargetGroup); err == nil && existing != nil {
 			req.ID = existing.ID
-		} else if err != nil && err != sql.ErrNoRows {
+		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return models.ConfigApprovalRequest{}, err
 		}
 	}
@@ -59,6 +62,7 @@ func (d *DB) CreateOrUpdateConfigApprovalRequest(req models.ConfigApprovalReques
 	return d.GetConfigApprovalRequest(req.ID)
 }
 
+// GetConfigApprovalRequest returns a config approval request by ID.
 func (d *DB) GetConfigApprovalRequest(id string) (models.ConfigApprovalRequest, error) {
 	return d.getConfigApprovalRequest(`
 		SELECT id, workload_id, draft_yaml, target_group, target_env, requester, request_comment,
@@ -68,6 +72,7 @@ func (d *DB) GetConfigApprovalRequest(id string) (models.ConfigApprovalRequest, 
 		FROM workload_config_approvals WHERE id = ?`, id)
 }
 
+// ListConfigApprovalRequests returns all config approval requests for a workload, newest first.
 func (d *DB) ListConfigApprovalRequests(workloadID string) ([]models.ConfigApprovalRequest, error) {
 	rows, err := d.Query(`
 		SELECT id, workload_id, draft_yaml, target_group, target_env, requester, request_comment,
@@ -78,6 +83,7 @@ func (d *DB) ListConfigApprovalRequests(workloadID string) ([]models.ConfigAppro
 	if err != nil {
 		return nil, err
 	}
+	//nolint:errcheck // deferred cleanup of read-only result rows
 	defer rows.Close()
 	var out []models.ConfigApprovalRequest
 	for rows.Next() {
@@ -90,6 +96,7 @@ func (d *DB) ListConfigApprovalRequests(workloadID string) ([]models.ConfigAppro
 	return out, rows.Err()
 }
 
+// ApproveConfigApprovalRequest moves a pending approval request into the approved state.
 func (d *DB) ApproveConfigApprovalRequest(id, approvedBy, comment string, approvedAt time.Time) (models.ConfigApprovalRequest, error) {
 	approvedAt = approvedAt.UTC()
 	res, err := d.Exec(`
@@ -105,6 +112,7 @@ func (d *DB) ApproveConfigApprovalRequest(id, approvedBy, comment string, approv
 	return d.GetConfigApprovalRequest(id)
 }
 
+// MarkConfigApprovalRequestPushed records the push outcome for an approved or break-glass request.
 func (d *DB) MarkConfigApprovalRequestPushed(id, configHash, pushComment string, prodDoubleConfirmed, breakGlass bool, breakGlassReason string, pushedAt time.Time) (models.ConfigApprovalRequest, error) {
 	pushedAt = pushedAt.UTC()
 	var reason *string
