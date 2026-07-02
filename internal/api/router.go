@@ -167,6 +167,9 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.Get("/api/alerts", api.handleListAlerts)
 		r.With(api.RequirePerm(perm.ResolveAlert)).Post("/api/alerts/{id}/resolve", api.handleResolveAlert)
 
+		r.With(api.RequirePerm(perm.ViewAudit)).Get("/api/audit/events", api.handleListAuditEvents)
+		r.With(api.RequirePerm(perm.ViewAudit)).Get("/api/audit/events.csv", api.handleExportAuditEventsCSV)
+
 		r.Get("/api/pushes/activity", api.handleListPushActivity)
 		r.Get("/api/push-groups", api.handleListPushGroups)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/pushes/preview", api.handlePreviewPush)

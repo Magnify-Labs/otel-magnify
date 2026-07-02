@@ -1027,7 +1027,7 @@ test('known-good panel renders config states and defaults rollback to Last known
     .locator('.history-table tbody tr')
     .filter({ hasText: HASH_OLD.substring(0, 8) })
   await expect(knownGoodRow.getByText('Previous')).toBeVisible()
-  await expect(knownGoodRow.getByText('Last known-good')).toBeVisible()
+  await expect(knownGoodRow.locator('.history-state-badge', { hasText: 'Last known-good' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Rollback to Last known-good' }).click()
   const dialog = page.getByRole('dialog', { name: 'Guided rollback' })

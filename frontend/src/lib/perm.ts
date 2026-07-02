@@ -7,6 +7,7 @@ export type Permission =
   | 'alert:resolve'
   | 'workload:archive'
   | 'workload:delete'
+  | 'audit:view'
   | 'users:manage'
   | 'settings:manage'
 
@@ -26,6 +27,7 @@ const matrix: Record<string, Set<Permission>> = {
     'alert:resolve',
     'workload:archive',
     'workload:delete',
+    'audit:view',
     'users:manage',
     'settings:manage',
   ]),

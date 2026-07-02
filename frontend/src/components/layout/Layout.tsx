@@ -1,8 +1,9 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
+import type React from 'react'
 import { useStore } from '../../store'
-import { hasPerm } from '../../lib/perm'
+import { hasPerm, type Permission } from '../../lib/perm'
 import '../../styles/sidebar.css'
 
 function IconDashboard() {
@@ -86,6 +87,22 @@ function IconAlerts() {
     </svg>
   )
 }
+function IconAudit() {
+  return (
+    <svg
+      className="nav-icon"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 1.5 3 3.5v4.2c0 2.9 2 5.4 5 6.8 3-1.4 5-3.9 5-6.8V3.5L8 1.5z" />
+      <path d="M5.5 7.5h5M5.5 10h3" />
+    </svg>
+  )
+}
 function IconProfile() {
   return (
     <svg
@@ -117,13 +134,22 @@ function IconAdmin() {
   )
 }
 
-const fleetNav = [
+type FleetNavItem = {
+  path: string
+  key: string
+  Icon: () => React.ReactNode
+  end: boolean
+  perm?: Permission
+}
+
+const fleetNav: FleetNavItem[] = [
   { path: '/', key: 'dashboard', Icon: IconDashboard, end: true },
   { path: '/inventory', key: 'inventory', Icon: IconInventory, end: false },
   { path: '/config-safety/drift', key: 'config_drift', Icon: IconDrift, end: false },
   { path: '/configs', key: 'configs', Icon: IconConfigs, end: false },
   { path: '/alerts', key: 'alerts', Icon: IconAlerts, end: false },
-] as const
+  { path: '/audit', key: 'audit', Icon: IconAudit, end: false, perm: 'audit:view' },
+]
 
 function initials(email: string): string {
   const left = email.split('@')[0] ?? ''
@@ -181,6 +207,7 @@ export default function Layout() {
   const me = useStore((s) => s.me)
 
   const canAdmin = hasPerm(me?.groups, 'users:manage')
+  const visibleFleetNav = fleetNav.filter((item) => !item.perm || hasPerm(me?.groups, item.perm))
 
   return (
     <div className="app-layout">
@@ -197,7 +224,7 @@ export default function Layout() {
         <nav>
           <div className="sidebar-section-label">{t('sidebar.section.fleet')}</div>
           <ul className="sidebar-nav">
-            {fleetNav.map(({ path, key, Icon, end }) => (
+            {visibleFleetNav.map(({ path, key, Icon, end }) => (
               <li key={path} className="sidebar-nav-item">
                 <NavLink to={path} end={end}>
                   <Icon />
