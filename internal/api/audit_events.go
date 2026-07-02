@@ -57,7 +57,7 @@ func (a *API) handleExportAuditEventsCSV(w http.ResponseWriter, r *http.Request)
 	writer := csv.NewWriter(w)
 	_ = writer.Write([]string{"id", "occurred_at", "action", "user_id", "email", "resource", "resource_id", "workload_id", "config_hash", "detail", "prev_hash", "event_hash", "immutable_ref"})
 	for _, ev := range page.Events {
-		_ = writer.Write([]string{
+		_ = writer.Write(safeAuditCSVRow([]string{
 			ev.ID,
 			ev.OccurredAt.UTC().Format(time.RFC3339Nano),
 			ev.Action,
@@ -71,9 +71,29 @@ func (a *API) handleExportAuditEventsCSV(w http.ResponseWriter, r *http.Request)
 			ev.PrevHash,
 			ev.EventHash,
 			ev.ImmutableRef,
-		})
+		}))
 	}
 	writer.Flush()
+}
+
+func safeAuditCSVRow(row []string) []string {
+	safe := make([]string, len(row))
+	for i, cell := range row {
+		safe[i] = safeAuditCSVCell(cell)
+	}
+	return safe
+}
+
+func safeAuditCSVCell(cell string) string {
+	if cell == "" {
+		return cell
+	}
+	switch cell[0] {
+	case '=', '+', '-', '@', '	', '\r':
+		return "'" + cell
+	default:
+		return cell
+	}
 }
 
 func (a *API) queryAuditEvents(w http.ResponseWriter, r *http.Request, filter ext.AuditEventFilter) (ext.AuditEventPage, bool, bool) {

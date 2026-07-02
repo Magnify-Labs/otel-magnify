@@ -190,3 +190,46 @@ func TestAuditEventsCSVExportsRecords(t *testing.T) {
 		t.Fatalf("row metadata = %v", records[1])
 	}
 }
+
+func TestAuditEventsCSVNeutralizesSpreadsheetFormulas(t *testing.T) {
+	occurredAt := time.Date(2026, 7, 1, 11, 0, 0, 0, time.UTC)
+	logger := &queryableAuditLogger{result: ext.AuditEventPage{Total: 1, Events: []ext.AuditRecord{{
+		ID: "=evt-1", OccurredAt: occurredAt, Action: "+config.push", UserID: "-u-1", Email: "@admin.example", Resource: "	workload", ResourceID: "\rworkload-1", WorkloadID: "=workload-1", ConfigHash: "+sha256:abc", Detail: "-detail", PrevHash: "@prev-chain", EventHash: "	event-chain", ImmutableRef: "\rledger-42",
+	}}}}
+	router := newAuditViewerTestAPI(t, logger)
+
+	req := authedJSONRequest(t, http.MethodGet, "/api/audit/events.csv?limit=10", "", []string{"administrator"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	records, err := csv.NewReader(strings.NewReader(rec.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("csv read: %v", err)
+	}
+	want := []string{"'=evt-1", occurredAt.UTC().Format(time.RFC3339Nano), "'+config.push", "'-u-1", "'@admin.example", "'	workload", "'\rworkload-1", "'=workload-1", "'+sha256:abc", "'-detail", "'@prev-chain", "'	event-chain", "'\rledger-42"}
+	if len(records) != 2 {
+		t.Fatalf("records length = %d, want 2", len(records))
+	}
+	if strings.Join(records[1], "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("row = %#v, want %#v", records[1], want)
+	}
+
+	jsonReq := authedJSONRequest(t, http.MethodGet, "/api/audit/events?limit=10", "", []string{"administrator"})
+	jsonRec := httptest.NewRecorder()
+	router.ServeHTTP(jsonRec, jsonReq)
+	if jsonRec.Code != http.StatusOK {
+		t.Fatalf("json status = %d, body = %s", jsonRec.Code, jsonRec.Body.String())
+	}
+	var body struct {
+		Events []ext.AuditRecord `json:"events"`
+	}
+	if err := json.Unmarshal(jsonRec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json decode: %v", err)
+	}
+	if len(body.Events) != 1 || body.Events[0].ID != "=evt-1" || body.Events[0].Detail != "-detail" {
+		t.Fatalf("json response was unexpectedly neutralized: %+v", body.Events)
+	}
+}
