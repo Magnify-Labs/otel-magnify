@@ -31,6 +31,8 @@ import type {
   CanaryValidationResult,
   ConfigDriftDashboard,
   EvidenceReport,
+  EvidenceReportDownload,
+  EvidenceReportDownloadFormat,
   EvidenceReportExportFormat,
   FleetVersionIntelligence,
 } from '../types'
@@ -251,6 +253,57 @@ export const pushesAPI = {
     api.post<PushPreview>('/pushes/preview', request).then((r) => r.data),
 }
 
+function getHeaderValue(headers: unknown, name: string): string | undefined {
+  if (!isRecord(headers)) {
+    return undefined
+  }
+  const getter = headers.get
+  if (typeof getter === 'function') {
+    const value = getter.call(headers, name)
+    return typeof value === 'string' ? value : undefined
+  }
+  const value = headers[name] ?? headers[name.toLowerCase()]
+  if (typeof value === 'string') {
+    return value
+  }
+  const lowerName = name.toLowerCase()
+  for (const [headerName, headerValue] of Object.entries(headers)) {
+    if (headerName.toLowerCase() === lowerName && typeof headerValue === 'string') {
+      return headerValue
+    }
+  }
+  return undefined
+}
+
+function filenameFromContentDisposition(contentDisposition?: string): string | undefined {
+  if (!contentDisposition) {
+    return undefined
+  }
+  for (const segment of contentDisposition.split(';').map((part) => part.trim())) {
+    const [rawKey, ...rawValueParts] = segment.split('=')
+    const key = rawKey.toLowerCase()
+    const rawValue = rawValueParts.join('=').trim()
+    if (key === 'filename*') {
+      const encodedValue = rawValue.replace(/^UTF-8''/i, '')
+      try {
+        return decodeURIComponent(encodedValue.replace(/^"|"$/g, ''))
+      } catch {
+        return encodedValue.replace(/^"|"$/g, '')
+      }
+    }
+    if (key === 'filename' && rawValue) {
+      return rawValue.replace(/^"|"$/g, '')
+    }
+  }
+  return undefined
+}
+
+function fallbackEvidenceReportFilename(format: EvidenceReportDownloadFormat): string {
+  const extension = format === 'markdown' || format === 'md' ? 'md' : format
+  const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '')
+  return `config-safety-evidence-${stamp}.${extension}`
+}
+
 export const configSafetyAPI = {
   drift: () => api.get<ConfigDriftDashboard>('/config-safety/drift').then((r) => r.data),
   report: (recommendedVersion?: string) =>
@@ -262,7 +315,7 @@ export const configSafetyAPI = {
         },
       })
       .then((r) => r.data),
-  exportReport: (format: Exclude<EvidenceReportExportFormat, 'json'>, recommendedVersion?: string) =>
+  exportReport: (format: EvidenceReportDownloadFormat, recommendedVersion?: string) =>
     api
       .get<Blob>('/reports/config-safety', {
         params: {
@@ -272,6 +325,27 @@ export const configSafetyAPI = {
         responseType: 'blob',
       })
       .then((r) => r.data),
+  exportReportDownload: (format: EvidenceReportDownloadFormat, recommendedVersion?: string) =>
+    api
+      .get<Blob>('/reports/config-safety', {
+        params: {
+          format,
+          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
+        },
+        responseType: 'blob',
+      })
+      .then((r): EvidenceReportDownload => {
+        const blobType = r.data.type || undefined
+        const contentType = getHeaderValue(r.headers, 'content-type') ?? blobType
+        return {
+          blob: r.data,
+          format,
+          filename:
+            filenameFromContentDisposition(getHeaderValue(r.headers, 'content-disposition')) ??
+            fallbackEvidenceReportFilename(format),
+          contentType,
+        }
+      }),
 }
 
 export const authAPI = {

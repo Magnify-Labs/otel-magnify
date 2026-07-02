@@ -785,10 +785,19 @@ export interface EvidenceReport {
   drift: ConfigDriftDashboard
   outdated_collectors: FleetCollectorVersionFinding[]
   audit_trail: EvidenceAuditTrailEntry[]
-  signature: EvidenceReportSignature
+  signature?: EvidenceReportSignature
 }
 
-export type EvidenceReportExportFormat = 'json' | 'markdown' | 'csv' | 'pdf'
+export type EvidenceReportExportFormat = 'json' | 'markdown' | 'md' | 'csv' | 'pdf'
+
+export type EvidenceReportDownloadFormat = Exclude<EvidenceReportExportFormat, 'json'>
+
+export interface EvidenceReportDownload {
+  blob: Blob
+  format: EvidenceReportDownloadFormat
+  filename: string
+  contentType?: string
+}
 
 export interface Group {
   id: string
