@@ -8,9 +8,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -906,7 +903,7 @@ func TestListConfigDriftSummarizesCollectorRiskSignals(t *testing.T) {
 
 // --- Push / Validate ---
 
-func TestPushWorkloadConfig_HappyPath(t *testing.T) {
+func TestPushWorkloadConfig_LegacyEndpointRequiresApprovalFlow(t *testing.T) {
 	db, router, fake := newTestAPI(t)
 	_ = db.UpsertWorkload(models.Workload{
 		ID: "w1", Type: "collector", Status: "connected",
@@ -914,38 +911,31 @@ func TestPushWorkloadConfig_HappyPath(t *testing.T) {
 		AcceptsRemoteConfig: true,
 	})
 
-	validYAML := `receivers:
-  otlp: {}
-exporters:
-  logging: {}
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      exporters: [logging]
-`
-	req := authedPost(t, "/api/workloads/w1/config", validYAML)
+	req := authedPost(t, "/api/workloads/w1/config", validWorkloadConfig)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != 202 {
-		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusGone {
+		t.Fatalf("status = %d, want 410, body=%s", rec.Code, rec.Body.String())
 	}
-	var body map[string]any
+	var body map[string]string
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if hash, _ := body["config_hash"].(string); len(hash) != 64 {
-		t.Fatalf("bad hash: %q", body["config_hash"])
+	if body["code"] != "config_approval_required" {
+		t.Fatalf("code = %q", body["code"])
 	}
-	hist, _ := db.GetWorkloadConfigHistory("w1")
-	if len(hist) != 1 || hist[0].Status != models.PushStatusSent || hist[0].PushedBy != "admin@test.com" {
-		t.Fatalf("history not recorded: %+v", hist)
+	if len(fake.pushed) != 0 {
+		t.Fatalf("legacy direct push should not reach OpAMP, got %+v", fake.pushed)
 	}
-	if len(fake.pushed) != 1 || fake.pushed[0].WorkloadID != "w1" || fake.pushed[0].Target != "" {
-		t.Fatalf("push not recorded correctly: %+v", fake.pushed)
+	history, err := db.GetWorkloadConfigHistory("w1")
+	if err != nil {
+		t.Fatalf("GetWorkloadConfigHistory: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("legacy direct push should not record history, got %+v", history)
 	}
 }
 
-func TestPushWorkloadConfig_RejectsViewerBeforePushing(t *testing.T) {
+func TestPushWorkloadConfig_RejectsViewerBeforeApprovalGate(t *testing.T) {
 	db, router, fake := newTestAPI(t)
 	_ = db.UpsertWorkload(models.Workload{
 		ID: "w-viewer", Type: "collector", Status: "connected",
@@ -971,26 +961,6 @@ func TestPushWorkloadConfig_RejectsViewerBeforePushing(t *testing.T) {
 	if len(history) != 0 {
 		t.Fatalf("viewer push should not record history, got %+v", history)
 	}
-}
-
-func TestPushWorkloadConfig_OpAMPFailureResponseDoesNotLeakRawError(t *testing.T) {
-	db, router, fake := newTestAPI(t)
-	fake.err = errors.New(sensitiveOpAMPErrorFixture)
-	_ = db.UpsertWorkload(models.Workload{
-		ID: "w1", Type: "collector", Status: "connected",
-		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
-		AcceptsRemoteConfig: true,
-	})
-
-	req := authedPost(t, "/api/workloads/w1/config", validRollbackYAML)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadGateway {
-		t.Fatalf("status = %d, want 502, body=%s", rec.Code, rec.Body.String())
-	}
-	assertResponseDoesNotLeakSensitiveOpAMPError(t, rec.Body.String())
-	assertLatestWorkloadConfigErrorIsSanitized(t, db, "w1")
 }
 
 func TestRollbackWorkloadDefault_OpAMPFailureResponseDoesNotLeakRawError(t *testing.T) {
@@ -1033,129 +1003,6 @@ func TestRollbackWorkloadDefault_OpAMPFailureResponseDoesNotLeakRawError(t *test
 	assertLatestWorkloadConfigErrorIsSanitized(t, db, "w1")
 }
 
-func TestPushWorkloadConfig_RejectsWhenRemoteConfigNotAccepted(t *testing.T) {
-	db, router, fake := newTestAPI(t)
-	_ = db.UpsertWorkload(models.Workload{
-		ID: "w-ro", Type: "collector", Status: "connected",
-		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
-		AcceptsRemoteConfig: false,
-	})
-
-	validYAML := `receivers:
-  otlp: {}
-exporters:
-  logging: {}
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      exporters: [logging]
-`
-	req := authedPost(t, "/api/workloads/w-ro/config", validYAML)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
-	}
-	var body map[string]string
-	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if body["code"] != "remote_config_unsupported" {
-		t.Fatalf("code = %q", body["code"])
-	}
-	if len(fake.pushed) != 0 {
-		t.Fatalf("expected 0 pushes, got %d", len(fake.pushed))
-	}
-}
-
-func TestPushWorkloadConfig_RejectsDisconnectedBeforePushing(t *testing.T) {
-	db, router, fake := newTestAPI(t)
-	_ = db.UpsertWorkload(models.Workload{
-		ID: "w-offline", Type: "collector", Status: "disconnected",
-		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
-		AcceptsRemoteConfig: true,
-	})
-
-	req := authedPost(t, "/api/workloads/w-offline/config", validWorkloadConfig)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
-	}
-	var body map[string]string
-	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if body["code"] != "workload_not_connected" {
-		t.Fatalf("code = %q", body["code"])
-	}
-	if len(fake.pushed) != 0 {
-		t.Fatalf("disconnected workload should not reach OpAMP, got %+v", fake.pushed)
-	}
-	history, err := db.GetWorkloadConfigHistory("w-offline")
-	if err != nil {
-		t.Fatalf("GetWorkloadConfigHistory: %v", err)
-	}
-	if len(history) != 0 {
-		t.Fatalf("disconnected workload should not record history, got %+v", history)
-	}
-}
-
-func TestPushWorkloadConfig_RejectsRuntimeValidationFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fake uses POSIX sh")
-	}
-	bin := writeAPIShim(t, `
-case "$1" in
-  --version) echo "otelcol version 0.150.1"; exit 0 ;;
-  validate) echo "bad runtime config" >&2; exit 42 ;;
-esac
-exit 9
-`)
-	t.Setenv("OTELCOL_RUNTIME_VALIDATION_ENABLED", "true")
-	t.Setenv("OTELCOL_BINARY_PATH", bin)
-
-	db, router, fake := newTestAPI(t)
-	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Version: "0.150.1", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
-
-	req := authedPost(t, "/api/workloads/w1/config", validWorkloadConfig)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400, body=%s", rec.Code, rec.Body.String())
-	}
-	if len(fake.pushed) != 0 {
-		t.Fatalf("runtime-invalid config should not be pushed, got %d pushes", len(fake.pushed))
-	}
-	var body struct {
-		ValidationErrors []struct {
-			Code    string `json:"code"`
-			CheckID string `json:"check_id"`
-		} `json:"validation_errors"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if len(body.ValidationErrors) != 1 || body.ValidationErrors[0].Code != "otelcol_validation_failed" || body.ValidationErrors[0].CheckID != "otelcol_runtime" {
-		t.Fatalf("runtime validation error not returned stably: %+v", body.ValidationErrors)
-	}
-}
-
-func TestPushWorkloadConfig_RejectsEmptyBody(t *testing.T) {
-	db, router, _ := newTestAPI(t)
-	_ = db.UpsertWorkload(models.Workload{
-		ID: "w1", Type: "collector", Status: "connected",
-		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
-		AcceptsRemoteConfig: true,
-	})
-
-	req := authedPost(t, "/api/workloads/w1/config", "")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != 400 {
-		t.Fatalf("status = %d", rec.Code)
-	}
-}
-
 func TestValidateWorkloadConfig_ReturnsErrorsForBadYAML(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}})
@@ -1189,15 +1036,6 @@ service:
       receivers: [otlp]
       exporters: [logging]
 `
-
-func writeAPIShim(t *testing.T, body string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "otelcol")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
-		t.Fatalf("write fake otelcol: %v", err)
-	}
-	return path
-}
 
 // --- Config history ---
 
