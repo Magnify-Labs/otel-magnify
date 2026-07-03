@@ -268,6 +268,7 @@ func (a *API) validateCanaryRequest(r *http.Request, workloadID string, req cana
 func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySelection) ([]models.CanaryTarget, []string, []string, []string) {
 	instances := a.opamp.Instances(wl.ID)
 	sort.Slice(instances, func(i, j int) bool { return instances[i].InstanceUID < instances[j].InstanceUID })
+	eligible := canaryEligibleInstances(instances)
 	byUID := map[string]opamp.Instance{}
 	for _, inst := range instances {
 		byUID[inst.InstanceUID] = inst
@@ -292,10 +293,10 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 		if n <= 0 {
 			return nil, nil, []string{"count must be positive"}, nil
 		}
-		if n >= len(instances) {
+		if n >= len(eligible) {
 			return nil, nil, []string{"canary target count must be smaller than eligible instances"}, nil
 		}
-		selected = append(selected, instances[:n]...)
+		selected = append(selected, eligible[:n]...)
 	case "percentage":
 		if selection.Percentage <= 0 {
 			return nil, nil, []string{"percentage must be positive"}, nil
@@ -303,16 +304,16 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 		if selection.Percentage >= 100 {
 			return nil, nil, []string{"percentage must be less than 100"}, nil
 		}
-		n := int(math.Ceil(float64(len(instances)) * float64(selection.Percentage) / 100))
-		if n < 1 && len(instances) > 0 {
+		n := int(math.Ceil(float64(len(eligible)) * float64(selection.Percentage) / 100))
+		if n < 1 && len(eligible) > 0 {
 			n = 1
 		}
 		if n > 0 {
-			selected = append(selected, instances[:n]...)
+			selected = append(selected, eligible[:n]...)
 		}
 	case "label_selector":
 		if labelsMatch(wl.Labels, selection.Labels) {
-			selected = instances
+			selected = eligible
 		}
 	case "instances":
 		seen := map[string]bool{}
@@ -339,9 +340,6 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 	if len(selected) == 0 {
 		return nil, nil, []string{"canary target set is empty"}, nil
 	}
-	if len(selected) >= len(instances) {
-		return nil, nil, []string{"canary target set must be smaller than eligible instances"}, nil
-	}
 	var targets []models.CanaryTarget
 	var reasons []string
 	now := time.Now().UTC()
@@ -364,6 +362,9 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 			errs = append(errs, "stale heartbeat: "+inst.InstanceUID)
 		}
 		targets = append(targets, t)
+	}
+	if len(errs) == 0 && len(selected) >= len(eligible) {
+		return nil, nil, []string{"canary target set must be smaller than eligible instances"}, nil
 	}
 	return targets, reasons, errs, errorCodes
 }
@@ -424,12 +425,26 @@ func (a *API) rollbackConfigForCanary(workloadID, excludeHash string) (*models.W
 func eligibleRemainingTargets(instances []opamp.Instance, selected map[string]bool) []opamp.Instance {
 	var out []opamp.Instance
 	for _, inst := range instances {
-		if !selected[inst.InstanceUID] && !instanceRejectsRemoteConfig(inst) && inst.Healthy && !inst.LastMessageAt.IsZero() && time.Since(inst.LastMessageAt) <= canaryHeartbeatFreshness {
+		if !selected[inst.InstanceUID] && canaryInstanceEligible(inst) {
 			out = append(out, inst)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].InstanceUID < out[j].InstanceUID })
 	return out
+}
+
+func canaryEligibleInstances(instances []opamp.Instance) []opamp.Instance {
+	out := make([]opamp.Instance, 0, len(instances))
+	for _, inst := range instances {
+		if canaryInstanceEligible(inst) {
+			out = append(out, inst)
+		}
+	}
+	return out
+}
+
+func canaryInstanceEligible(inst opamp.Instance) bool {
+	return !instanceRejectsRemoteConfig(inst) && inst.Healthy && !inst.LastMessageAt.IsZero() && time.Since(inst.LastMessageAt) <= canaryHeartbeatFreshness
 }
 
 func instanceRejectsRemoteConfig(inst opamp.Instance) bool {

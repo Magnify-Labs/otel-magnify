@@ -125,6 +125,91 @@ func TestCanaryRejectsBroadTargetSelectionWithoutPush(t *testing.T) {
 	}
 }
 
+func TestCanaryBroadSelectionSkipsIneligibleInstancesBeforePush(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	now := time.Now().UTC()
+	fake.instances["wl-canary"] = []opamp.Instance{
+		{InstanceUID: "inst-a-readonly", PodName: "pod-readonly", Healthy: true, AcceptsRemoteConfig: false, RemoteConfigCapabilityKnown: true, LastMessageAt: now, EffectiveConfigHash: "old"},
+		{InstanceUID: "inst-b-eligible", PodName: "pod-b", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now, EffectiveConfigHash: "old"},
+		{InstanceUID: "inst-c-degraded", PodName: "pod-degraded", Healthy: false, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now, EffectiveConfigHash: "old"},
+		{InstanceUID: "inst-d-eligible", PodName: "pod-d", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now, EffectiveConfigHash: "old"},
+		{InstanceUID: "inst-e-stale", PodName: "pod-stale", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now.Add(-10 * time.Minute), EffectiveConfigHash: "old"},
+	}
+
+	rec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"count","count":1}}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d want %d body=%s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if len(fake.pushed) != 1 || fake.pushed[0].Target != "inst-b-eligible" {
+		t.Fatalf("pushes=%+v want first eligible instance only", fake.pushed)
+	}
+}
+
+func TestCanaryBroadSelectionRejectsCountAtEligibleInstanceCount(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	now := time.Now().UTC()
+	fake.instances["wl-canary"] = []opamp.Instance{
+		{InstanceUID: "inst-a", PodName: "pod-a", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+		{InstanceUID: "inst-b-readonly", PodName: "pod-b", Healthy: true, AcceptsRemoteConfig: false, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+		{InstanceUID: "inst-c", PodName: "pod-c", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+	}
+
+	rec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"count","count":2}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("broad all-eligible selection pushed unexpectedly: %+v", fake.pushed)
+	}
+}
+
+func TestCanaryBroadSelectionRejectsLabelSelectorAtEligibleInstanceCount(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{"env": "prod"})
+	now := time.Now().UTC()
+	fake.instances["wl-canary"] = []opamp.Instance{
+		{InstanceUID: "inst-a", PodName: "pod-a", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+		{InstanceUID: "inst-b-readonly", PodName: "pod-b", Healthy: true, AcceptsRemoteConfig: false, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+		{InstanceUID: "inst-c", PodName: "pod-c", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+	}
+
+	rec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"label_selector","labels":{"env":"prod"}}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("broad all-eligible label selection pushed unexpectedly: %+v", fake.pushed)
+	}
+}
+
+func TestCanaryExplicitInstanceSelectionReportsPerInstanceIneligibility(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	now := time.Now().UTC()
+	fake.instances["wl-canary"] = []opamp.Instance{
+		{InstanceUID: "inst-a", PodName: "pod-a", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+		{InstanceUID: "inst-b-degraded", PodName: "pod-b", Healthy: false, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+		{InstanceUID: "inst-c-readonly", PodName: "pod-c", Healthy: true, AcceptsRemoteConfig: false, RemoteConfigCapabilityKnown: true, LastMessageAt: now},
+	}
+
+	rec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"instances","instance_uids":["inst-a","inst-b-degraded"]}}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d want %d body=%s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	var got models.CanaryValidationResult
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Targets) != 2 || got.Targets[0].InstanceUID != "inst-a" || got.Targets[0].StopReason != "" || got.Targets[1].InstanceUID != "inst-b-degraded" || got.Targets[1].StopReason != models.CanaryStopCollectorDegraded {
+		t.Fatalf("targets=%+v want eligible target plus degraded target with instance-level stop reason", got.Targets)
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("ineligible explicit selection pushed unexpectedly: %+v", fake.pushed)
+	}
+}
+
 func TestCanaryStartPushesOnlySelectedInstanceAndStatusIsSanitized(t *testing.T) {
 	db, router, fake, auditLog := newAuditTestAPI(t)
 	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
