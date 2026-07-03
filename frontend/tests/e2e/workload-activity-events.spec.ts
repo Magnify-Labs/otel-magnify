@@ -38,6 +38,18 @@ test.describe('Workload Activity tab', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
     })
 
+    await page.route('**/api/configs', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    })
+
+    await page.route(`**/api/workloads/${workloadID}/configs`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    })
+
+    await page.route(`**/api/workloads/${workloadID}/known-good`, async (route) => {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) })
+    })
+
     const events: TestEvent[] = [
       {
         id: 1,

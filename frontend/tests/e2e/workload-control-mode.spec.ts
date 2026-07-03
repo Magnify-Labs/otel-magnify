@@ -22,7 +22,32 @@ function baseWorkload(id: string, name: string, acceptsRemoteConfig: boolean) {
   }
 }
 
-function mockList(page: Page, extra: Record<string, unknown>[] = []) {
+async function mockList(page: Page, extra: Record<string, unknown>[] = []) {
+  await page.route('**/api/workloads/version-intelligence*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: 'fleet-version-intelligence.v1',
+        recommended_version: '0.100.0',
+        version_matrix: [],
+        collectors_below_recommended: [],
+        unsupported_config_components: [],
+        invalid_versions: [],
+        recommendations: [],
+      }),
+    }),
+  )
+  await page.route('**/api/config-safety/drift*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ total: 0, drifted: 0, current: 0, unknown: 0, items: [] }),
+    }),
+  )
+  await page.route('**/api/pushes/activity*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
   return page.route('**/api/workloads*', async (route) => {
     const url = route.request().url()
     // Only stub the collection endpoint, not child resources like /:id or /:id/*
@@ -42,8 +67,60 @@ function mockList(page: Page, extra: Record<string, unknown>[] = []) {
   })
 }
 
-function mockWorkload(page: Page, id: string, acceptsRemoteConfig: boolean) {
+async function mockWorkload(page: Page, id: string, acceptsRemoteConfig: boolean) {
   const name = id === SUPERVISED_ID ? 'collector-supervised' : 'collector-readonly'
+  await page.route('**/api/configs', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+  await page.route(`**/api/workloads/${id}/config/plan*`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: 'config_application_plan.v1',
+        workload_id: id,
+        config_hash: 'test-hash',
+        summary: {
+          target_count: 1,
+          collector_target_count: 1,
+          remote_config_capable_count: acceptsRemoteConfig ? 1 : 0,
+          read_only_count: acceptsRemoteConfig ? 0 : 1,
+          validation_ok_count: acceptsRemoteConfig ? 1 : 0,
+          validation_failed_count: 0,
+          components_missing_count: 0,
+          high_risk_change_count: 0,
+          excluded_count: acceptsRemoteConfig ? 0 : 1,
+        },
+        targets: [],
+        hard_failures: acceptsRemoteConfig ? [] : ['workload does not accept remote config'],
+        can_push: acceptsRemoteConfig,
+        apply_allowed: acceptsRemoteConfig,
+        export: {
+          supported: true,
+          formats: ['json', 'markdown'],
+          json_endpoint: `/api/workloads/${id}/config/plan/export?format=json`,
+          markdown_endpoint: `/api/workloads/${id}/config/plan/export?format=markdown`,
+          persisted_rollout: 'not_persisted',
+        },
+      }),
+    }),
+  )
+  await page.route(`**/api/workloads/${id}/instances*`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+  await page.route(`**/api/workloads/${id}/events/stats*`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ total: 0, by_severity: {}, by_type: {} }),
+    }),
+  )
+  await page.route(`**/api/workloads/${id}/events*`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+  await page.route(`**/api/workloads/${id}/known-good*`, (route) =>
+    route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) }),
+  )
   return page.route(`**/api/workloads/${id}`, (route) =>
     route.fulfill({
       status: 200,
