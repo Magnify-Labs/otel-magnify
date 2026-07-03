@@ -116,6 +116,24 @@ func TestRenderCSV_FixedColumnsAndSortedFactKeys(t *testing.T) {
 	}
 }
 
+func TestRenderCSV_NeutralizesSpreadsheetFormulaCells(t *testing.T) {
+	at := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	pack := models.EvidencePack{SchemaVersion: models.EvidencePackSchemaVersion, GeneratedAt: at, InputsHash: "abc", ReportHash: "def", Sections: []models.EvidenceSection{{ID: "workloads", Title: "Workloads", Order: 10, Items: []models.EvidenceItem{{ID: "i1", Resource: "workload", ResourceID: "=w1", ObservedAt: &at, Severity: "@critical", Summary: "=HYPERLINK(\"https://evil.example\")", Facts: map[string]any{"cmd": "+cmd|' /C calc'!A0", "tab": "	=SUM(1,1)", "safe": "text"}, ContentHash: "-hash", Redacted: true}}}}}
+	csvBytes, err := RenderCSV(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(csvBytes)
+	for _, want := range []string{"'=w1", "'@critical", "'=HYPERLINK", "'+cmd", "'	=SUM", "'-hash"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("csv did not neutralize %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, ",safe,text,") {
+		t.Fatalf("safe scalar should not be prefixed:\n%s", got)
+	}
+}
+
 func TestRenderPDFMinimal_DeterministicPDFBytes(t *testing.T) {
 	pack := models.EvidencePack{SchemaVersion: models.EvidencePackSchemaVersion, GeneratedAt: time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC), InputsHash: "abc", ReportHash: "def"}
 	pdf1, err := RenderPDFMinimal(pack)

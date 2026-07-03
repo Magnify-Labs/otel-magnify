@@ -47,8 +47,8 @@ func TestReportsExportMarkdown_OKAuditedAndRedacted(t *testing.T) {
 	}
 }
 
-func TestReportsPreviewJSON_OK(t *testing.T) {
-	db, router, _, _ := newAuditTestAPI(t)
+func TestReportsPreviewJSON_OKAudited(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
 	seedReportAPIFixture(t, db)
 
 	body := `{"report_type":"evidence_pack","scope":{"workload_ids":["w1"]}}`
@@ -66,6 +66,9 @@ func TestReportsPreviewJSON_OK(t *testing.T) {
 	}
 	if pack.SchemaVersion != models.EvidencePackSchemaVersion || len(pack.Sections) == 0 || len(pack.Signatures) != 1 {
 		t.Fatalf("unexpected pack: %+v", pack)
+	}
+	if got := findEvent(audit.snapshot(), "report.preview"); got == nil || got.Resource != "report" || got.ResourceID == "" {
+		t.Fatalf("missing report.preview audit: %+v", audit.snapshot())
 	}
 }
 
@@ -102,6 +105,19 @@ func TestReportsExportRejectsViewerAndInvalidScope(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid scope") {
 		t.Fatalf("invalid scope status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestReportsPreviewAuditFailureReturns503BeforeJSON(t *testing.T) {
+	db, router, _, audit := newAuditTestAPI(t)
+	seedReportAPIFixture(t, db)
+	audit.failWith(errors.New("audit unavailable"))
+	req := authedRequestForGroups(t, http.MethodPost, "/api/reports/evidence-pack", `{"report_type":"evidence_pack","scope":{"workload_ids":["w1"]}}`, []string{"administrator"})
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || strings.Contains(rec.Body.String(), models.EvidencePackSchemaVersion) || !strings.Contains(rec.Body.String(), "none") {
+		t.Fatalf("audit failure response status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

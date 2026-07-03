@@ -26,6 +26,10 @@ func (a *API) handlePreviewEvidencePack(w http.ResponseWriter, r *http.Request) 
 		a.respondReportBuildError(w, err)
 		return
 	}
+	if err := audit.Emit(r.Context(), a.audit, "report.preview", "report", pack.InputsHash, fmt.Sprintf("report_type=%s workloads=%d", req.ReportType, len(pack.Scope.WorkloadIDs))); err != nil {
+		respondAuditUnavailable(w, sideEffectNone)
+		return
+	}
 	respondJSON(w, http.StatusOK, pack)
 }
 

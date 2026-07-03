@@ -77,7 +77,7 @@ func RenderCSV(pack models.EvidencePack) ([]byte, error) {
 				if k != "" {
 					value = canonicalScalar(item.Facts[k])
 				}
-				_ = w.Write([]string{sec.ID, item.ID, item.Resource, item.ResourceID, observed, item.Severity, item.Summary, k, value, item.ContentHash, fmt.Sprintf("%t", item.Redacted)})
+				_ = w.Write(neutralizeCSVRecord([]string{sec.ID, item.ID, item.Resource, item.ResourceID, observed, item.Severity, item.Summary, k, value, item.ContentHash, fmt.Sprintf("%t", item.Redacted)}))
 			}
 		}
 	}
@@ -137,4 +137,24 @@ func sortedFactKeys(facts map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func neutralizeCSVRecord(record []string) []string {
+	out := make([]string, len(record))
+	for i, cell := range record {
+		out[i] = neutralizeCSVCell(cell)
+	}
+	return out
+}
+
+func neutralizeCSVCell(cell string) string {
+	if cell == "" {
+		return cell
+	}
+	switch cell[0] {
+	case '=', '+', '-', '@', '	', '\r':
+		return "'" + cell
+	default:
+		return cell
+	}
 }
