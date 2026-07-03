@@ -68,6 +68,6 @@ func newAuditTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPusher, *
 
 	fake := &fakeOpAMPPusher{instances: make(map[string][]opamp.Instance)}
 	rec := &recordingAuditLogger{}
-	router := NewRouter(db, a, hub, fake, rec, "", nil, nil, 30*24*time.Hour, nil, nil)
+	router := NewRouter(db, a, hub, fake, rec, "", nil, nil, 30*24*time.Hour, testEnabledFeatures(), nil, nil)
 	return db, router, fake, rec
 }

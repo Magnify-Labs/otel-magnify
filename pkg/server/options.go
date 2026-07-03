@@ -140,3 +140,14 @@ func WithFeatures(features map[string]bool) Option {
 		s.features = features
 	}
 }
+
+// WithLicenseChecker registers the optional license/tier capability checker
+// consulted by server-side feature gates after the static WithFeatures map.
+// Community builds normally omit it; enterprise builds can use it to derive
+// entitlements from license state without exposing implementation details in
+// the public /api/features response.
+func WithLicenseChecker(checker ext.LicenseChecker) Option {
+	return func(s *Server) {
+		s.licenseChecker = checker
+	}
+}
