@@ -97,14 +97,15 @@ Response fields:
 | `instances` | Live `internal/opamp.Instance[]`; same per-instance shape as `/instances`. Always an array. |
 | `summary.connected_count` | Number of live instances in `instances`. |
 | `summary.healthy_count` / `summary.unhealthy_count` | Health split across live instances. |
-| `summary.drifted_count` | When two or more distinct non-empty `effective_config_hash` values are present, the number of instances not on the majority reported hash. `0` when there are zero or one distinct reported hashes. |
+| `summary.drifted_count` | Number of live instances with a non-empty `effective_config_hash` different from the workload's persisted `active_config_hash`. If the workload has no persisted active hash, this stays `0`; use `summary.config_hash_diversity` / `summary.heterogeneity.mixed_effective_config_hashes` to detect mixed rollout/canary state without mislabeling it as drift. |
 | `summary.version_diversity` | Sorted unique non-empty versions reported by instances. Always an array. |
 | `summary.config_hash_diversity` | Sorted unique non-empty effective config hashes reported by instances. Always an array. |
-| `summary.remote_config_status_counts` | Object with stable keys: `capable`, `no_status`, `sent`, `applying`, `applied`, `failed`. `capable` counts instances with `accepts_remote_config=true`; the other keys count the latest per-instance remote-config state, with `no_status` used when `remote_config_status` is absent or has an empty `status`. |
+| `summary.remote_config_status_counts` | Object with stable keys: `capable`, `no_status`, `sent`, `applying`, `applied`, `failed`. `capable` counts instances with `accepts_remote_config=true`; the other keys count the latest state for remote-config-capable instances only, with `no_status` used when a capable instance has absent/empty `remote_config_status.status`. |
+| `summary.heterogeneous` | Convenience boolean: `true` when any backend heterogeneity flag is true; `false` for the empty shape. |
 | `summary.heterogeneity` | Object with stable boolean flags: `mixed_versions`, `mixed_effective_config_hashes`, `unhealthy_instances`, `mixed_remote_config_statuses`, `applying_remote_config`, `failed_remote_config`. |
 | `summary.heterogeneity_reasons` | Ordered list of the `true` heterogeneity flags, in backend evaluation order. Always an array. |
 
-Non-empty mixed topology example:
+Non-empty mixed topology example (assumes the workload's persisted `active_config_hash` is `hash-b`):
 
 ```json
 {
@@ -173,6 +174,7 @@ Non-empty mixed topology example:
     "healthy_count": 3,
     "unhealthy_count": 1,
     "drifted_count": 1,
+    "heterogeneous": true,
     "version_diversity": ["0.98.0", "0.99.0"],
     "config_hash_diversity": ["hash-a", "hash-b"],
     "remote_config_status_counts": {
@@ -215,6 +217,7 @@ Empty topology example:
     "healthy_count": 0,
     "unhealthy_count": 0,
     "drifted_count": 0,
+    "heterogeneous": false,
     "version_diversity": [],
     "config_hash_diversity": [],
     "remote_config_status_counts": {

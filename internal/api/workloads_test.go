@@ -387,7 +387,7 @@ func TestGetWorkloadTopology_SummarizesMixedInstanceState(t *testing.T) {
 	if body.WorkloadID != "w1" || len(body.Instances) != 3 {
 		t.Fatalf("unexpected topology header: %+v", body)
 	}
-	if body.Summary.ConnectedCount != 3 || body.Summary.HealthyCount != 2 || body.Summary.UnhealthyCount != 1 || body.Summary.DriftedCount != 1 {
+	if body.Summary.ConnectedCount != 3 || body.Summary.HealthyCount != 2 || body.Summary.UnhealthyCount != 1 || body.Summary.DriftedCount != 0 {
 		t.Fatalf("bad counts: %+v", body.Summary)
 	}
 	if got, want := body.Summary.VersionDiversity, []string{"0.98.0", "0.99.0"}; !stringSlicesEqual(got, want) {
@@ -462,6 +462,9 @@ func TestGetWorkloadTopology_ContractIncludesSchemaCapabilityCountsAndHeterogene
 		}
 	}
 	summary := body["summary"].(map[string]any)
+	if summary["heterogeneous"] != true {
+		t.Fatalf("summary.heterogeneous = %v, want true; summary=%+v", summary["heterogeneous"], summary)
+	}
 	statusCounts := summary["remote_config_status_counts"].(map[string]any)
 	wantStatusCounts := map[string]float64{
 		"capable":   4,
@@ -485,6 +488,93 @@ func TestGetWorkloadTopology_ContractIncludesSchemaCapabilityCountsAndHeterogene
 	wantReasons := []string{"mixed_versions", "mixed_effective_config_hashes", "unhealthy_instances", "mixed_remote_config_statuses", "applying_remote_config", "failed_remote_config"}
 	if got := stringSliceFromAny(summary["heterogeneity_reasons"]); !stringSlicesEqual(got, wantReasons) {
 		t.Fatalf("heterogeneity_reasons = %v, want %v", got, wantReasons)
+	}
+}
+
+func TestGetWorkloadTopology_DriftedCountUsesPersistedActiveConfigHash(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "w-active", DisplayName: "collector active", Type: "collector", Status: "connected", LastSeenAt: now,
+		Labels: models.Labels{}, ActiveConfigHash: "hash-a",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake.instances["w-active"] = []opamp.Instance{
+		{InstanceUID: "uid-a", PodName: "pod-a", Healthy: true, EffectiveConfigHash: "hash-a"},
+		{InstanceUID: "uid-b", PodName: "pod-b", Healthy: true, EffectiveConfigHash: "hash-b"},
+		{InstanceUID: "uid-c", PodName: "pod-c", Healthy: true, EffectiveConfigHash: "hash-b"},
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/w-active/topology")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	summary := decodeTopologySummary(t, rec.Body.Bytes())
+	if got := summary["drifted_count"]; got != float64(2) {
+		t.Fatalf("drifted_count = %v, want 2 using persisted active_config_hash; summary=%+v", got, summary)
+	}
+	if got := stringSliceFromAny(summary["config_hash_diversity"]); !stringSlicesEqual(got, []string{"hash-a", "hash-b"}) {
+		t.Fatalf("config_hash_diversity = %v, want [hash-a hash-b]", got)
+	}
+}
+
+func TestGetWorkloadTopology_DriftedCountStaysZeroWithoutActiveConfigHash(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "w-rollout", DisplayName: "collector rollout", Type: "collector", Status: "connected", LastSeenAt: now,
+		Labels: models.Labels{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake.instances["w-rollout"] = []opamp.Instance{
+		{InstanceUID: "uid-a", PodName: "pod-a", Healthy: true, EffectiveConfigHash: "hash-a"},
+		{InstanceUID: "uid-b", PodName: "pod-b", Healthy: true, EffectiveConfigHash: "hash-b"},
+		{InstanceUID: "uid-c", PodName: "pod-c", Healthy: true, EffectiveConfigHash: "hash-b"},
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/w-rollout/topology")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	summary := decodeTopologySummary(t, rec.Body.Bytes())
+	if got := summary["drifted_count"]; got != float64(0) {
+		t.Fatalf("drifted_count = %v, want 0 without persisted active_config_hash; summary=%+v", got, summary)
+	}
+	if summary["heterogeneous"] != true {
+		t.Fatalf("summary.heterogeneous = %v, want true for mixed effective hashes; summary=%+v", summary["heterogeneous"], summary)
+	}
+}
+
+func TestGetWorkloadTopology_NoStatusCountsOnlyRemoteConfigCapableInstances(t *testing.T) {
+	_, router, fake := newTestAPI(t)
+	fake.instances["w-mixed-capability"] = []opamp.Instance{
+		{InstanceUID: "uid-capable-no-status", PodName: "pod-a", Healthy: true, AcceptsRemoteConfig: true},
+		{InstanceUID: "uid-read-only", PodName: "pod-b", Healthy: true, AcceptsRemoteConfig: false},
+		{InstanceUID: "uid-capable-applied", PodName: "pod-c", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigStatus: &models.RemoteConfigStatus{Status: "applied"}},
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/w-mixed-capability/topology")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	summary := decodeTopologySummary(t, rec.Body.Bytes())
+	statusCounts := summary["remote_config_status_counts"].(map[string]any)
+	if got := statusCounts["capable"]; got != float64(2) {
+		t.Fatalf("remote_config_status_counts.capable = %v, want 2; counts=%+v", got, statusCounts)
+	}
+	if got := statusCounts["no_status"]; got != float64(1) {
+		t.Fatalf("remote_config_status_counts.no_status = %v, want 1 capable instance only; counts=%+v", got, statusCounts)
 	}
 }
 
@@ -525,6 +615,9 @@ func TestGetWorkloadTopology_EmptyContractShapeHasNoNullArraysMapsOrHeterogeneit
 		t.Fatalf("instances = %#v, want empty array", body["instances"])
 	}
 	summary := body["summary"].(map[string]any)
+	if summary["heterogeneous"] != false {
+		t.Fatalf("summary.heterogeneous = %v, want false; summary=%+v", summary["heterogeneous"], summary)
+	}
 	for _, key := range []string{"version_diversity", "config_hash_diversity", "heterogeneity_reasons"} {
 		items, ok := summary[key].([]any)
 		if !ok || len(items) != 0 {
@@ -544,6 +637,19 @@ func TestGetWorkloadTopology_EmptyContractShapeHasNoNullArraysMapsOrHeterogeneit
 			}
 		}
 	}
+}
+
+func decodeTopologySummary(t *testing.T, bodyBytes []byte) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		t.Fatalf("decode topology: %v", err)
+	}
+	summary, ok := body["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary = %#v, want object; body=%s", body["summary"], string(bodyBytes))
+	}
+	return summary
 }
 
 func stringSliceFromAny(value any) []string {

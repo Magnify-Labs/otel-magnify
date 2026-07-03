@@ -362,6 +362,7 @@ type WorkloadTopologySummary struct {
 	HealthyCount             int             `json:"healthy_count"`
 	UnhealthyCount           int             `json:"unhealthy_count"`
 	DriftedCount             int             `json:"drifted_count"`
+	Heterogeneous            bool            `json:"heterogeneous"`
 	VersionDiversity         []string        `json:"version_diversity"`
 	ConfigHashDiversity      []string        `json:"config_hash_diversity"`
 	RemoteConfigStatusCounts map[string]int  `json:"remote_config_status_counts"`
