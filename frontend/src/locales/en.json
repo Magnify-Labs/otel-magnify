@@ -158,6 +158,50 @@
     }
   },
   "workloads": {
+    "instances": {
+      "loading": "Loading workload topology…",
+      "empty": "No instance topology is currently available.",
+      "error": "Unable to load workload topology.",
+      "summary_aria": "Workload topology summary",
+      "summary": {
+        "connected": "{{count}} connected",
+        "healthy": "{{count}} healthy",
+        "drifted": "{{count}} drifted",
+        "failed": "{{count}} failed"
+      },
+      "warnings": {
+        "title": "Topology warnings",
+        "reason": {
+          "mixed_versions": "Mixed collector versions",
+          "mixed_effective_config_hashes": "Mixed effective config hashes",
+          "mixed_remote_config_statuses": "Mixed remote config statuses",
+          "unhealthy_instances": "Unhealthy instances",
+          "failed_remote_config": "Remote config failed",
+          "applying_remote_config": "Remote config still applying"
+        }
+      },
+      "table": {
+        "instance": "Instance",
+        "pod": "Pod",
+        "health": "Health",
+        "last_message": "Last message",
+        "version": "Version",
+        "effective_config": "Effective config",
+        "config_status": "Config status"
+      },
+      "health": {
+        "healthy": "Healthy",
+        "unhealthy": "Unhealthy"
+      },
+      "config_status": {
+        "sent": "Sent",
+        "applying": "Applying",
+        "applied": "Applied",
+        "failed": "Failed",
+        "no_status": "No status"
+      },
+      "drift": "Drift"
+    },
     "config": {
       "versioning": {
         "history_title": "Push history",
@@ -348,6 +392,13 @@
           "count": "Number of collectors",
           "percentage": "Percentage of collectors",
           "labels": "Labels (key=value, one per line)"
+        },
+        "ineligible": {
+          "offline": "offline",
+          "unhealthy": "unhealthy",
+          "read_only": "read-only",
+          "unsupported": "unsupported",
+          "no_status": "no status"
         },
         "validation": {
           "title": "Canary validation result",

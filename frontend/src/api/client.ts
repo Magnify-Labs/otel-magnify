@@ -37,6 +37,7 @@ import type {
   CanaryValidationResult,
   ConfigDriftDashboard,
   FleetVersionIntelligence,
+  WorkloadTopology,
 } from '../types'
 
 declare module 'axios' {
@@ -116,6 +117,19 @@ export const workloadsAPI = {
   get: (id: string) => api.get<Workload>(`/workloads/${id}`).then((r) => r.data),
   instances: (id: string) =>
     api.get<Instance[]>(`/workloads/${id}/instances`).then((r) => r.data ?? []),
+  topology: (id: string) =>
+    api.get<WorkloadTopology>(`/workloads/${id}/topology`).then((r) => ({
+      ...r.data,
+      instances: r.data.instances ?? [],
+      summary: {
+        ...r.data.summary,
+        version_diversity: r.data.summary.version_diversity ?? [],
+        config_hash_diversity: r.data.summary.config_hash_diversity ?? [],
+        remote_config_status_counts: r.data.summary.remote_config_status_counts ?? {},
+        heterogeneity: r.data.summary.heterogeneity ?? {},
+        heterogeneity_reasons: r.data.summary.heterogeneity_reasons ?? [],
+      },
+    })),
   events: (id: string, params?: { limit?: number; since?: string }) =>
     api.get<WorkloadEvent[]>(`/workloads/${id}/events`, { params }).then((r) => r.data ?? []),
   eventsStats: (id: string, window = '24h') =>

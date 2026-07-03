@@ -87,13 +87,22 @@ export default function ManualCanaryPanel({
   const [canary, setCanary] = useState<CanaryStatus | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const { data: instances = [] } = useQuery({
-    queryKey: ['workload-instances', workloadId],
-    queryFn: () => workloadsAPI.instances(workloadId),
+  const { data: topology } = useQuery({
+    queryKey: ['workload-topology', workloadId],
+    queryFn: () => workloadsAPI.topology(workloadId),
     enabled: open,
   })
-
-  const selectedInstance = instanceUid || instances[0]?.instance_uid || ''
+  const instanceOptions = useMemo(
+    () => buildInstanceOptions(topology?.instances ?? []),
+    [topology?.instances],
+  )
+  const firstEligibleInstance = instanceOptions.find((option) => !option.disabled)?.instance
+    .instance_uid
+  const selectedOption = instanceOptions.find(
+    (option) => option.instance.instance_uid === instanceUid,
+  )
+  const selectedInstance =
+    selectedOption && !selectedOption.disabled ? instanceUid : firstEligibleInstance || ''
   const selection = useMemo<CanarySelection>(() => {
     switch (strategy) {
       case 'one':
@@ -166,7 +175,12 @@ export default function ManualCanaryPanel({
   )
 
   const canaryBlocked = !canPush || !safetyPlanReady
-  const canSubmit = !canaryBlocked && !!currentValidation?.valid && !startMutation.isPending
+  const oneInstanceUnavailable = strategy === 'one' && !selectedInstance
+  const canSubmit =
+    !canaryBlocked &&
+    !oneInstanceUnavailable &&
+    !!currentValidation?.valid &&
+    !startMutation.isPending
   const actionDisabled = !canPush || !status
   const promoteDisabled =
     actionDisabled ||
@@ -228,7 +242,7 @@ export default function ManualCanaryPanel({
             </label>
             {strategy === 'one' && (
               <InstanceSelect
-                instances={instances}
+                options={instanceOptions}
                 value={selectedInstance}
                 onChange={setInstanceUid}
               />
@@ -285,7 +299,7 @@ export default function ManualCanaryPanel({
             <button
               className="btn"
               onClick={() => validateMutation.mutate()}
-              disabled={validateMutation.isPending || canaryBlocked}
+              disabled={validateMutation.isPending || canaryBlocked || oneInstanceUnavailable}
             >
               {validateMutation.isPending
                 ? t('workloads.config.canary.validating')
@@ -323,11 +337,11 @@ export default function ManualCanaryPanel({
 }
 
 function InstanceSelect({
-  instances,
+  options,
   value,
   onChange,
 }: {
-  instances: Instance[]
+  options: CanaryInstanceOption[]
   value: string
   onChange: (value: string) => void
 }) {
@@ -341,18 +355,46 @@ function InstanceSelect({
         onChange={(e) => onChange(e.target.value)}
         aria-label={t('workloads.config.canary.fields.instance')}
       >
-        {instances.length === 0 ? (
+        {options.length === 0 ? (
           <option value="">{t('workloads.config.canary.fields.no_instances')}</option>
         ) : (
-          instances.map((instance) => (
-            <option key={instance.instance_uid} value={instance.instance_uid}>
+          options.map(({ instance, disabled, reason }) => (
+            <option key={instance.instance_uid} value={instance.instance_uid} disabled={disabled}>
               {instance.pod_name || instance.instance_uid}
+              {disabled && reason
+                ? ` — ${t(`workloads.config.canary.ineligible.${reason}`, { defaultValue: reason })}`
+                : ''}
             </option>
           ))
         )}
       </select>
     </label>
   )
+}
+
+type CanaryIneligibleReason = 'offline' | 'unhealthy' | 'read_only' | 'unsupported' | 'no_status'
+
+interface CanaryInstanceOption {
+  instance: Instance
+  disabled: boolean
+  reason?: CanaryIneligibleReason
+}
+
+function buildInstanceOptions(instances: Instance[]): CanaryInstanceOption[] {
+  return instances.map((instance) => {
+    const reason = canaryIneligibleReason(instance)
+    return { instance, disabled: !!reason, reason }
+  })
+}
+
+function canaryIneligibleReason(instance: Instance): CanaryIneligibleReason | undefined {
+  const remoteStatus = instance.remote_config_status?.status as string | undefined
+  if (!instance.last_message_at) return 'offline'
+  if (!instance.healthy) return 'unhealthy'
+  if (instance.accepts_remote_config === false) return 'read_only'
+  if (remoteStatus === 'unsupported') return 'unsupported'
+  if (!remoteStatus) return 'no_status'
+  return undefined
 }
 
 function CanaryValidationPanel({ validation }: { validation: CanaryValidationResult }) {

@@ -155,6 +155,28 @@ export interface Instance {
   last_message_at: string
   effective_config_hash?: string
   healthy: boolean
+  accepts_remote_config?: boolean
+  remote_config_status?: RemoteConfigStatus
+}
+
+export interface WorkloadTopologySummary {
+  connected_count: number
+  healthy_count: number
+  unhealthy_count: number
+  drifted_count: number
+  heterogeneous: boolean
+  version_diversity: string[]
+  config_hash_diversity: string[]
+  remote_config_status_counts: Record<string, number>
+  heterogeneity: Record<string, boolean>
+  heterogeneity_reasons: string[]
+}
+
+export interface WorkloadTopology {
+  schema_version: 'workload-topology.v1'
+  workload_id: string
+  summary: WorkloadTopologySummary
+  instances: Instance[]
 }
 
 export interface WorkloadEvent {

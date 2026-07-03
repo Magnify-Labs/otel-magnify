@@ -2276,6 +2276,39 @@ code {
 }
 
 /* Instances table */
+.instances-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.topology-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.topology-summary span,
+.instance-config-status,
+.instance-health {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 0.2rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.topology-warning-box {
+  border: 1px solid rgba(245, 158, 11, 0.36);
+  border-left: 4px solid var(--amber);
+  border-radius: var(--radius);
+  background: rgba(245, 158, 11, 0.08);
+  padding: 0.8rem 1rem;
+}
+
+.topology-warning-list {
+  margin: 0.4rem 0 0 1.25rem;
+}
+
 .instances-table {
   width: 100%;
   border-collapse: collapse;
@@ -2305,6 +2338,20 @@ code {
   color: var(--red);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+.instance-health.healthy,
+.instance-config-status-applied {
+  color: var(--green);
+}
+.instance-health.unhealthy,
+.instance-config-status-failed {
+  color: var(--red);
+}
+.instance-config-error {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--red);
+  font-size: 0.75rem;
 }
 
 /* Activity panel */

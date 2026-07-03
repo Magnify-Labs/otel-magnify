@@ -692,6 +692,101 @@ test('canary wizard validates a percentage target group before starting canary',
   await expect(page.getByRole('button', { name: 'Push canary' })).toBeEnabled()
 })
 
+test('canary wizard selects one eligible instance and explains disabled options', async ({
+  loggedInPage: page,
+}) => {
+  await mockEditorMe(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
+  await mockInstances(page, [
+    {
+      instance_uid: 'inst-offline',
+      pod_name: 'otel-offline',
+      version: '0.98.0',
+      connected_at: new Date().toISOString(),
+      last_message_at: '',
+      effective_config_hash: 'abc123',
+      healthy: true,
+      accepts_remote_config: true,
+    },
+    {
+      instance_uid: 'inst-unhealthy',
+      pod_name: 'otel-unhealthy',
+      version: '0.98.0',
+      connected_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+      effective_config_hash: 'abc123',
+      healthy: false,
+      accepts_remote_config: true,
+      remote_config_status: {
+        status: 'applied',
+        config_hash: 'abc123',
+        updated_at: new Date().toISOString(),
+      },
+    },
+    {
+      instance_uid: 'inst-readonly',
+      pod_name: 'otel-readonly',
+      version: '0.98.0',
+      connected_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+      effective_config_hash: 'abc123',
+      healthy: true,
+      accepts_remote_config: false,
+    },
+    {
+      instance_uid: 'inst-ok',
+      pod_name: 'otel-ok',
+      version: '0.98.0',
+      connected_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+      effective_config_hash: 'abc123',
+      healthy: true,
+      accepts_remote_config: true,
+      remote_config_status: {
+        status: 'applied',
+        config_hash: 'abc123',
+        updated_at: new Date().toISOString(),
+      },
+    },
+  ])
+
+  let canaryValidationBody: unknown
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/canary/validate`, async (route) => {
+    canaryValidationBody = route.request().postDataJSON()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        valid: true,
+        targets: [{ instance_uid: 'inst-ok', pod_name: 'otel-ok', status: 'sent' }],
+      }),
+    })
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await generateSafetyPlan(page)
+  await page.getByRole('button', { name: 'Start canary' }).click()
+
+  const picker = page.getByLabel('Collector instance')
+  await expect(picker).toHaveValue('inst-ok')
+  await expect(picker.locator('option[value="inst-offline"]')).toContainText('offline')
+  await expect(picker.locator('option[value="inst-unhealthy"]')).toContainText('unhealthy')
+  await expect(picker.locator('option[value="inst-readonly"]')).toContainText('read-only')
+  await expect(picker.locator('option[value="inst-offline"]')).toHaveAttribute('disabled', '')
+  await expect(picker.locator('option[value="inst-ok"]')).not.toHaveAttribute('disabled', '')
+
+  await page.getByRole('button', { name: 'Validate canary targets' }).click()
+  await expect.poll(() => canaryValidationBody).toMatchObject({
+    selection: { strategy: 'one', instance_uid: 'inst-ok' },
+  })
+  await expect(page.getByRole('button', { name: 'Push canary' })).toBeEnabled()
+})
+
 test('canary validation expires when the draft changes before push', async ({
   loggedInPage: page,
 }) => {
@@ -1676,22 +1771,52 @@ function mockStartCanary(page: Page, result: Record<string, unknown>) {
   )
 }
 
-function mockInstances(page: Page) {
-  return page.route(`**/api/workloads/${WORKLOAD_ID}/instances`, (route) =>
+function mockInstances(page: Page, instances?: Array<Record<string, unknown>>) {
+  const body = instances ?? [
+    {
+      instance_uid: 'inst-a',
+      pod_name: 'otel-a',
+      version: '0.98.0',
+      connected_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+      effective_config_hash: 'abc123',
+      healthy: true,
+      accepts_remote_config: true,
+      remote_config_status: {
+        status: 'applied',
+        config_hash: 'abc123',
+        updated_at: new Date().toISOString(),
+      },
+    },
+  ]
+  void page.route(`**/api/workloads/${WORKLOAD_ID}/instances`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          instance_uid: 'inst-a',
-          pod_name: 'otel-a',
-          version: '0.98.0',
-          connected_at: new Date().toISOString(),
-          last_message_at: new Date().toISOString(),
-          effective_config_hash: 'abc123',
-          healthy: true,
+      body: JSON.stringify(body),
+    }),
+  )
+  return page.route(`**/api/workloads/${WORKLOAD_ID}/topology`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: 'workload-topology.v1',
+        workload_id: WORKLOAD_ID,
+        summary: {
+          connected_count: body.length,
+          healthy_count: body.filter((instance) => instance.healthy).length,
+          unhealthy_count: body.filter((instance) => !instance.healthy).length,
+          drifted_count: 0,
+          heterogeneous: false,
+          version_diversity: [],
+          config_hash_diversity: [],
+          remote_config_status_counts: {},
+          heterogeneity: {},
+          heterogeneity_reasons: [],
         },
-      ]),
+        instances: body,
+      }),
     }),
   )
 }
