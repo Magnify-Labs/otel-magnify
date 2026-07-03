@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
 func TestRegistryBindFreshReturnsTrueOnceThenFalse(t *testing.T) {
@@ -53,6 +55,49 @@ func TestRegistryInstancesSnapshot(t *testing.T) {
 	snap := r.Instances("wl-1")
 	if len(snap) != 2 {
 		t.Fatalf("snap: %d", len(snap))
+	}
+}
+
+func TestRegistryInstancesSnapshotPreservesPerInstanceTopology(t *testing.T) {
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	r := NewInstanceRegistry()
+	r.BindInstance("uid-healthy", "wl-1", Instance{
+		PodName:             "collector-0",
+		Version:             "0.98.0",
+		EffectiveConfigHash: "hash-active",
+		Healthy:             true,
+		AcceptsRemoteConfig: true,
+		RemoteConfigStatus:  &models.RemoteConfigStatus{Status: models.PushStatusApplied, ConfigHash: "hash-active", UpdatedAt: now},
+	})
+	r.BindInstance("uid-degraded", "wl-1", Instance{
+		PodName:             "collector-1",
+		Version:             "0.99.0",
+		EffectiveConfigHash: "hash-canary",
+		Healthy:             false,
+		AcceptsRemoteConfig: true,
+		RemoteConfigStatus:  &models.RemoteConfigStatus{Status: models.PushStatusFailed, ConfigHash: "hash-canary", ErrorMessage: "validation failed", UpdatedAt: now.Add(time.Minute)},
+	})
+
+	byUID := map[string]Instance{}
+	for _, inst := range r.Instances("wl-1") {
+		byUID[inst.InstanceUID] = inst
+	}
+	if len(byUID) != 2 {
+		t.Fatalf("instances len = %d, want 2: %+v", len(byUID), byUID)
+	}
+	healthy := byUID["uid-healthy"]
+	if healthy.PodName != "collector-0" || healthy.Version != "0.98.0" || healthy.EffectiveConfigHash != "hash-active" || !healthy.Healthy {
+		t.Fatalf("healthy instance topology collapsed or corrupted: %+v", healthy)
+	}
+	if healthy.RemoteConfigStatus == nil || healthy.RemoteConfigStatus.Status != models.PushStatusApplied || healthy.RemoteConfigStatus.ConfigHash != "hash-active" {
+		t.Fatalf("healthy remote config status = %+v", healthy.RemoteConfigStatus)
+	}
+	degraded := byUID["uid-degraded"]
+	if degraded.PodName != "collector-1" || degraded.Version != "0.99.0" || degraded.EffectiveConfigHash != "hash-canary" || degraded.Healthy {
+		t.Fatalf("degraded instance topology collapsed or corrupted: %+v", degraded)
+	}
+	if degraded.RemoteConfigStatus == nil || degraded.RemoteConfigStatus.Status != models.PushStatusFailed || degraded.RemoteConfigStatus.ConfigHash != "hash-canary" {
+		t.Fatalf("degraded remote config status = %+v", degraded.RemoteConfigStatus)
 	}
 }
 

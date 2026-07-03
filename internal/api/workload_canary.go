@@ -268,6 +268,7 @@ func (a *API) validateCanaryRequest(r *http.Request, workloadID string, req cana
 func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySelection) ([]models.CanaryTarget, []string, []string, []string) {
 	instances := a.opamp.Instances(wl.ID)
 	sort.Slice(instances, func(i, j int) bool { return instances[i].InstanceUID < instances[j].InstanceUID })
+	eligible := canaryEligibleInstances(instances)
 	byUID := map[string]opamp.Instance{}
 	for _, inst := range instances {
 		byUID[inst.InstanceUID] = inst
@@ -292,10 +293,10 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 		if n <= 0 {
 			return nil, nil, []string{"count must be positive"}, nil
 		}
-		if n >= len(instances) {
+		if n >= len(eligible) {
 			return nil, nil, []string{"canary target count must be smaller than eligible instances"}, nil
 		}
-		selected = append(selected, instances[:n]...)
+		selected = append(selected, eligible[:n]...)
 	case "percentage":
 		if selection.Percentage <= 0 {
 			return nil, nil, []string{"percentage must be positive"}, nil
@@ -303,16 +304,16 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 		if selection.Percentage >= 100 {
 			return nil, nil, []string{"percentage must be less than 100"}, nil
 		}
-		n := int(math.Ceil(float64(len(instances)) * float64(selection.Percentage) / 100))
-		if n < 1 && len(instances) > 0 {
+		n := int(math.Ceil(float64(len(eligible)) * float64(selection.Percentage) / 100))
+		if n < 1 && len(eligible) > 0 {
 			n = 1
 		}
 		if n > 0 {
-			selected = append(selected, instances[:n]...)
+			selected = append(selected, eligible[:n]...)
 		}
 	case "label_selector":
 		if labelsMatch(wl.Labels, selection.Labels) {
-			selected = instances
+			selected = eligible
 		}
 	case "instances":
 		seen := map[string]bool{}
@@ -339,14 +340,17 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 	if len(selected) == 0 {
 		return nil, nil, []string{"canary target set is empty"}, nil
 	}
-	if len(selected) >= len(instances) {
-		return nil, nil, []string{"canary target set must be smaller than eligible instances"}, nil
-	}
 	var targets []models.CanaryTarget
 	var reasons []string
 	now := time.Now().UTC()
 	for _, inst := range selected {
 		t := models.CanaryTarget{InstanceUID: inst.InstanceUID, PodName: inst.PodName, Status: models.InstanceStatusSent, UpdatedAt: now}
+		if instanceRejectsRemoteConfig(inst) {
+			t.StopReason = "remote_config_unsupported"
+			reasons = appendUnique(reasons, t.StopReason)
+			errs = append(errs, "instance does not accept remote config: "+inst.InstanceUID)
+			errorCodes = appendUnique(errorCodes, "instance_remote_config_unsupported")
+		}
 		if !inst.Healthy {
 			t.StopReason = models.CanaryStopCollectorDegraded
 			reasons = appendUnique(reasons, t.StopReason)
@@ -358,6 +362,9 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 			errs = append(errs, "stale heartbeat: "+inst.InstanceUID)
 		}
 		targets = append(targets, t)
+	}
+	if len(errs) == 0 && len(selected) >= len(eligible) {
+		return nil, nil, []string{"canary target set must be smaller than eligible instances"}, nil
 	}
 	return targets, reasons, errs, errorCodes
 }
@@ -418,7 +425,7 @@ func (a *API) rollbackConfigForCanary(workloadID, excludeHash string) (*models.W
 func eligibleRemainingTargets(instances []opamp.Instance, selected map[string]bool) []opamp.Instance {
 	var out []opamp.Instance
 	for _, inst := range instances {
-		if !selected[inst.InstanceUID] && inst.Healthy && !inst.LastMessageAt.IsZero() && time.Since(inst.LastMessageAt) <= canaryHeartbeatFreshness {
+		if !selected[inst.InstanceUID] && canaryInstanceEligible(inst) {
 			out = append(out, inst)
 		}
 	}
@@ -426,9 +433,27 @@ func eligibleRemainingTargets(instances []opamp.Instance, selected map[string]bo
 	return out
 }
 
+func canaryEligibleInstances(instances []opamp.Instance) []opamp.Instance {
+	out := make([]opamp.Instance, 0, len(instances))
+	for _, inst := range instances {
+		if canaryInstanceEligible(inst) {
+			out = append(out, inst)
+		}
+	}
+	return out
+}
+
+func canaryInstanceEligible(inst opamp.Instance) bool {
+	return !instanceRejectsRemoteConfig(inst) && inst.Healthy && !inst.LastMessageAt.IsZero() && time.Since(inst.LastMessageAt) <= canaryHeartbeatFreshness
+}
+
+func instanceRejectsRemoteConfig(inst opamp.Instance) bool {
+	return inst.RemoteConfigCapabilityKnown && !inst.AcceptsRemoteConfig
+}
+
 func canaryHTTPStatus(result models.CanaryValidationResult) int {
 	for _, code := range result.ErrorCodes {
-		if code == "instance_target_not_connected" || code == "instance_target_cross_workload" || code == "remote_config_unsupported" {
+		if code == "instance_target_not_connected" || code == "instance_target_cross_workload" || code == "remote_config_unsupported" || code == "instance_remote_config_unsupported" {
 			return http.StatusConflict
 		}
 	}

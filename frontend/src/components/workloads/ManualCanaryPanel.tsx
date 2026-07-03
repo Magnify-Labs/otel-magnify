@@ -375,7 +375,7 @@ function InstanceSelect({
   )
 }
 
-type CanaryIneligibleReason = 'offline' | 'unhealthy' | 'read_only' | 'unsupported' | 'no_status'
+type CanaryIneligibleReason = 'offline' | 'unhealthy' | 'read_only' | 'unsupported'
 
 interface CanaryInstanceOption {
   instance: Instance
@@ -396,7 +396,6 @@ function canaryIneligibleReason(instance: Instance): CanaryIneligibleReason | un
   if (!instance.healthy) return 'unhealthy'
   if (instance.accepts_remote_config === false) return 'read_only'
   if (remoteStatus === 'unsupported') return 'unsupported'
-  if (!remoteStatus) return 'no_status'
   return undefined
 }
 

@@ -787,6 +787,57 @@ test('canary wizard selects one eligible instance and explains disabled options'
   await expect(page.getByRole('button', { name: 'Push canary' })).toBeEnabled()
 })
 
+test('canary wizard treats healthy remote-config capable instances without prior status as eligible', async ({
+  loggedInPage: page,
+}) => {
+  await mockEditorMe(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
+  await mockInstances(page, [
+    {
+      instance_uid: 'inst-new',
+      pod_name: 'otel-new',
+      version: '0.128.0',
+      connected_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+      effective_config_hash: 'abc123',
+      healthy: true,
+      accepts_remote_config: true,
+    },
+  ])
+
+  let canaryValidationBody: unknown
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/canary/validate`, async (route) => {
+    canaryValidationBody = route.request().postDataJSON()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        valid: true,
+        targets: [{ instance_uid: 'inst-new', pod_name: 'otel-new', status: 'sent' }],
+      }),
+    })
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await generateSafetyPlan(page)
+  await page.getByRole('button', { name: 'Start canary' }).click()
+
+  const picker = page.getByLabel('Collector instance')
+  await expect(picker).toHaveValue('inst-new')
+  await expect(picker.locator('option[value="inst-new"]')).not.toHaveAttribute('disabled', '')
+
+  await page.getByRole('button', { name: 'Validate canary targets' }).click()
+  await expect.poll(() => canaryValidationBody).toMatchObject({
+    selection: { strategy: 'one', instance_uid: 'inst-new' },
+  })
+  await expect(page.getByRole('button', { name: 'Push canary' })).toBeEnabled()
+})
+
 test('canary validation expires when the draft changes before push', async ({
   loggedInPage: page,
 }) => {
