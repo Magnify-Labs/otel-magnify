@@ -21,6 +21,7 @@ import type {
   PushPreviewRequest,
   ValidationCheck,
   ConfigApplicationPlan,
+  ConfigApprovalRequest,
   ValidationMessage,
   ValidationResult,
   Workload,
@@ -465,6 +466,15 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const [dynamicSelector, setDynamicSelector] = useState<DynamicSelectorState>(emptyDynamicSelector)
   const [pushPreview, setPushPreview] = useState<PushPreview | null>(null)
   const [defaultRollbackTarget, setDefaultRollbackTarget] = useState<WorkloadConfig | null>(null)
+  const [activeApproval, setActiveApproval] = useState<ConfigApprovalRequest | null>(null)
+  const [approvalRequestComment, setApprovalRequestComment] = useState('')
+  const [prodApprovalConfirmed, setProdApprovalConfirmed] = useState(false)
+  const [approvalComment, setApprovalComment] = useState('')
+  const [pushComment, setPushComment] = useState('')
+  const [prodImpactConfirmed, setProdImpactConfirmed] = useState(false)
+  const [prodSafetyConfirmed, setProdSafetyConfirmed] = useState(false)
+  const [breakGlass, setBreakGlass] = useState(false)
+  const [breakGlassReason, setBreakGlassReason] = useState('')
 
   const {
     data: config,
@@ -506,6 +516,13 @@ export default function WorkloadConfigSection({ workload }: Props) {
     queryKey: ['workload-known-good', workload.id],
     queryFn: () => workloadsAPI.getKnownGood(workload.id),
     enabled: workload.type === 'collector',
+    retry: false,
+  })
+
+  const { data: approvalRequests = [] } = useQuery({
+    queryKey: ['workload-config-approvals', workload.id],
+    queryFn: () => workloadsAPI.listConfigApprovals(workload.id),
+    enabled: workload.type === 'collector' && editMode,
     retry: false,
   })
 
@@ -602,6 +619,72 @@ export default function WorkloadConfigSection({ workload }: Props) {
     },
   })
 
+  const requestApprovalMutation = useMutation({
+    mutationFn: () =>
+      workloadsAPI.requestConfigApproval(workload.id, {
+        draft_yaml: draftYaml,
+        target_group: 'single',
+        target_env: workload.labels.env ?? '',
+        comment: approvalRequestComment.trim(),
+        prod_confirmation: prodApprovalConfirmed,
+      }),
+    onSuccess: (approval) => {
+      setActiveApproval(approval)
+      setPushError(null)
+    },
+    onError: (err: unknown) => {
+      const msg = axios.isAxiosError(err)
+        ? (err.response?.data?.error ?? err.message)
+        : t('workloads.config.approval.request_failed')
+      setPushError(msg)
+    },
+  })
+
+  const approveApprovalMutation = useMutation({
+    mutationFn: (approval: ConfigApprovalRequest) =>
+      workloadsAPI.approveConfigApproval(workload.id, approval.id, approvalComment.trim()),
+    onSuccess: (approval) => {
+      setActiveApproval(approval)
+      setApprovalComment('')
+      setPushError(null)
+    },
+    onError: (err: unknown) => {
+      const msg = axios.isAxiosError(err)
+        ? (err.response?.data?.error ?? err.message)
+        : t('workloads.config.approval.approve_failed')
+      setPushError(msg)
+    },
+  })
+
+  const pushApprovalMutation = useMutation({
+    mutationFn: ({
+      approval,
+      emergency,
+    }: {
+      approval: ConfigApprovalRequest
+      emergency: boolean
+    }) => {
+      const reason = breakGlassReason.trim()
+      return workloadsAPI.pushConfigApproval(workload.id, approval.id, {
+        comment: emergency ? reason : pushComment.trim(),
+        prod_double_confirmed: prodImpactConfirmed && prodSafetyConfirmed,
+        break_glass: emergency,
+        break_glass_reason: emergency ? reason : '',
+      })
+    },
+    onSuccess: (approval) => {
+      setActiveApproval(approval)
+      setPendingHash(approval.config_hash ?? null)
+      setPushError(null)
+    },
+    onError: (err: unknown) => {
+      const msg = axios.isAxiosError(err)
+        ? (err.response?.data?.error ?? err.message)
+        : t('workloads.config.approval.push_failed')
+      setPushError(msg)
+    },
+  })
+
   const previewMutation = useMutation({
     mutationFn: (request: PushPreviewRequest) => pushesAPI.preview(request),
     onSuccess: (preview) => {
@@ -685,6 +768,15 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setSelectedPushGroupId('')
     setDynamicSelector(emptyDynamicSelector)
     setPushError(null)
+    setActiveApproval(null)
+    setApprovalRequestComment('')
+    setProdApprovalConfirmed(false)
+    setApprovalComment('')
+    setPushComment('')
+    setProdImpactConfirmed(false)
+    setProdSafetyConfirmed(false)
+    setBreakGlass(false)
+    setBreakGlassReason('')
   }
 
   function onDraftChange(next: string) {
@@ -692,6 +784,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     if (validation !== null) setValidation(null)
     if (applicationPlan !== null) setApplicationPlan(null)
     if (pushPreview !== null) setPushPreview(null)
+    if (activeApproval !== null) setActiveApproval(null)
     if (planExportStatus !== 'idle') setPlanExportStatus('idle')
   }
 
@@ -747,12 +840,24 @@ export default function WorkloadConfigSection({ workload }: Props) {
     planMutation.mutate()
   }
 
-  function submitPush() {
-    if (!canPush) {
-      setPushError(pushDisabledReason || t('workloads.config.scope.disabled.plan_blocks_push'))
-      return
-    }
-    pushMutation.mutate()
+  function requestApproval() {
+    if (!canRequestApproval) return
+    requestApprovalMutation.mutate()
+  }
+
+  function approveApproval() {
+    if (!currentApproval || !canApproveApproval) return
+    approveApprovalMutation.mutate(currentApproval)
+  }
+
+  function pushApprovedConfig() {
+    if (!currentApproval || !canPushApprovedConfig) return
+    pushApprovalMutation.mutate({ approval: currentApproval, emergency: false })
+  }
+
+  function pushBreakGlassConfig() {
+    if (!currentApproval || !canBreakGlassPush) return
+    pushApprovalMutation.mutate({ approval: currentApproval, emergency: true })
   }
 
   function formatPushGroupName(group: PushGroup): string {
@@ -798,6 +903,41 @@ export default function WorkloadConfigSection({ workload }: Props) {
     applicationPlan.apply_allowed &&
     applicationPlan.hard_failures.length === 0 &&
     !pushMutation.isPending
+  const currentApproval =
+    activeApproval ??
+    approvalRequests.find((approval) => approval.status === 'approved') ??
+    approvalRequests.find((approval) => approval.status === 'pending') ??
+    approvalRequests[0] ??
+    null
+  const isProdTarget = (currentApproval?.prod_target ?? workload.labels.env === 'prod') === true
+  const approvalIsApproved = currentApproval?.status === 'approved'
+  const approvalIsPushed = currentApproval?.status === 'pushed'
+  const canRequestApproval =
+    canPush &&
+    !currentApproval &&
+    approvalRequestComment.trim().length > 0 &&
+    (!isProdTarget || prodApprovalConfirmed) &&
+    !requestApprovalMutation.isPending
+  const canApproveApproval =
+    hasPushPermission &&
+    currentApproval?.status === 'pending' &&
+    approvalComment.trim().length > 0 &&
+    !approveApprovalMutation.isPending
+  const prodDoubleConfirmed = !isProdTarget || (prodImpactConfirmed && prodSafetyConfirmed)
+  const canPushApprovedConfig =
+    hasPushPermission &&
+    approvalIsApproved &&
+    pushComment.trim().length > 0 &&
+    prodDoubleConfirmed &&
+    !pushApprovalMutation.isPending
+  const canBreakGlassPush =
+    hasPushPermission &&
+    !!currentApproval &&
+    !approvalIsPushed &&
+    breakGlass &&
+    breakGlassReason.trim().length > 0 &&
+    prodDoubleConfirmed &&
+    !pushApprovalMutation.isPending
   const canPreview =
     canValidateConfig &&
     hasPushPermission &&
@@ -848,23 +988,6 @@ export default function WorkloadConfigSection({ workload }: Props) {
           : !canValidateConfig
             ? t('workloads.config.permission.validate_blocked')
             : ''
-  const pushDisabledReason = !hasPushPermission
-    ? t('workloads.config.permission.push_blocked')
-    : validation === null
-      ? t('workloads.config.scope.disabled.validate_first')
-      : !validation.valid
-        ? t('workloads.config.scope.disabled.fix_validation_push')
-        : isBulkScope
-          ? t('workloads.config.scope.bulk_push_unavailable')
-          : !applicationPlan
-            ? t('workloads.config.scope.disabled.generate_plan')
-            : applicationPlan.hard_failures.length > 0 ||
-                !applicationPlan.can_push ||
-                !applicationPlan.apply_allowed
-              ? t('workloads.config.scope.disabled.plan_blocks_push')
-              : pendingHash
-                ? t('workloads.config.scope.disabled.wait_current_push')
-                : ''
 
   const canRollback = hasPushPermission
   const scopePermissionDescription = !hasPushPermission ? 'push-scope-permission-note' : undefined
@@ -911,6 +1034,162 @@ export default function WorkloadConfigSection({ workload }: Props) {
   ) : readOnlyPlanError ? (
     <div className="error-text">{t('workloads.config.editor.plan_load_failed')}</div>
   ) : null
+
+  const approvalPanel =
+    hasPushPermission && editMode && applicationPlan ? (
+      <section
+        className={`config-approval-panel ${breakGlass ? 'config-approval-panel-break-glass' : ''}`}
+        aria-labelledby="config-approval-title"
+      >
+        <div className="config-approval-header">
+          <div>
+            <h3 id="config-approval-title">{t('workloads.config.approval.title')}</h3>
+            <p>{t('workloads.config.approval.help')}</p>
+          </div>
+          <span
+            className={`config-approval-status config-approval-status-${currentApproval?.status ?? 'draft'}`}
+          >
+            {approvalStatusLabel(currentApproval, t)}
+          </span>
+        </div>
+        {currentApproval?.approved_by && (
+          <p className="config-approval-meta">
+            {t('workloads.config.approval.approved_by', { user: currentApproval.approved_by })}
+          </p>
+        )}
+        {approvalIsPushed && (
+          <p className="config-approval-meta">
+            {currentApproval?.break_glass
+              ? t('workloads.config.approval.break_glass_pushed')
+              : t('workloads.config.approval.pushed')}
+          </p>
+        )}
+        {!currentApproval && (
+          <div className="config-approval-grid">
+            <label className="config-approval-wide">
+              <span>{t('workloads.config.approval.request_comment')}</span>
+              <textarea
+                value={approvalRequestComment}
+                onChange={(e) => setApprovalRequestComment(e.target.value)}
+                aria-label={t('workloads.config.approval.request_comment')}
+              />
+            </label>
+            {isProdTarget && (
+              <label className="config-approval-checkbox config-approval-wide">
+                <input
+                  type="checkbox"
+                  checked={prodApprovalConfirmed}
+                  onChange={(e) => setProdApprovalConfirmed(e.target.checked)}
+                />
+                <span>{t('workloads.config.approval.prod_request_ack')}</span>
+              </label>
+            )}
+            <button
+              className="btn btn-primary"
+              onClick={requestApproval}
+              disabled={!canRequestApproval}
+            >
+              {requestApprovalMutation.isPending
+                ? t('workloads.config.approval.requesting')
+                : t('workloads.config.approval.request')}
+            </button>
+          </div>
+        )}
+        {currentApproval?.status === 'pending' && (
+          <div className="config-approval-grid">
+            <label className="config-approval-wide">
+              <span>{t('workloads.config.approval.approval_comment')}</span>
+              <textarea
+                value={approvalComment}
+                onChange={(e) => setApprovalComment(e.target.value)}
+                aria-label={t('workloads.config.approval.approval_comment')}
+              />
+            </label>
+            <button className="btn" onClick={approveApproval} disabled={!canApproveApproval}>
+              {approveApprovalMutation.isPending
+                ? t('workloads.config.approval.approving')
+                : t('workloads.config.approval.approve')}
+            </button>
+          </div>
+        )}
+        {currentApproval && !approvalIsPushed && (
+          <div className="config-approval-grid config-approval-push-grid">
+            <label className="config-approval-checkbox config-approval-wide">
+              <input
+                type="checkbox"
+                checked={breakGlass}
+                onChange={(e) => setBreakGlass(e.target.checked)}
+              />
+              <span>{t('workloads.config.approval.break_glass_toggle')}</span>
+            </label>
+            {breakGlass && (
+              <div className="config-break-glass-warning config-approval-wide" role="alert">
+                <strong>{t('workloads.config.approval.break_glass_title')}</strong>
+                <span>{t('workloads.config.approval.break_glass_help')}</span>
+              </div>
+            )}
+            {breakGlass ? (
+              <label className="config-approval-wide">
+                <span>{t('workloads.config.approval.break_glass_reason')}</span>
+                <textarea
+                  value={breakGlassReason}
+                  onChange={(e) => setBreakGlassReason(e.target.value)}
+                  aria-label={t('workloads.config.approval.break_glass_reason')}
+                />
+              </label>
+            ) : (
+              <label className="config-approval-wide">
+                <span>{t('workloads.config.approval.push_comment')}</span>
+                <textarea
+                  value={pushComment}
+                  onChange={(e) => setPushComment(e.target.value)}
+                  aria-label={t('workloads.config.approval.push_comment')}
+                />
+              </label>
+            )}
+            {isProdTarget && (
+              <>
+                <label className="config-approval-checkbox config-approval-wide">
+                  <input
+                    type="checkbox"
+                    checked={prodImpactConfirmed}
+                    onChange={(e) => setProdImpactConfirmed(e.target.checked)}
+                  />
+                  <span>{t('workloads.config.approval.prod_impact_ack')}</span>
+                </label>
+                <label className="config-approval-checkbox config-approval-wide">
+                  <input
+                    type="checkbox"
+                    checked={prodSafetyConfirmed}
+                    onChange={(e) => setProdSafetyConfirmed(e.target.checked)}
+                  />
+                  <span>{t('workloads.config.approval.prod_safety_ack')}</span>
+                </label>
+              </>
+            )}
+            {breakGlass ? (
+              <button
+                className="btn btn-danger"
+                onClick={pushBreakGlassConfig}
+                disabled={!canBreakGlassPush}
+              >
+                {t('workloads.config.approval.break_glass_push')}
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary"
+                onClick={pushApprovedConfig}
+                disabled={!canPushApprovedConfig}
+              >
+                {pushApprovalMutation.isPending
+                  ? t('workloads.config.editor.pushing')
+                  : t('workloads.config.approval.push_approved')}
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+    ) : null
 
   const safetySection = (
     <ConfigSafetySection
@@ -1225,6 +1504,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
         )}
       </section>
       {applicationPlanPanel}
+      {approvalPanel}
 
       {pushError && <div className="error-text error-text-push">{pushError}</div>}
 
@@ -1259,18 +1539,6 @@ export default function WorkloadConfigSection({ workload }: Props) {
           {planMutation.isPending
             ? t('workloads.config.editor.generating_plan')
             : t('workloads.config.editor.generate_safety_plan')}
-        </button>
-        <button
-          className="btn btn-primary"
-          onClick={submitPush}
-          disabled={!canPush}
-          title={pushDisabledReason}
-        >
-          {pendingHash
-            ? t('workloads.config.editor.applying')
-            : pushMutation.isPending
-              ? t('workloads.config.editor.pushing')
-              : t('workloads.config.editor.push')}
         </button>
         <button className="btn" onClick={cancelEdit} disabled={!!pendingHash}>
           Cancel
@@ -1679,6 +1947,26 @@ function humanizePlanReason(reason: string, t: ReturnType<typeof useTranslation>
         .split('_')
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ')
+  }
+}
+
+function approvalStatusLabel(
+  approval: ConfigApprovalRequest | null,
+  t: ReturnType<typeof useTranslation>['t'],
+) {
+  if (!approval) return t('workloads.config.approval.status.draft')
+  if (approval.break_glass && approval.status === 'pushed') {
+    return t('workloads.config.approval.status.break_glass')
+  }
+  switch (approval.status) {
+    case 'pending':
+      return t('workloads.config.approval.status.pending')
+    case 'approved':
+      return t('workloads.config.approval.status.approved')
+    case 'pushed':
+      return t('workloads.config.approval.status.pushed')
+    default:
+      return approval.status
   }
 }
 

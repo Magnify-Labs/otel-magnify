@@ -17,6 +17,7 @@ import type {
   EvidencePack,
   ReportExportFormat,
   ReportExportRequest,
+  ConfigApprovalRequest,
   ValidationResult,
   PushActivityPoint,
   PushGroup,
@@ -126,6 +127,40 @@ export const workloadsAPI = {
       .post<WorkloadConfig>(`/workloads/${id}/config`, yaml, {
         headers: { 'Content-Type': 'text/yaml' },
       })
+      .then((r) => r.data),
+  listConfigApprovals: (id: string) =>
+    api.get<ConfigApprovalRequest[]>(`/workloads/${id}/config/approvals`).then((r) => r.data ?? []),
+  requestConfigApproval: (
+    id: string,
+    payload: {
+      draft_yaml: string
+      target_group: string
+      target_env?: string
+      comment: string
+      prod_confirmation: boolean
+    },
+  ) =>
+    api
+      .post<ConfigApprovalRequest>(`/workloads/${id}/config/approvals`, payload)
+      .then((r) => r.data),
+  approveConfigApproval: (id: string, approvalId: string, comment: string) =>
+    api
+      .post<ConfigApprovalRequest>(`/workloads/${id}/config/approvals/${approvalId}/approve`, {
+        comment,
+      })
+      .then((r) => r.data),
+  pushConfigApproval: (
+    id: string,
+    approvalId: string,
+    payload: {
+      comment: string
+      prod_double_confirmed: boolean
+      break_glass?: boolean
+      break_glass_reason?: string
+    },
+  ) =>
+    api
+      .post<ConfigApprovalRequest>(`/workloads/${id}/config/approvals/${approvalId}/push`, payload)
       .then((r) => r.data),
   validateConfig: (id: string, yaml: string) =>
     api

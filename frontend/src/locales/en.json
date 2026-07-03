@@ -693,6 +693,39 @@
           "rollback_unavailable": "Rollback status unavailable",
           "redacted": "Remote config error details redacted"
         }
+      },
+      "approval": {
+        "title": "Approval flow",
+        "help": "Create a validated draft request, record approval, then push with production confirmations.",
+        "request_comment": "Approval request comment",
+        "prod_request_ack": "I acknowledge this targets production",
+        "request": "Request approval",
+        "requesting": "Requesting approval…",
+        "approval_comment": "Approval comment",
+        "approve": "Approve request",
+        "approving": "Approving…",
+        "approved_by": "Approved by {{user}}",
+        "push_comment": "Production push comment",
+        "prod_impact_ack": "I understand this changes production telemetry",
+        "prod_safety_ack": "I confirm the safety plan and approval are current",
+        "push_approved": "Push approved config",
+        "pushed": "Pushed",
+        "break_glass_toggle": "Use break-glass emergency push",
+        "break_glass_title": "Break-glass emergency path",
+        "break_glass_help": "This bypasses normal approval and emits a distinct audit event. Use only to mitigate an active incident.",
+        "break_glass_reason": "Break-glass reason",
+        "break_glass_push": "Break-glass push",
+        "break_glass_pushed": "Break-glass pushed",
+        "request_failed": "Approval request failed",
+        "approve_failed": "Approval failed",
+        "push_failed": "Approval push failed",
+        "status": {
+          "draft": "Draft",
+          "pending": "Approval requested",
+          "approved": "Ready to push",
+          "pushed": "Pushed",
+          "break_glass": "Break-glass pushed"
+        }
       }
     }
   },
