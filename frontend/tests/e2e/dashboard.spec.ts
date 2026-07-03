@@ -120,6 +120,41 @@ test.describe('Dashboard', () => {
     await expect(
       page.getByRole('link', { name: /Review supervised workloads|Voir les workloads supervisés/ }),
     ).toHaveAttribute('href', '/inventory?control=supervised')
+    await expect(
+      page.getByRole('link', { name: /Open fleet drift dashboard|Ouvrir le tableau des dérives/ }),
+    ).toHaveCount(0)
+  })
+
+  test('config safety status drift CTA is hidden without the drift dashboard feature', async ({
+    loggedInPage: page,
+  }) => {
+    await mockFeatures(page)
+
+    await page.goto('/')
+
+    const panel = page.locator('.config-safety-status-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('link', { name: 'Review supervised workloads' })).toHaveAttribute(
+      'href',
+      '/inventory?control=supervised',
+    )
+    await expect(panel.getByText('Supervised collectors', { exact: true })).toBeVisible()
+    await expect(panel.getByText('Last 7d pushes')).toBeVisible()
+    await expect(panel.getByRole('link', { name: 'Open fleet drift dashboard' })).toHaveCount(0)
+  })
+
+  test('config safety status drift CTA is visible with the drift dashboard feature', async ({
+    loggedInPage: page,
+  }) => {
+    await mockFeatures(page, { 'config_safety.drift_dashboard': true })
+
+    await page.goto('/')
+
+    const panel = page.locator('.config-safety-status-panel')
+    await expect(panel.getByRole('link', { name: 'Open fleet drift dashboard' })).toHaveAttribute(
+      'href',
+      '/config-safety/drift',
+    )
   })
 
   test('config safety status panel summarizes supervised collectors and safe flow', async ({
@@ -156,7 +191,9 @@ test.describe('Dashboard', () => {
     await expect(page.locator('.versions-row').first()).toContainText('2')
   })
 
-  test('hides fleet version intelligence and does not call paid endpoint without feature', async ({ loggedInPage: page }) => {
+  test('hides fleet version intelligence and does not call paid endpoint without feature', async ({
+    loggedInPage: page,
+  }) => {
     let versionIntelligenceHit = false
     await page.route('**/api/workloads/version-intelligence*', (route) => {
       versionIntelligenceHit = true
