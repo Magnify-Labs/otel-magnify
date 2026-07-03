@@ -402,10 +402,89 @@ export interface ConfigApplicationPlan {
   config_hash: string
   summary: ConfigApplicationPlanSummary
   targets: ConfigApplicationPlanTarget[]
+  policy?: ConfigPolicyEvaluation | null
   hard_failures: string[]
   can_push: boolean
   apply_allowed: boolean
   export: ConfigApplicationPlanExport
+}
+
+export interface ConfigPolicyTarget {
+  environment?: string
+  scope?: string
+  workload_id?: string
+  tenant_id?: string
+  team_id?: string
+}
+
+export interface ConfigPolicySamplingSettings {
+  min_percentage?: number
+  max_percentage?: number
+}
+
+export interface ConfigPolicySettings {
+  allowed_otlp_endpoints?: string[]
+  critical_exporters?: string[]
+  required_resource_attributes?: string[]
+  sampling?: ConfigPolicySamplingSettings
+}
+
+export interface ConfigPolicyFinding {
+  policy_id: string
+  policy_name: string
+  rule_id: string
+  rule_code: string
+  severity: 'info' | 'warning' | 'critical' | string
+  decision: 'pass' | 'warn' | 'block' | string
+  target_scope?: string
+  environment?: string
+  path: string
+  paths?: string[]
+  message: string
+  remediation: string
+  packaging: 'community' | 'pro' | 'enterprise' | string
+  tier: 'core' | 'configurable' | 'tenant_hook' | string
+}
+
+export interface ConfigPolicySummary {
+  pass_count: number
+  warn_count: number
+  block_count: number
+}
+
+export interface ConfigPolicyAuditMeta {
+  persisted: boolean
+  event?: string
+  reason?: string
+}
+
+export interface ConfigPolicyEvaluation {
+  schema_version: 'config-policy.v1' | string
+  valid: boolean
+  allowed: boolean
+  decision: 'pass' | 'warn' | 'block' | string
+  severity: 'info' | 'warning' | 'critical' | string
+  target: ConfigPolicyTarget
+  settings?: ConfigPolicySettings
+  findings: ConfigPolicyFinding[]
+  summary: ConfigPolicySummary
+  audit: ConfigPolicyAuditMeta
+}
+
+export interface ConfigPolicyPreviewRequest {
+  candidate_yaml?: string
+  current_yaml?: string
+  target_yaml?: string
+  base_yaml?: string
+  target?: ConfigPolicyTarget
+  settings?: ConfigPolicySettings
+  context?: {
+    environment?: string
+    endpoint_allowlist?: string[]
+    critical_exporters?: string[]
+    required_resource_attributes?: string[]
+    max_sampling_percentage?: number
+  }
 }
 
 export type ReportExportRequestSchemaVersion = 'report_export_request.v1'

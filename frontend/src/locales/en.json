@@ -495,6 +495,26 @@
         "gitops_export_disabled": "GitOps export is not enabled for this workspace.",
         "export_loading": "Loading GitOps export entitlement…"
       },
+      "policy": {
+        "title": "Config policy findings",
+        "helper": "Backend policy evaluation runs before push and enforces blocking findings server-side.",
+        "loading": "Evaluating config policy…",
+        "unavailable_body": "The backend did not return policy findings for this plan. Push enforcement still happens server-side.",
+        "counts_label": "Policy finding counts",
+        "findings_title": "Findings",
+        "empty": "No policy findings",
+        "status": {
+          "allowed": "Policy allowed",
+          "warning": "Policy warning",
+          "blocked": "Policy blocked",
+          "unavailable": "Policy evaluation unavailable"
+        },
+        "count": {
+          "block": "Block",
+          "warn": "Warn",
+          "pass": "Pass"
+        }
+      },
       "apply": {
         "aria": "Apply a saved config",
         "placeholder": "— Apply a saved config —",
@@ -507,7 +527,8 @@
           "all_targets_excluded": "All targets excluded",
           "empty_config": "Empty config",
           "non_collector_target": "Non-collector target",
-          "workload_not_connected": "Workload is not connected"
+          "workload_not_connected": "Workload is not connected",
+          "config_policy_blocked": "Config policy blocked"
         }
       },
       "action": {

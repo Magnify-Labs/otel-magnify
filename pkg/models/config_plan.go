@@ -9,6 +9,7 @@ type ConfigApplicationPlan struct {
 	ConfigHash    string                        `json:"config_hash"`
 	Summary       ConfigApplicationPlanSummary  `json:"summary"`
 	Targets       []ConfigApplicationPlanTarget `json:"targets"`
+	Policy        ConfigPolicyEvaluation        `json:"policy"`
 	HardFailures  []string                      `json:"hard_failures"`
 	CanPush       bool                          `json:"can_push"`
 	ApplyAllowed  bool                          `json:"apply_allowed"`

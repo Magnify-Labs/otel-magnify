@@ -232,6 +232,30 @@ func (a *API) handlePushConfigApproval(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"error": "configuration failed validation", "validation_errors": result.Errors})
 		return
 	}
+	policy := a.evaluateWorkloadConfigPolicy(r.Context(), wl, []byte(approval.DraftYAML))
+	if policy.Decision == models.PolicyDecisionBlock {
+		blockedSum := sha256.Sum256([]byte(approval.DraftYAML))
+		if err := audit.Emit(r.Context(), a.audit, "config.policy.block", "workload", workloadID, auditDetail(map[string]any{
+			"config_hash":   hex.EncodeToString(blockedSum[:]),
+			"environment":   policy.Target.Environment,
+			"decision":      policy.Decision,
+			"severity":      policy.Severity,
+			"blocked_rules": policyRuleIDs(policy),
+			"approval_id":   approvalID,
+			"push_path":     "approval",
+			"break_glass":   req.BreakGlass,
+			"side_effect":   "none",
+		})); err != nil {
+			respondAuditUnavailable(w, sideEffectNone)
+			return
+		}
+		respondJSON(w, http.StatusBadRequest, map[string]any{
+			"error":  "configuration blocked by policy",
+			"code":   "config_policy_blocked",
+			"policy": policy,
+		})
+		return
+	}
 
 	hash, err := a.persistAndPushApprovalConfig(r, workloadID, []byte(approval.DraftYAML))
 	if err != nil {

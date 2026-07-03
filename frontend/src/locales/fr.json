@@ -495,6 +495,26 @@
         "gitops_export_disabled": "L’export GitOps n’est pas activé pour cet espace de travail.",
         "export_loading": "Chargement du droit d’export GitOps…"
       },
+      "policy": {
+        "title": "Constats de politique de config",
+        "helper": "L’évaluation de politique backend s’exécute avant le push et applique les blocages côté serveur.",
+        "loading": "Évaluation de la politique de config…",
+        "unavailable_body": "Le backend n’a pas renvoyé de constats de politique pour ce plan. L’application des règles reste côté serveur.",
+        "counts_label": "Compteurs de constats de politique",
+        "findings_title": "Constats",
+        "empty": "Aucun constat de politique",
+        "status": {
+          "allowed": "Politique autorisée",
+          "warning": "Avertissement de politique",
+          "blocked": "Politique bloquante",
+          "unavailable": "Évaluation de politique indisponible"
+        },
+        "count": {
+          "block": "Bloquants",
+          "warn": "Avertissements",
+          "pass": "Passés"
+        }
+      },
       "apply": {
         "aria": "Appliquer une configuration sauvegardée",
         "placeholder": "— Appliquer une configuration sauvegardée —",
@@ -507,7 +527,8 @@
           "all_targets_excluded": "Toutes les cibles sont exclues",
           "empty_config": "Config vide",
           "non_collector_target": "Cible non-collector",
-          "workload_not_connected": "Le workload n’est pas connecté"
+          "workload_not_connected": "Le workload n’est pas connecté",
+          "config_policy_blocked": "Politique de config bloquante"
         }
       },
       "action": {

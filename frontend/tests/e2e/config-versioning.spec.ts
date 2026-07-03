@@ -21,6 +21,36 @@ const YAML_NEW = `${YAML_OLD}# revision-new\n`
 
 const SECRET_LITERAL = 'Bearer super-secret-token'
 
+const BLOCKING_POLICY = {
+  schema_version: 'config-policy.v1',
+  valid: true,
+  allowed: false,
+  decision: 'block',
+  severity: 'critical',
+  target: { workload_id: WORKLOAD_ID, environment: 'production' },
+  settings: {},
+  summary: { pass_count: 0, warn_count: 0, block_count: 1 },
+  audit: { persisted: false },
+  findings: [
+    {
+      policy_id: 'community',
+      policy_name: 'Community config policy',
+      rule_id: 'community.exporters.critical_removal',
+      rule_code: 'exporters.critical_removal',
+      severity: 'critical',
+      decision: 'block',
+      target_scope: 'collector',
+      environment: 'production',
+      path: 'exporters.logging',
+      paths: ['exporters.logging', 'service.pipelines.traces.exporters'],
+      message: 'A critical exporter was removed from the traces pipeline.',
+      remediation: 'Keep the critical exporter or update the policy before rollout.',
+      packaging: 'community',
+      tier: 'core',
+    },
+  ],
+}
+
 const HIGH_OTEL_DIFF = {
   schema_version: 'otel-config-diff.v1',
   valid: true,
@@ -972,6 +1002,18 @@ test('compare dialog renders enriched OTel diff without leaking redacted secrets
       body: JSON.stringify(HIGH_OTEL_DIFF),
     })
   })
+  await page.route('**/api/configs/policy/preview', async (route, request) => {
+    expect(request.postDataJSON()).toMatchObject({
+      current_yaml: YAML_OLD,
+      candidate_yaml: YAML_NEW,
+      target: { workload_id: WORKLOAD_ID },
+    })
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(BLOCKING_POLICY),
+    })
+  })
 
   await gotoWorkloadDetail(page)
   await page.getByRole('button', { name: 'Compare revisions' }).click()
@@ -986,6 +1028,9 @@ test('compare dialog renders enriched OTel diff without leaking redacted secrets
   await expect(page.getByText('https://otel-new.example:4317').first()).toBeVisible()
   await expect(page.getByText('Auth and headers touched')).toBeVisible()
   await expect(page.getByText('Header authorization modified')).toBeVisible()
+  await expect(page.getByText('Policy blocked')).toBeVisible()
+  await expect(page.getByText('community.exporters.critical_removal')).toBeVisible()
+  await expect(page.getByText('Keep the critical exporter')).toBeVisible()
   await expect(page.getByText('••••masked••••').first()).toBeVisible()
   await expect(page.getByText('Raw YAML diff may contain sensitive values.')).toBeVisible()
   await expect(page.getByText(SECRET_LITERAL)).toHaveCount(0)

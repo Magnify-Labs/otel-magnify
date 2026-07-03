@@ -102,6 +102,22 @@ function mockValidate(page: Page, result: Record<string, unknown> & { valid: boo
   )
 }
 
+function buildPolicy(overrides: Record<string, unknown> = {}) {
+  return {
+    schema_version: 'config-policy.v1',
+    valid: true,
+    allowed: true,
+    decision: 'pass',
+    severity: 'info',
+    target: { workload_id: WORKLOAD_ID, environment: 'production' },
+    settings: {},
+    findings: [],
+    summary: { pass_count: 0, warn_count: 0, block_count: 0 },
+    audit: { persisted: false },
+    ...overrides,
+  }
+}
+
 function buildPlan(overrides: Record<string, unknown> = {}) {
   return {
     schema_version: 'config_application_plan.v1',
@@ -139,6 +155,7 @@ function buildPlan(overrides: Record<string, unknown> = {}) {
     hard_failures: [],
     can_push: true,
     apply_allowed: true,
+    policy: buildPolicy(),
     export: {
       supported: true,
       formats: ['json', 'markdown'],
@@ -454,6 +471,8 @@ test('valid config shows plan counters before approval request', async ({ logged
   await expect(plan).toContainText('Validation OK')
   await expect(plan).toContainText('High-risk changes')
   await expect(plan).toContainText('test-collector')
+  await expect(plan).toContainText('Policy allowed')
+  await expect(plan).toContainText('No policy findings')
   await expect(page.getByRole('button', { name: 'Request approval' })).toBeDisabled()
   await page.getByLabel('Approval request comment').fill('please review prod change')
   await page.getByLabel('I acknowledge this targets production').check()
@@ -537,6 +556,85 @@ async function requestAndApproveDraft(page: Page) {
   await page.getByRole('button', { name: 'Approve request' }).click()
   await expect(page.locator('.config-approval-panel')).toContainText('Approved by alice@example.com')
 }
+
+test('blocked policy finding is visible and gates approval request', async ({ loggedInPage: page }) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(
+    page,
+    buildPlan({
+      hard_failures: ['config_policy_blocked'],
+      can_push: false,
+      apply_allowed: false,
+      policy: buildPolicy({
+        allowed: false,
+        decision: 'block',
+        severity: 'critical',
+        summary: { pass_count: 0, warn_count: 0, block_count: 1 },
+        findings: [
+          {
+            policy_id: 'community',
+            policy_name: 'Community config policy',
+            rule_id: 'community.production.insecure_tls',
+            rule_code: 'production.insecure_tls',
+            severity: 'critical',
+            decision: 'block',
+            target_scope: 'collector',
+            environment: 'production',
+            path: 'exporters.otlp.tls.insecure',
+            paths: ['exporters.otlp.tls.insecure'],
+            message: 'Production config enables insecure TLS.',
+            remediation: 'Disable insecure TLS or move this config out of production.',
+            packaging: 'community',
+            tier: 'core',
+          },
+        ],
+      }),
+    }),
+  )
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+
+  const policy = page.locator('.config-policy-panel')
+  await expect(policy).toContainText('Policy blocked')
+  await expect(policy).toContainText('community.production.insecure_tls')
+  await expect(policy).toContainText('Production config enables insecure TLS.')
+  await expect(policy).toContainText('exporters.otlp.tls.insecure')
+  await expect(policy).toContainText('Disable insecure TLS')
+  await expect(page.getByRole('button', { name: 'Request approval' })).toBeDisabled()
+})
+
+test('policy evaluation unavailable state is explicit and non-alarming', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan({ policy: null }))
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+
+  const policy = page.locator('.config-policy-panel')
+  await expect(policy).toContainText('Policy evaluation unavailable')
+  await expect(policy).toContainText('The backend did not return policy findings for this plan.')
+  await expect(page.getByRole('button', { name: 'Request approval' })).toBeDisabled()
+  await page.getByLabel('Approval request comment').fill('please review prod change')
+  await page.getByLabel('I acknowledge this targets production').check()
+  await expect(page.getByRole('button', { name: 'Request approval' })).toBeEnabled()
+})
 
 test('approval request and production push require comments and double confirmation', async ({
   loggedInPage: page,

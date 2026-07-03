@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/magnify-labs/otel-magnify/internal/audit"
+	"github.com/magnify-labs/otel-magnify/internal/configpolicy"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
 	"github.com/magnify-labs/otel-magnify/internal/validator"
@@ -448,6 +450,7 @@ func (a *API) buildConfigApplicationPlan(ctx context.Context, workloadID string,
 
 	target := a.buildConfigApplicationPlanTarget(ctx, wl, body)
 	plan.Targets = append(plan.Targets, target)
+	plan.Policy = a.evaluateWorkloadConfigPolicy(ctx, wl, body)
 	plan.Summary.TargetCount = len(plan.Targets)
 	for _, target := range plan.Targets {
 		if target.Type == "collector" {
@@ -477,9 +480,71 @@ func (a *API) buildConfigApplicationPlan(ctx context.Context, workloadID string,
 	if plan.Summary.ValidationFailedCount > 0 {
 		plan.HardFailures = appendIfMissing(plan.HardFailures, "validation_failed")
 	}
+	if plan.Policy.Decision == models.PolicyDecisionBlock {
+		plan.HardFailures = appendIfMissing(plan.HardFailures, "config_policy_blocked")
+	}
 	plan.CanPush = len(plan.HardFailures) == 0
 	plan.ApplyAllowed = plan.CanPush
 	return plan, nil
+}
+
+func (a *API) evaluateWorkloadConfigPolicy(_ context.Context, wl models.Workload, body []byte) models.ConfigPolicyEvaluation {
+	currentYAML := ""
+	if current, ok := a.activeConfigContent(wl); ok {
+		currentYAML = current.Content
+	}
+	return configpolicy.NewDefaultEngine().Evaluate(configpolicy.EvaluationRequest{
+		CurrentYAML:   currentYAML,
+		CandidateYAML: string(body),
+		Target: models.ConfigPolicyTarget{
+			Environment: policyEnvironmentForWorkload(wl),
+			Scope:       "workload",
+			WorkloadID:  wl.ID,
+		},
+		Settings: configPolicySettingsFromEnv(),
+	})
+}
+
+func policyEnvironmentForWorkload(wl models.Workload) string {
+	for _, key := range []string{"env", "environment", "deployment.environment"} {
+		if value := strings.TrimSpace(wl.Labels[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func configPolicySettingsFromEnv() models.ConfigPolicySettings {
+	return models.ConfigPolicySettings{
+		AllowedOTLPEndpoints:       splitCSVEnv("OTEL_MAGNIFY_POLICY_OTLP_ALLOWLIST"),
+		CriticalExporters:          splitCSVEnv("OTEL_MAGNIFY_POLICY_CRITICAL_EXPORTERS"),
+		RequiredResourceAttributes: splitCSVEnv("OTEL_MAGNIFY_POLICY_REQUIRED_RESOURCE_ATTRIBUTES"),
+	}
+}
+
+func policyRuleIDs(policy models.ConfigPolicyEvaluation) []string {
+	rules := make([]string, 0, len(policy.Findings))
+	for _, finding := range policy.Findings {
+		if finding.Decision == models.PolicyDecisionBlock {
+			rules = append(rules, finding.RuleID)
+		}
+	}
+	return rules
+}
+
+func splitCSVEnv(key string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if item := strings.TrimSpace(part); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func (a *API) buildConfigApplicationPlanTarget(ctx context.Context, wl models.Workload, body []byte) models.ConfigApplicationPlanTarget {
