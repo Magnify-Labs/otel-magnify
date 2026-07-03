@@ -92,6 +92,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	r.Post("/api/auth/login", api.handleLogin)
 	r.Get("/api/auth/methods", api.handleListAuthMethods)
 	r.Get("/api/features", api.handleListFeatures)
+	r.Post("/api/gitops/webhooks/{provider}", api.handleGitOpsWebhook)
 
 	// WebSocket validates its own token via ?token= query param
 	// (browsers cannot set Authorization headers on WS handshakes, so it
@@ -163,6 +164,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.With(api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs", api.handleCreateConfig)
 		r.Post("/api/configs/diff", api.handleDiffConfigs)
 		r.With(api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs/import/git", api.handleImportConfigFromGit)
+		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/configs/{id}/export/git", api.handleExportConfigToGit)
 		r.Get("/api/configs/{id}", api.handleGetConfig)
 
 		r.Get("/api/alerts", api.handleListAlerts)
