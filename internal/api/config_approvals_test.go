@@ -240,6 +240,66 @@ func TestConfigApprovals_RBACMatchesPushPermission(t *testing.T) {
 	}
 }
 
+func TestConfigApprovals_LegacyDirectPushCannotBypassApprovalFlow(t *testing.T) {
+	db, router, opamp := newTestAPI(t)
+	seedApprovalWorkload(t, db, "w-legacy-direct-push")
+
+	req := authedPost(t, "/api/workloads/w-legacy-direct-push/config", approvalDraftYAML)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusGone {
+		t.Fatalf("legacy direct push status = %d, want %d, body=%s", rec.Code, http.StatusGone, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "/config/approvals") {
+		t.Fatalf("legacy direct push response should point clients at approvals endpoint, body=%s", rec.Body.String())
+	}
+	if len(opamp.pushed) != 0 {
+		t.Fatalf("legacy direct push reached OpAMP: %+v", opamp.pushed)
+	}
+	history, err := db.GetWorkloadConfigHistory("w-legacy-direct-push")
+	if err != nil {
+		t.Fatalf("load workload config history: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("legacy direct push recorded workload config history despite rejection: %+v", history)
+	}
+}
+
+func TestConfigApprovals_ListRequiresPushPermissionAndDoesNotLeakDraftsToViewers(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	seedApprovalWorkload(t, db, "w-approval-list-rbac")
+	body := `{"draft_yaml":` + strconvQuote(approvalDraftYAML) + `,"target_group":"staging","comment":"contains sensitive draft"}`
+	code, approval, responseBody := requestApproval(t, router, "w-approval-list-rbac", body)
+	if code != http.StatusCreated {
+		t.Fatalf("request approval status = %d, body=%s", code, responseBody)
+	}
+
+	viewerReq := authedRequestForGroups(t, http.MethodGet, "/api/workloads/w-approval-list-rbac/config/approvals", "", []string{"viewer"})
+	viewerRec := httptest.NewRecorder()
+	router.ServeHTTP(viewerRec, viewerReq)
+	if viewerRec.Code != http.StatusForbidden {
+		t.Fatalf("viewer list approvals status = %d, want %d, body=%s", viewerRec.Code, http.StatusForbidden, viewerRec.Body.String())
+	}
+	if strings.Contains(viewerRec.Body.String(), approvalDraftYAML) || strings.Contains(viewerRec.Body.String(), approval.RequestComment) {
+		t.Fatalf("viewer response leaked approval internals: %s", viewerRec.Body.String())
+	}
+
+	editorReq := authedRequestForGroups(t, http.MethodGet, "/api/workloads/w-approval-list-rbac/config/approvals", "", []string{"editor"})
+	editorRec := httptest.NewRecorder()
+	router.ServeHTTP(editorRec, editorReq)
+	if editorRec.Code != http.StatusOK {
+		t.Fatalf("editor list approvals status = %d, want %d, body=%s", editorRec.Code, http.StatusOK, editorRec.Body.String())
+	}
+	var editorApprovals []models.ConfigApprovalRequest
+	if err := json.NewDecoder(editorRec.Body).Decode(&editorApprovals); err != nil {
+		t.Fatalf("decode editor approvals: %v", err)
+	}
+	if len(editorApprovals) != 1 || editorApprovals[0].DraftYAML != approvalDraftYAML {
+		t.Fatalf("editor response should include draft for reviewers, approvals=%+v", editorApprovals)
+	}
+}
+
 func strconvQuote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)

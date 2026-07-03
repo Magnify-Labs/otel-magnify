@@ -23,7 +23,7 @@ func findEvent(events []ext.AuditEvent, action string) *ext.AuditEvent {
 	return nil
 }
 
-func TestAudit_WorkloadConfigPush_Emits(t *testing.T) {
+func TestAudit_WorkloadConfigPush_LegacyEndpointDoesNotEmitDirectPushAudit(t *testing.T) {
 	db, router, _, audit := newAuditTestAPI(t)
 	if err := db.UpsertWorkload(models.Workload{
 		ID: "w-push", Type: "collector", Status: "connected",
@@ -36,21 +36,11 @@ func TestAudit_WorkloadConfigPush_Emits(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusAccepted {
+	if rec.Code != http.StatusGone {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
-	var resp map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-
-	got := findEvent(audit.snapshot(), "config.push")
-	if got == nil {
-		t.Fatalf("missing config.push")
-	}
-	if got.Resource != "workload" || got.ResourceID != "w-push" {
-		t.Errorf("Resource/ResourceID = (%q, %q)", got.Resource, got.ResourceID)
-	}
-	if got.Detail != resp["config_hash"].(string) {
-		t.Errorf("Detail = %q, want hash %q", got.Detail, resp["config_hash"])
+	if got := findEvent(audit.snapshot(), "config.push"); got != nil {
+		t.Fatalf("legacy direct push emitted config.push audit event: %+v", got)
 	}
 }
 
@@ -106,7 +96,7 @@ func TestAudit_WorkloadDelete_Emits(t *testing.T) {
 	}
 }
 
-func TestAudit_WorkloadPush_503AppliedWhenAuditFails(t *testing.T) {
+func TestAudit_WorkloadPush_LegacyEndpointDoesNotDependOnAudit(t *testing.T) {
 	db, router, _, audit := newAuditTestAPI(t)
 	if err := db.UpsertWorkload(models.Workload{
 		ID: "w-push-fail", Type: "collector", Status: "connected",
@@ -120,13 +110,13 @@ func TestAudit_WorkloadPush_503AppliedWhenAuditFails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusServiceUnavailable {
+	if rec.Code != http.StatusGone {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
 	var resp map[string]string
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["side_effect_status"] != "applied" {
-		t.Errorf("side_effect_status = %q, want applied (OpAMP push already issued)", resp["side_effect_status"])
+	if resp["code"] != "config_approval_required" {
+		t.Errorf("code = %q, want config_approval_required", resp["code"])
 	}
 }
 

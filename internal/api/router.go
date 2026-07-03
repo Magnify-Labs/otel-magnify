@@ -125,7 +125,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.Get("/api/workloads/{id}/events", api.handleListWorkloadEvents)
 		r.Get("/api/workloads/{id}/events/stats", api.handleWorkloadEventsStats)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config", api.handlePushWorkloadConfig)
-		r.Get("/api/workloads/{id}/config/approvals", api.handleListConfigApprovals)
+		r.With(api.RequirePerm(perm.PushConfig)).Get("/api/workloads/{id}/config/approvals", api.handleListConfigApprovals)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals", api.handleCreateOrUpdateConfigApproval)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals/{approval_id}/approve", api.handleApproveConfigApproval)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals/{approval_id}/push", api.handlePushConfigApproval)

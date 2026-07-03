@@ -1,6 +1,6 @@
 # REST API
 
-All endpoints return JSON. Most expect JSON request bodies; the two config endpoints (`POST /api/workloads/{id}/config` and `POST /api/workloads/{id}/config/validate`) are exceptions and take raw YAML. Authenticated endpoints require the header `Authorization: Bearer <jwt>`.
+All endpoints return JSON. Most expect JSON request bodies; `POST /api/workloads/{id}/config/validate` is the raw-YAML validation exception. The legacy raw-YAML direct push endpoint `POST /api/workloads/{id}/config` remains registered for compatibility but now returns `410 Gone`. Authenticated endpoints require the header `Authorization: Bearer JWT`.
 
 ## Endpoint summary
 
@@ -14,12 +14,12 @@ All endpoints return JSON. Most expect JSON request bodies; the two config endpo
 | `GET` | `/api/workloads/{id}/events` | Yes | Append-only pod-lifecycle log (connect / disconnect / version change). |
 | `GET` | `/api/workloads/{id}/events/stats` | Yes | Event counts for the Activity tab sparkline (takes `?window=`). |
 | `GET` | `/api/workloads/{id}/configs` | Yes | Config push history for the workload. |
-| `POST` | `/api/workloads/{id}/config` | Yes | Push a config to the workload. |
-| `GET` | `/api/workloads/{id}/config/approvals` | Yes | List config approval requests for the workload. |
-| `POST` | `/api/workloads/{id}/config/approvals` | Yes | Create or update a validated config approval draft. |
-| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/approve` | Yes | Approve a pending config approval draft. |
-| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/push` | Yes | Push an approved draft, or an audited break-glass draft. |
-| `POST` | `/api/workloads/{id}/config/validate` | Yes | Lightweight server-side validation of a config. |
+| `POST` | `/api/workloads/{id}/config` | Yes + `PushConfig` | Legacy direct push endpoint; now disabled and returns `410 Gone` with `code=config_approval_required`. |
+| `GET` | `/api/workloads/{id}/config/approvals` | Yes + `PushConfig` | List config approval requests for the workload. |
+| `POST` | `/api/workloads/{id}/config/approvals` | Yes + `PushConfig` | Create or update a validated config approval draft. |
+| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/approve` | Yes + `PushConfig` | Approve a pending config approval draft. |
+| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/push` | Yes + `PushConfig` | Push an approved draft, or an audited break-glass draft. |
+| `POST` | `/api/workloads/{id}/config/validate` | Yes + `ValidateConfig` | Lightweight server-side validation of a config. |
 | `DELETE` | `/api/workloads/{id}` | Yes | Archive a workload (admin only). |
 | `GET` | `/api/configs` | Yes | List all configs. |
 | `POST` | `/api/configs` | Yes | Create a new config. |
@@ -246,18 +246,20 @@ Intentional response shape changes introduced for topology work:
 
 ### `POST /api/workloads/{id}/config`
 
-Request body is the **raw YAML** (no JSON wrapper), with `Content-Type: application/yaml` or `text/plain`. The server computes the SHA-256 config hash itself. The push is rejected up front if the light validator finds a problem — callers should hit `/validate` first for UX.
+Legacy direct config push is intentionally disabled after the P2.14 approval flow. Even callers with `workload:push_config` receive `410 Gone` and must create, approve, and push through `/api/workloads/{id}/config/approvals`. This keeps prod confirmation, approval status, break-glass reason, audit, and OpAMP push semantics on one server-enforced path instead of relying on UI-only routing.
 
-Response (202 Accepted):
+Historical clients may still send the **raw YAML** body (no JSON wrapper), but the body is not validated, persisted, audited as `config.push`, or forwarded to OpAMP by this endpoint.
+
+Response (410 Gone):
 
 ```json
 {
-  "status": "config push initiated",
-  "config_hash": "3f9a..."
+  "error": "direct config push is disabled; create, approve, and push a config approval under /api/workloads/{id}/config/approvals",
+  "code": "config_approval_required"
 }
 ```
 
-On validation failure, 400 with `{ "error": "...", "validation_errors": [ ... ] }`. Follow-up push status (`pending` → `applied` | `failed`) arrives via the WebSocket.
+Use `POST /api/workloads/{id}/config/validate` for raw-YAML validation feedback before creating an approval draft.
 
 ### `POST /api/workloads/{id}/config/approvals`
 
@@ -302,7 +304,7 @@ Audit action: `config.approval.request`.
 
 ### `GET /api/workloads/{id}/config/approvals`
 
-Returns `200 OK` with an array of `ConfigApprovalRequest`, newest first. Any authenticated user can read it; mutations use the same `PushConfig` permission as direct config pushes.
+Requires the same `workload:push_config` permission as the approval mutation endpoints because list responses include draft YAML and operator comments. Viewers or other users without that permission receive `403 Forbidden` and cannot retrieve `draft_yaml`, `request_comment`, `approval_comment`, `push_comment`, or `break_glass_reason` from this endpoint. Authorized callers receive `200 OK` with an array of `ConfigApprovalRequest`, newest first.
 
 ### `POST /api/workloads/{id}/config/approvals/{approval_id}/approve`
 
