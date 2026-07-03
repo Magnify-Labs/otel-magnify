@@ -414,6 +414,40 @@ func TestCanaryPromoteAbortRollbackAndAuditFailure(t *testing.T) {
 	}
 }
 
+func TestCanaryPromoteSkipsReadOnlyRemainingInstances(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	now := time.Now().UTC()
+	fake.instances["wl-canary"] = []opamp.Instance{
+		{InstanceUID: "inst-a", PodName: "pod-a", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now, EffectiveConfigHash: "old"},
+		{InstanceUID: "inst-b", PodName: "pod-b", Healthy: true, AcceptsRemoteConfig: false, RemoteConfigCapabilityKnown: true, LastMessageAt: now, EffectiveConfigHash: "old"},
+		{InstanceUID: "inst-c", PodName: "pod-c", Healthy: true, AcceptsRemoteConfig: true, RemoteConfigCapabilityKnown: true, LastMessageAt: now, EffectiveConfigHash: "old"},
+	}
+	start := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one","instance_uid":"inst-a"}}`)
+	if start.Code != http.StatusAccepted {
+		t.Fatalf("start=%d %s", start.Code, start.Body.String())
+	}
+	var status models.CanaryStatus
+	if err := json.NewDecoder(start.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+
+	status.Targets[0].Status = models.InstanceStatusApplied
+	status.Status = models.CanaryStatusSucceeded
+	if err := db.UpdateCanaryStatus(status); err != nil {
+		t.Fatal(err)
+	}
+	promoteReq := authedRequestForGroups(t, "POST", "/api/workloads/wl-canary/config/canary/"+status.ID+"/promote", "", []string{"administrator"})
+	promoteRec := httptest.NewRecorder()
+	router.ServeHTTP(promoteRec, promoteReq)
+	if promoteRec.Code != http.StatusAccepted {
+		t.Fatalf("promote=%d %s", promoteRec.Code, promoteRec.Body.String())
+	}
+	if len(fake.pushed) != 2 || fake.pushed[0].Target != "inst-a" || fake.pushed[1].Target != "inst-c" {
+		t.Fatalf("pushes=%+v want canary target then eligible remaining instance only", fake.pushed)
+	}
+}
+
 func TestCanaryPromoteRejectsAbortedCanaryWithoutPushingRemaining(t *testing.T) {
 	db, router, fake := newTestAPI(t)
 	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
