@@ -92,6 +92,16 @@ type workloadTopologyResponse struct {
 
 func (a *API) handleGetWorkloadTopology(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	activeConfigHash := ""
+	if a.db != nil {
+		wl, err := a.db.GetWorkload(id)
+		if err == nil {
+			activeConfigHash = wl.ActiveConfigHash
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			respondError(w, http.StatusInternalServerError, "failed to load workload")
+			return
+		}
+	}
 	instances := []opamp.Instance{}
 	if a.opamp != nil {
 		instances = a.opamp.Instances(id)
@@ -103,11 +113,11 @@ func (a *API) handleGetWorkloadTopology(w http.ResponseWriter, r *http.Request) 
 		SchemaVersion: "workload-topology.v1",
 		WorkloadID:    id,
 		Instances:     instances,
-		Summary:       summarizeWorkloadTopology(instances),
+		Summary:       summarizeWorkloadTopology(instances, activeConfigHash),
 	})
 }
 
-func summarizeWorkloadTopology(instances []opamp.Instance) models.WorkloadTopologySummary {
+func summarizeWorkloadTopology(instances []opamp.Instance, activeConfigHash string) models.WorkloadTopologySummary {
 	heterogeneity := map[string]bool{
 		"mixed_versions":                false,
 		"mixed_effective_config_hashes": false,
@@ -144,24 +154,22 @@ func summarizeWorkloadTopology(instances []opamp.Instance) models.WorkloadTopolo
 		}
 		if inst.AcceptsRemoteConfig {
 			summary.RemoteConfigStatusCounts["capable"]++
-		}
-		if inst.RemoteConfigStatus != nil && inst.RemoteConfigStatus.Status != "" {
-			summary.RemoteConfigStatusCounts[inst.RemoteConfigStatus.Status]++
-		} else {
-			summary.RemoteConfigStatusCounts[models.InstanceStatusNoStatus]++
+			if inst.RemoteConfigStatus != nil && inst.RemoteConfigStatus.Status != "" {
+				summary.RemoteConfigStatusCounts[inst.RemoteConfigStatus.Status]++
+			} else {
+				summary.RemoteConfigStatusCounts[models.InstanceStatusNoStatus]++
+			}
 		}
 	}
 
 	summary.VersionDiversity = sortedKeys(versions)
 	summary.ConfigHashDiversity = sortedCountKeys(configHashes)
-	if len(configHashes) > 1 {
-		maxSameHash := 0
-		for _, count := range configHashes {
-			if count > maxSameHash {
-				maxSameHash = count
+	if activeConfigHash != "" {
+		for _, inst := range instances {
+			if inst.EffectiveConfigHash != "" && inst.EffectiveConfigHash != activeConfigHash {
+				summary.DriftedCount++
 			}
 		}
-		summary.DriftedCount = len(instances) - maxSameHash
 	}
 	if len(summary.VersionDiversity) > 1 {
 		heterogeneity["mixed_versions"] = true
@@ -187,6 +195,7 @@ func summarizeWorkloadTopology(instances []opamp.Instance) models.WorkloadTopolo
 		heterogeneity["failed_remote_config"] = true
 		summary.HeterogeneityReasons = append(summary.HeterogeneityReasons, "failed_remote_config")
 	}
+	summary.Heterogeneous = len(summary.HeterogeneityReasons) > 0
 	return summary
 }
 
