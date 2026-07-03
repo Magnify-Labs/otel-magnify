@@ -260,6 +260,55 @@ export interface Config {
   variables?: ConfigVariable[]
   tags?: string[]
   built_in?: boolean
+  source_type?: 'manual' | 'git' | string
+  git_url?: string
+  git_provider?: 'github' | 'gitlab' | 'generic' | string
+  git_ref?: string
+  git_path?: string
+  commit_sha?: string
+  imported_at?: string
+}
+
+export interface GitImportConfigRequest {
+  name: string
+  git_url: string
+  git_ref: string
+  git_path: string
+}
+
+export interface GitImportConfigResponse {
+  config: Config
+  validation: ValidationResult
+}
+
+export interface GitOpsExportRequest {
+  provider: 'github' | 'gitlab'
+  repository: string
+  path: string
+  base_branch: string
+  branch: string
+  title: string
+  body: string
+}
+
+export interface GitOpsExportResult {
+  provider: string
+  url: string
+  number: number
+  branch: string
+  commit_sha: string
+}
+
+export interface GitOpsCommentResult {
+  provider: string
+  url: string
+  comment_id: string
+}
+
+export interface GitOpsExportResponse {
+  result: GitOpsExportResult
+  comment?: GitOpsCommentResult
+  validation?: ValidationResult
 }
 
 export interface Alert {

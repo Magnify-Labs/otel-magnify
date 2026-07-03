@@ -798,6 +798,85 @@ h4 {
   color: var(--danger);
 }
 
+.config-provenance-card,
+.git-import-panel,
+.gitops-export-panel,
+.git-readonly-comparison {
+  margin-top: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.config-provenance-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.config-provenance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.config-provenance-grid div,
+.gitops-form-grid label {
+  min-width: 0;
+}
+
+.config-provenance-grid dt,
+.gitops-form-grid span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.config-provenance-grid dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.gitops-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.65rem;
+}
+
+.gitops-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.gitops-form-grid input,
+.gitops-form-grid textarea {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0.55rem 0.65rem;
+}
+
+.gitops-form-grid textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.gitops-wide {
+  grid-column: 1 / -1;
+}
+
+.gitops-export-result {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.65rem 0;
+}
+
 .push-scope-panel {
   margin-top: 0.85rem;
   padding: 0.85rem;

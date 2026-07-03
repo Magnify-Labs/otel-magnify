@@ -22,8 +22,12 @@ import type {
   PushPreview,
   PushPreviewRequest,
   ValidationCheck,
+  Config,
   ConfigApplicationPlan,
   ConfigApprovalRequest,
+  GitImportConfigRequest,
+  GitOpsExportRequest,
+  GitOpsExportResponse,
   ValidationMessage,
   ValidationResult,
   Workload,
@@ -59,6 +63,23 @@ const emptyDynamicSelector: DynamicSelectorState = {
   workloadType: '',
   version: '',
   capabilities: '',
+}
+
+const emptyGitImportForm: GitImportConfigRequest = {
+  name: '',
+  git_url: '',
+  git_ref: '',
+  git_path: '',
+}
+
+const emptyGitExportForm: GitOpsExportRequest = {
+  provider: 'github',
+  repository: '',
+  path: '',
+  base_branch: 'main',
+  branch: '',
+  title: '',
+  body: '',
 }
 
 function splitList(value: string): string[] {
@@ -119,6 +140,37 @@ function contentIsAvailable(row?: Pick<WorkloadConfig, 'content' | 'content_avai
   return row.content_available ?? !!row.content
 }
 
+function isGitConfig(config?: Config | null): config is Config {
+  return config?.source_type === 'git'
+}
+
+function displayGitURL(raw?: string): string {
+  if (!raw) return '—'
+  try {
+    const parsed = new URL(raw)
+    parsed.username = ''
+    parsed.password = ''
+    return parsed.toString()
+  } catch {
+    return raw.replace(/^(https?:\/\/)[^/@\s]+@/i, '$1')
+  }
+}
+
+function shortCommit(sha?: string): string {
+  return sha ? sha.substring(0, 8) : '—'
+}
+
+function gitExportFormReady(form: GitOpsExportRequest): boolean {
+  return (
+    !!form.provider &&
+    !!form.repository.trim() &&
+    !!form.path.trim() &&
+    !!form.base_branch.trim() &&
+    !!form.branch.trim() &&
+    !!form.title.trim()
+  )
+}
+
 interface RecoveryPanelProps {
   history: WorkloadConfig[]
   knownGood?: WorkloadKnownGoodConfig
@@ -128,6 +180,295 @@ interface RecoveryPanelProps {
   canRollback: boolean
   featureDisabledReason?: string
   onRollback: (target: WorkloadConfig) => void
+}
+
+function ConfigProvenanceCard({ config }: { config?: Config | null }) {
+  const { t } = useTranslation()
+  if (!isGitConfig(config)) return null
+  const sanitizedURL = displayGitURL(config.git_url)
+  return (
+    <section
+      className="config-provenance-card"
+      aria-label={t('workloads.config.git.provenance_title')}
+    >
+      <div className="config-provenance-header">
+        <p className="section-title">{t('workloads.config.git.provenance_title')}</p>
+        <span className="status-pill status-applied">{config.git_provider || 'git'}</span>
+      </div>
+      <dl className="config-provenance-grid">
+        <div>
+          <dt>{t('workloads.config.git.source_url')}</dt>
+          <dd title={sanitizedURL}>{sanitizedURL}</dd>
+        </div>
+        <div>
+          <dt>{t('workloads.config.git.ref')}</dt>
+          <dd>{config.git_ref || '—'}</dd>
+        </div>
+        <div>
+          <dt>{t('workloads.config.git.path')}</dt>
+          <dd>{config.git_path || '—'}</dd>
+        </div>
+        <div>
+          <dt>{t('workloads.config.git.commit')}</dt>
+          <dd>
+            <code title={config.commit_sha}>{shortCommit(config.commit_sha)}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>{t('workloads.config.git.imported_at')}</dt>
+          <dd>{formatDate(config.imported_at)}</dd>
+        </div>
+      </dl>
+    </section>
+  )
+}
+
+function GitImportPanel({
+  open,
+  form,
+  canImport,
+  disabledReason,
+  isPending,
+  error,
+  onToggle,
+  onChange,
+  onSubmit,
+}: {
+  open: boolean
+  form: GitImportConfigRequest
+  canImport: boolean
+  disabledReason: string
+  isPending: boolean
+  error?: string | null
+  onToggle: () => void
+  onChange: (next: GitImportConfigRequest) => void
+  onSubmit: () => void
+}) {
+  const { t } = useTranslation()
+  const formReady = !!form.name.trim() && !!form.git_url.trim() && !!form.git_path.trim()
+  if (!open) {
+    return (
+      <button className="btn" onClick={onToggle} disabled={!canImport} title={disabledReason}>
+        {t('workloads.config.git.import_open')}
+      </button>
+    )
+  }
+  return (
+    <section className="git-import-panel" aria-labelledby="git-import-title">
+      <div className="config-provenance-header">
+        <p className="section-title" id="git-import-title">
+          {t('workloads.config.git.import_title')}
+        </p>
+        <button className="btn btn-small" onClick={onToggle} disabled={isPending}>
+          {t('common.cancel')}
+        </button>
+      </div>
+      <div className="gitops-form-grid">
+        <label>
+          <span>{t('workloads.config.git.import_name')}</span>
+          <input
+            value={form.name}
+            onChange={(e) => onChange({ ...form, name: e.target.value })}
+            aria-label={t('workloads.config.git.import_name')}
+          />
+        </label>
+        <label className="gitops-wide">
+          <span>{t('workloads.config.git.url')}</span>
+          <input
+            value={form.git_url}
+            onChange={(e) => onChange({ ...form, git_url: e.target.value })}
+            aria-label={t('workloads.config.git.url')}
+            placeholder="https://github.com/acme/collectors.git"
+          />
+        </label>
+        <label>
+          <span>{t('workloads.config.git.ref')}</span>
+          <input
+            value={form.git_ref}
+            onChange={(e) => onChange({ ...form, git_ref: e.target.value })}
+            aria-label={t('workloads.config.git.ref')}
+            placeholder="main"
+          />
+        </label>
+        <label>
+          <span>{t('workloads.config.git.file_path')}</span>
+          <input
+            value={form.git_path}
+            onChange={(e) => onChange({ ...form, git_path: e.target.value })}
+            aria-label={t('workloads.config.git.file_path')}
+            placeholder="otel/prod.yaml"
+          />
+        </label>
+      </div>
+      {error && <div className="error-text error-text-push">{error}</div>}
+      <div className="btn-row">
+        <button
+          className="btn btn-primary"
+          onClick={onSubmit}
+          disabled={!canImport || !formReady || isPending}
+          title={
+            !canImport ? disabledReason : !formReady ? t('workloads.config.git.import_missing') : ''
+          }
+        >
+          {isPending
+            ? t('workloads.config.git.importing')
+            : t('workloads.config.git.import_submit')}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function GitOpsExportPanel({
+  config,
+  form,
+  result,
+  isPending,
+  disabledReason,
+  error,
+  onChange,
+  onSubmit,
+}: {
+  config?: Config | null
+  form: GitOpsExportRequest
+  result?: GitOpsExportResponse | null
+  isPending: boolean
+  disabledReason: string
+  error?: string | null
+  onChange: (next: GitOpsExportRequest) => void
+  onSubmit: () => void
+}) {
+  const { t } = useTranslation()
+  const canSubmit = !disabledReason && gitExportFormReady(form) && !!config?.id && !isPending
+  return (
+    <section className="gitops-export-panel" aria-labelledby="gitops-export-title">
+      <div className="config-provenance-header">
+        <div>
+          <p className="section-title" id="gitops-export-title">
+            {t('workloads.config.git.export_title')}
+          </p>
+          <p className="config-recovery-help">{t('workloads.config.git.export_help')}</p>
+        </div>
+      </div>
+      <div className="gitops-form-grid">
+        <label>
+          <span>{t('workloads.config.git.provider')}</span>
+          <select
+            className="filter-select"
+            value={form.provider}
+            onChange={(e) => onChange({ ...form, provider: e.target.value as 'github' | 'gitlab' })}
+            aria-label={t('workloads.config.git.provider')}
+          >
+            <option value="github">GitHub</option>
+            <option value="gitlab">GitLab</option>
+          </select>
+        </label>
+        <label>
+          <span>{t('workloads.config.git.repository')}</span>
+          <input
+            value={form.repository}
+            onChange={(e) => onChange({ ...form, repository: e.target.value })}
+            aria-label={t('workloads.config.git.repository')}
+            placeholder="acme/collectors"
+          />
+        </label>
+        <label>
+          <span>{t('workloads.config.git.target_path')}</span>
+          <input
+            value={form.path}
+            onChange={(e) => onChange({ ...form, path: e.target.value })}
+            aria-label={t('workloads.config.git.target_path')}
+          />
+        </label>
+        <label>
+          <span>{t('workloads.config.git.base_branch')}</span>
+          <input
+            value={form.base_branch}
+            onChange={(e) => onChange({ ...form, base_branch: e.target.value })}
+            aria-label={t('workloads.config.git.base_branch')}
+          />
+        </label>
+        <label>
+          <span>{t('workloads.config.git.export_branch')}</span>
+          <input
+            value={form.branch}
+            onChange={(e) => onChange({ ...form, branch: e.target.value })}
+            aria-label={t('workloads.config.git.export_branch')}
+          />
+        </label>
+        <label>
+          <span>{t('workloads.config.git.pr_title')}</span>
+          <input
+            value={form.title}
+            onChange={(e) => onChange({ ...form, title: e.target.value })}
+            aria-label={t('workloads.config.git.pr_title')}
+          />
+        </label>
+        <label className="gitops-wide">
+          <span>{t('workloads.config.git.pr_body')}</span>
+          <textarea
+            value={form.body}
+            onChange={(e) => onChange({ ...form, body: e.target.value })}
+            aria-label={t('workloads.config.git.pr_body')}
+          />
+        </label>
+      </div>
+      <div className="config-plan-action-status" role="status">
+        {disabledReason || t('workloads.config.git.export_ready')}
+      </div>
+      {error && <div className="error-text error-text-push">{error}</div>}
+      {result && (
+        <div className="gitops-export-result">
+          <a href={result.result.url} target="_blank" rel="noreferrer">
+            {t('workloads.config.git.open_pr')}
+          </a>
+          <code title={result.result.commit_sha}>{shortCommit(result.result.commit_sha)}</code>
+        </div>
+      )}
+      <button
+        className="btn btn-primary"
+        onClick={onSubmit}
+        disabled={!canSubmit}
+        title={
+          disabledReason ||
+          (!gitExportFormReady(form) ? t('workloads.config.git.export_missing') : '')
+        }
+      >
+        {isPending ? t('workloads.config.git.exporting') : t('workloads.config.git.export_submit')}
+      </button>
+    </section>
+  )
+}
+
+function ReadOnlyGitComparison({
+  config,
+  workload,
+}: {
+  config?: Config | null
+  workload: Workload
+}) {
+  const { t } = useTranslation()
+  if (!isGitConfig(config)) return null
+  return (
+    <section className="git-readonly-comparison" aria-labelledby="git-readonly-title">
+      <div className="config-provenance-header">
+        <div>
+          <p className="section-title" id="git-readonly-title">
+            {t('workloads.config.git.readonly_compare_title')}
+          </p>
+          <p className="config-recovery-help">{t('workloads.config.git.readonly_compare_help')}</p>
+        </div>
+        <div className="config-state-card">
+          <span className="config-state-title">
+            {t('workloads.config.git.opamp_effective_hash')}
+          </span>
+          <code>{shortHash(workload.active_config_hash)}</code>
+        </div>
+      </div>
+      <ConfigProvenanceCard config={config} />
+      <ConfigDiffView oldYaml={config.content} newYaml={config.content} />
+    </section>
+  )
 }
 
 function ConfigRecoveryPanel({
@@ -503,6 +844,13 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const [prodSafetyConfirmed, setProdSafetyConfirmed] = useState(false)
   const [breakGlass, setBreakGlass] = useState(false)
   const [breakGlassReason, setBreakGlassReason] = useState('')
+  const [gitImportOpen, setGitImportOpen] = useState(false)
+  const [gitImportForm, setGitImportForm] = useState<GitImportConfigRequest>(emptyGitImportForm)
+  const [gitImportError, setGitImportError] = useState<string | null>(null)
+  const [importedGitConfig, setImportedGitConfig] = useState<Config | null>(null)
+  const [gitExportForm, setGitExportForm] = useState<GitOpsExportRequest>(emptyGitExportForm)
+  const [gitExportResult, setGitExportResult] = useState<GitOpsExportResponse | null>(null)
+  const [gitExportError, setGitExportError] = useState<string | null>(null)
 
   const {
     data: config,
@@ -732,6 +1080,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     mutationFn: (configId: string) => configsAPI.get(configId),
     onSuccess: (cfg) => {
       enterEditMode(cfg.content, workload.active_config_id ? 'diff' : 'edit')
+      setImportedGitConfig(isGitConfig(cfg) ? cfg : null)
       setSelectedConfigId('')
     },
     onError: (err: unknown) => {
@@ -740,6 +1089,42 @@ export default function WorkloadConfigSection({ workload }: Props) {
         : 'Failed to load configuration'
       setPushError(`Failed to load configuration: ${msg}`)
       setSelectedConfigId('')
+    },
+  })
+
+  const gitImportMutation = useMutation({
+    mutationFn: () => configsAPI.importFromGit(gitImportForm),
+    onSuccess: ({ config: imported, validation: importValidation }) => {
+      enterEditMode(imported.content, workload.active_config_id ? 'diff' : 'edit')
+      setImportedGitConfig(imported)
+      setValidation(importValidation)
+      setGitImportOpen(false)
+      setGitImportForm(emptyGitImportForm)
+      setGitImportError(null)
+      setPushError(null)
+    },
+    onError: (err: unknown) => {
+      const msg = axios.isAxiosError(err)
+        ? (err.response?.data?.error ?? err.message)
+        : t('workloads.config.git.import_failed')
+      setGitImportError(msg)
+    },
+  })
+
+  const gitExportMutation = useMutation({
+    mutationFn: (sourceConfig: Config) => configsAPI.exportToGit(sourceConfig.id, gitExportForm),
+    onSuccess: (result) => {
+      setGitExportResult(result)
+      setGitExportError(null)
+    },
+    onError: (err: unknown) => {
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined
+      const msg = axios.isAxiosError(err)
+        ? (err.response?.data?.error ?? err.message)
+        : t('workloads.config.git.export_failed')
+      setGitExportError(
+        status === 501 ? t('workloads.config.git.provider_unconfigured', { message: msg }) : msg,
+      )
     },
   })
 
@@ -805,6 +1190,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
     setProdSafetyConfirmed(false)
     setBreakGlass(false)
     setBreakGlassReason('')
+    setImportedGitConfig(null)
+    setGitExportResult(null)
+    setGitExportError(null)
   }
 
   function onDraftChange(next: string) {
@@ -814,6 +1202,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
     if (pushPreview !== null) setPushPreview(null)
     if (activeApproval !== null) setActiveApproval(null)
     if (planExportStatus !== 'idle') setPlanExportStatus('idle')
+    if (gitExportResult !== null) setGitExportResult(null)
+    if (gitExportError !== null) setGitExportError(null)
   }
 
   function updateScopeMode(next: PushScopeMode) {
@@ -866,6 +1256,19 @@ export default function WorkloadConfigSection({ workload }: Props) {
       return
     }
     planMutation.mutate()
+  }
+
+  function importFromGit() {
+    if (!canImportFromGit) {
+      setGitImportError(gitImportDisabledReason)
+      return
+    }
+    gitImportMutation.mutate()
+  }
+
+  function exportToGit() {
+    if (!gitExportSourceConfig || gitExportDisabledReasonForPanel) return
+    gitExportMutation.mutate(gitExportSourceConfig)
   }
 
   function requestApproval() {
@@ -940,6 +1343,26 @@ export default function WorkloadConfigSection({ workload }: Props) {
     : !gitOpsExportEnabled
       ? t('workloads.config.application_plan.gitops_export_disabled')
       : ''
+  const canImportFromGit = hasPerm(me?.groups, 'config:create') && gitOpsExportEnabled
+  const gitImportDisabledReason = gitOpsExportDisabledReason
+    ? gitOpsExportDisabledReason
+    : !hasPerm(me?.groups, 'config:create')
+      ? t('workloads.config.git.import_permission_blocked')
+      : ''
+  const gitExportSourceConfig = importedGitConfig ?? config ?? null
+  const gitExportDisabledReasonForPanel = gitOpsExportDisabledReason
+    ? gitOpsExportDisabledReason
+    : !hasPushPermission
+      ? t('workloads.config.permission.push_blocked')
+      : validation === null || !applicationPlan
+        ? t('workloads.config.git.export_needs_validation')
+        : !validation.valid
+          ? t('workloads.config.scope.disabled.fix_validation_push')
+          : !applicationPlan.can_push ||
+              !applicationPlan.apply_allowed ||
+              applicationPlan.hard_failures.length > 0
+            ? t('workloads.config.scope.disabled.plan_blocks_push')
+            : ''
   const canGeneratePlan =
     canValidateConfig &&
     !!draftYaml &&
@@ -1308,6 +1731,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
           <div className="loading">{t('workloads.config.editor.loading')}</div>
         ) : hasConfig && isError ? (
           <div className="error-text">{t('workloads.config.editor.load_failed')}</div>
+        ) : hasConfig && isGitConfig(config) ? (
+          <ReadOnlyGitComparison config={config} workload={workload} />
         ) : hasConfig ? (
           <YamlEditor value={activeContent} readOnly />
         ) : (
@@ -1359,6 +1784,19 @@ export default function WorkloadConfigSection({ workload }: Props) {
       {tab === 'diff' && <ConfigDiffView oldYaml={activeContent} newYaml={draftYaml} />}
 
       {validation && <ValidationDetails validation={validation} />}
+
+      <ConfigProvenanceCard config={gitExportSourceConfig} />
+
+      <GitOpsExportPanel
+        config={gitExportSourceConfig}
+        form={gitExportForm}
+        result={gitExportResult}
+        isPending={gitExportMutation.isPending}
+        disabledReason={gitExportDisabledReasonForPanel}
+        error={gitExportError}
+        onChange={setGitExportForm}
+        onSubmit={exportToGit}
+      />
 
       <ManualCanaryPanel
         workloadId={workload.id}
@@ -1668,6 +2106,20 @@ export default function WorkloadConfigSection({ workload }: Props) {
     </div>
   ) : null
 
+  const gitImportPanel = (
+    <GitImportPanel
+      open={gitImportOpen}
+      form={gitImportForm}
+      canImport={canImportFromGit}
+      disabledReason={gitImportDisabledReason}
+      isPending={gitImportMutation.isPending}
+      error={gitImportError}
+      onToggle={() => setGitImportOpen((open) => !open)}
+      onChange={setGitImportForm}
+      onSubmit={importFromGit}
+    />
+  )
+
   // ── Collector without active config ──────────────────────────────────────
   if (!workload.active_config_id) {
     return (
@@ -1678,6 +2130,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
         <p className="section-title">{t('workloads.config.title')}</p>
         {applySelector}
         {permissionNote}
+        {gitImportPanel}
         {editMode ? (
           editorPanel
         ) : (
@@ -1733,9 +2186,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <p className="section-title">{t('workloads.config.title')}</p>
       {applySelector}
       {permissionNote}
+      {gitImportPanel}
 
       {!editMode ? (
         <div>
+          <ConfigProvenanceCard config={config} />
           <YamlEditor value={activeContent} readOnly />
           <div className="btn-row btn-row-top">
             <button
