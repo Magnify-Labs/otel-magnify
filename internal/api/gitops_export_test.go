@@ -105,6 +105,7 @@ func TestExportConfigAsPR_RejectsUnsafeGitRefBeforeProviderCall(t *testing.T) {
 func TestExportConfigAsPR_UsesProviderAndReturnsResult(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
+	seedGitOpsValidationPass(t, db, cfg)
 	fake := &fakeGitOpsProvider{}
 	resetGitOpsProviderForTest(t, fake)
 
@@ -132,6 +133,51 @@ func TestExportConfigAsPR_UsesProviderAndReturnsResult(t *testing.T) {
 	}
 	if !strings.Contains(fake.commentReq.Body, "Warnings:") || !strings.Contains(fake.commentReq.Body, "AvailableComponents") {
 		t.Fatalf("validation comment omitted validator warnings: %s", fake.commentReq.Body)
+	}
+}
+
+func TestExportConfigAsPR_RejectsMissingGitOpsValidationPass(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/"+cfg.ID+"/export/git", `{"provider":"github","repository":"acme/collectors","path":"otel/collector.yaml","base_branch":"main","branch":"otel-magnify/cfg-valid","title":"Update collector config"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.exportReq.ConfigID != "" {
+		t.Fatalf("provider called despite missing gitops validation: %+v", fake.exportReq)
+	}
+	if !strings.Contains(rec.Body.String(), "gitops validation has not passed") || !strings.Contains(rec.Body.String(), "missing validation pass") {
+		t.Fatalf("validation gate details missing: %s", rec.Body.String())
+	}
+}
+
+func TestExportConfigAsPR_RejectsGitOpsValidationForDifferentRef(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+	if err := db.RecordGitOpsValidationStatus(models.GitOpsValidationStatus{Provider: cfg.GitProvider, Event: "pull_request", Action: "synchronize", Status: "pass", SourcePath: cfg.GitPath, SourceRef: "other-ref", CommitSHA: cfg.CommitSHA, ObservedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/"+cfg.ID+"/export/git", `{"provider":"github","repository":"acme/collectors","path":"otel/collector.yaml","base_branch":"main","branch":"otel-magnify/cfg-valid","title":"Update collector config"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.exportReq.ConfigID != "" {
+		t.Fatalf("provider called despite mismatched validation ref: %+v", fake.exportReq)
+	}
+	if !strings.Contains(rec.Body.String(), "gitops validation has not passed") || !strings.Contains(rec.Body.String(), "missing validation pass") {
+		t.Fatalf("validation gate details missing: %s", rec.Body.String())
 	}
 }
 
@@ -171,7 +217,7 @@ func TestGitOpsWebhook_AcceptsValidSignatureAndTriggersProvider(t *testing.T) {
 	if fake.webhookReq.Provider != "github" || fake.webhookReq.Event != "pull_request" || string(fake.webhookReq.Payload) != body {
 		t.Fatalf("webhook request mismatch: %+v", fake.webhookReq)
 	}
-	stored, err := db.GetLatestGitOpsValidationStatus("github", "otel/collector.yaml", "0123456789abcdef0123456789abcdef01234567")
+	stored, err := db.GetLatestGitOpsValidationStatus("github", "otel/collector.yaml", "refs/pull/42/head", "0123456789abcdef0123456789abcdef01234567")
 	if err != nil {
 		t.Fatalf("GetLatestGitOpsValidationStatus: %v", err)
 	}
@@ -225,7 +271,7 @@ func TestGitLabWebhookAcceptsTokenAndStoresMappedPathRefCommit(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	stored, err := db.GetLatestGitOpsValidationStatus("gitlab", "otel/collector.yaml", "fedcba9876543210fedcba9876543210fedcba98")
+	stored, err := db.GetLatestGitOpsValidationStatus("gitlab", "otel/collector.yaml", "otel-magnify/cfg-valid", "fedcba9876543210fedcba9876543210fedcba98")
 	if err != nil {
 		t.Fatalf("GetLatestGitOpsValidationStatus: %v", err)
 	}
@@ -294,6 +340,15 @@ func seedExportConfig(t *testing.T, db interface{ CreateConfig(models.Config) er
 		t.Fatal(err)
 	}
 	return cfg
+}
+
+func seedGitOpsValidationPass(t *testing.T, db interface {
+	RecordGitOpsValidationStatus(models.GitOpsValidationStatus) error
+}, cfg models.Config) {
+	t.Helper()
+	if err := db.RecordGitOpsValidationStatus(models.GitOpsValidationStatus{Provider: cfg.GitProvider, Event: "pull_request", Action: "synchronize", Status: "pass", SourcePath: cfg.GitPath, SourceRef: cfg.GitRef, CommitSHA: cfg.CommitSHA, ObservedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func validGitOpsYAML() string {

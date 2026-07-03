@@ -69,6 +69,16 @@ type gitOpsValidationCommentResult struct {
 	Warnings []string                `json:"warnings,omitempty"`
 }
 
+type gitOpsValidationGateResult struct {
+	Valid      bool                           `json:"valid"`
+	Reason     string                         `json:"reason,omitempty"`
+	Provider   string                         `json:"provider"`
+	SourcePath string                         `json:"source_path"`
+	SourceRef  string                         `json:"source_ref,omitempty"`
+	CommitSHA  string                         `json:"commit_sha"`
+	Latest     *models.GitOpsValidationStatus `json:"latest,omitempty"`
+}
+
 var (
 	gitOpsProviderOverride       gitOpsProvider
 	gitOpsWebhookSecretOverrides = map[string]string{}
@@ -105,6 +115,15 @@ func (a *API) handleExportConfigToGit(w http.ResponseWriter, r *http.Request) {
 	provider, err := gitOpsProviderFor(req.Provider)
 	if err != nil {
 		respondError(w, http.StatusNotImplemented, err.Error())
+		return
+	}
+	gitOpsValidation, err := a.gitOpsValidationGate(req, cfg)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load gitops validation status")
+		return
+	}
+	if !gitOpsValidation.Valid {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"error": "gitops validation has not passed", "validation": validation, "gitops_validation": gitOpsValidation})
 		return
 	}
 	req.ConfigID = cfg.ID
@@ -192,6 +211,47 @@ func validateGitOpsExportRequest(req *gitOpsExportRequest) error {
 		return fmt.Errorf("invalid git ref: branch: %w", err)
 	}
 	return nil
+}
+
+func (a *API) gitOpsValidationGate(req gitOpsExportRequest, cfg models.Config) (gitOpsValidationGateResult, error) {
+	gate := gitOpsValidationGateResult{
+		Provider:   req.Provider,
+		SourcePath: req.Path,
+		SourceRef:  cfg.GitRef,
+		CommitSHA:  cfg.CommitSHA,
+	}
+	if gate.SourceRef == "" {
+		gate.Reason = "missing source_ref"
+		return gate, nil
+	}
+	if gate.CommitSHA == "" {
+		gate.Reason = "missing commit_sha"
+		return gate, nil
+	}
+	status, err := a.db.GetLatestGitOpsValidationStatus(req.Provider, req.Path, cfg.GitRef, cfg.CommitSHA)
+	if err != nil {
+		return gate, err
+	}
+	gate.Latest = status
+	if status == nil {
+		gate.Reason = "missing validation pass"
+		return gate, nil
+	}
+	if !gitOpsValidationStatusPassed(status.Status) {
+		gate.Reason = "latest validation status is " + status.Status
+		return gate, nil
+	}
+	gate.Valid = true
+	return gate, nil
+}
+
+func gitOpsValidationStatusPassed(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "pass", "passed", "success", "succeeded", "ok":
+		return true
+	default:
+		return false
+	}
 }
 
 func gitOpsProviderFor(name string) (gitOpsProvider, error) {
