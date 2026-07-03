@@ -75,7 +75,10 @@ var (
 	gitOpsHTTPClient             = &http.Client{Timeout: 10 * time.Second}
 	sensitiveCommentValueRegexp  = regexp.MustCompile(`(?i)(secret[_-]?token|authorization|bearer|password|api[_-]?key)([=: ]+)([^\s,;]+)`)
 	credentialURLUserinfoRegexp  = regexp.MustCompile(`https://[^/@\s]+@`)
+	gitOpsSourcePathMarkerRegexp = regexp.MustCompile(`(?i)otel-magnify:\s*path=([^\s<]+)`)
 )
+
+const gitOpsValidationCommentMarker = "<!-- otel-magnify: validation-comment -->"
 
 func (a *API) handleExportConfigToGit(w http.ResponseWriter, r *http.Request) {
 	configID := chi.URLParam(r, "id")
@@ -99,7 +102,6 @@ func (a *API) handleExportConfigToGit(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"error": "configuration failed validation", "validation": validation})
 		return
 	}
-
 	provider, err := gitOpsProviderFor(req.Provider)
 	if err != nil {
 		respondError(w, http.StatusNotImplemented, err.Error())
@@ -152,7 +154,7 @@ func (a *API) handleGitOpsWebhook(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadGateway, redactGitOpsText(err.Error()))
 		return
 	}
-	if result.SourcePath != "" || result.CommitSHA != "" {
+	if result.SourcePath != "" && result.CommitSHA != "" {
 		if err := a.db.RecordGitOpsValidationStatus(models.GitOpsValidationStatus{
 			Provider:   result.Provider,
 			Event:      result.Event,
@@ -311,7 +313,14 @@ func buildGitOpsValidationComment(cfg models.Config, result gitOpsValidationComm
 			b.WriteString("\n")
 		}
 	}
-	return b.String()
+	return gitOpsValidationCommentBodyWithMarker(b.String())
+}
+
+func gitOpsValidationCommentBodyWithMarker(body string) string {
+	if strings.Contains(body, gitOpsValidationCommentMarker) {
+		return body
+	}
+	return strings.TrimRight(body, "\n") + "\n\n" + gitOpsValidationCommentMarker + "\n"
 }
 
 func redactGitOpsText(s string) string {
@@ -362,19 +371,37 @@ func (p *githubGitOpsProvider) ExportConfig(r *http.Request, req gitOpsExportReq
 		HTMLURL string `json:"html_url"`
 		Number  int    `json:"number"`
 	}
-	if err := p.githubJSON(r, http.MethodPost, "/repos/"+req.Repository+"/pulls", map[string]string{"title": req.Title, "head": req.Branch, "base": req.BaseBranch, "body": req.Body}, &pr); err != nil {
+	if err := p.githubJSON(r, http.MethodPost, "/repos/"+req.Repository+"/pulls", map[string]string{"title": req.Title, "head": req.Branch, "base": req.BaseBranch, "body": gitOpsPRBodyWithSourceMarker(req.Body, req.Path)}, &pr); err != nil {
 		return models.GitOpsExportResult{}, err
 	}
 	return models.GitOpsExportResult{Provider: "github", URL: pr.HTMLURL, Number: pr.Number, Branch: req.Branch, CommitSHA: contentResp.Commit.SHA}, nil
 }
 
 func (p *githubGitOpsProvider) UpsertValidationComment(r *http.Request, req gitOpsValidationCommentRequest) (models.GitOpsCommentResult, error) {
+	body := gitOpsValidationCommentBodyWithMarker(req.Body)
+	path := fmt.Sprintf("/repos/%s/issues/%d/comments", req.Repository, req.Number)
+	var comments []struct {
+		HTMLURL string `json:"html_url"`
+		ID      int64  `json:"id"`
+		Body    string `json:"body"`
+	}
+	if err := p.githubJSON(r, http.MethodGet, path, nil, &comments); err != nil {
+		return models.GitOpsCommentResult{}, err
+	}
 	var comment struct {
 		HTMLURL string `json:"html_url"`
 		ID      int64  `json:"id"`
 	}
-	path := fmt.Sprintf("/repos/%s/issues/%d/comments", req.Repository, req.Number)
-	if err := p.githubJSON(r, http.MethodPost, path, map[string]string{"body": req.Body}, &comment); err != nil {
+	for _, existing := range comments {
+		if strings.Contains(existing.Body, gitOpsValidationCommentMarker) {
+			updatePath := fmt.Sprintf("/repos/%s/issues/comments/%d", req.Repository, existing.ID)
+			if err := p.githubJSON(r, http.MethodPatch, updatePath, map[string]string{"body": body}, &comment); err != nil {
+				return models.GitOpsCommentResult{}, err
+			}
+			return models.GitOpsCommentResult{Provider: "github", URL: comment.HTMLURL, CommentID: strconv.FormatInt(comment.ID, 10)}, nil
+		}
+	}
+	if err := p.githubJSON(r, http.MethodPost, path, map[string]string{"body": body}, &comment); err != nil {
 		return models.GitOpsCommentResult{}, err
 	}
 	return models.GitOpsCommentResult{Provider: "github", URL: comment.HTMLURL, CommentID: strconv.FormatInt(comment.ID, 10)}, nil
@@ -384,6 +411,7 @@ func (p *githubGitOpsProvider) HandleWebhook(_ *http.Request, req gitOpsWebhookR
 	var payload struct {
 		Action      string `json:"action"`
 		PullRequest struct {
+			Body string `json:"body"`
 			Head struct {
 				Ref string `json:"ref"`
 				SHA string `json:"sha"`
@@ -391,7 +419,7 @@ func (p *githubGitOpsProvider) HandleWebhook(_ *http.Request, req gitOpsWebhookR
 		} `json:"pull_request"`
 	}
 	_ = json.Unmarshal(req.Payload, &payload)
-	return models.GitOpsWebhookResult{Provider: "github", Event: req.Event, Action: payload.Action, ValidationStatus: "received", SourceRef: payload.PullRequest.Head.Ref, CommitSHA: payload.PullRequest.Head.SHA}, nil
+	return models.GitOpsWebhookResult{Provider: "github", Event: req.Event, Action: payload.Action, ValidationStatus: "received", SourcePath: gitOpsSourcePathFromMarker(payload.PullRequest.Body), SourceRef: payload.PullRequest.Head.Ref, CommitSHA: payload.PullRequest.Head.SHA}, nil
 }
 
 func (p *githubGitOpsProvider) githubBaseRefSHA(r *http.Request, repo, branch string) (string, error) {
@@ -433,7 +461,7 @@ func (p *gitlabGitOpsProvider) ExportConfig(r *http.Request, req gitOpsExportReq
 		WebURL string `json:"web_url"`
 		IID    int    `json:"iid"`
 	}
-	mrBody := map[string]string{"source_branch": req.Branch, "target_branch": req.BaseBranch, "title": req.Title, "description": req.Body}
+	mrBody := map[string]string{"source_branch": req.Branch, "target_branch": req.BaseBranch, "title": req.Title, "description": gitOpsPRBodyWithSourceMarker(req.Body, req.Path)}
 	if err := doGitOpsJSON(r, p.client, http.MethodPost, apiBase+"/merge_requests", map[string]string{"PRIVATE-TOKEN": p.token}, mrBody, &mr); err != nil {
 		return models.GitOpsExportResult{}, err
 	}
@@ -443,12 +471,30 @@ func (p *gitlabGitOpsProvider) ExportConfig(r *http.Request, req gitOpsExportReq
 func (p *gitlabGitOpsProvider) UpsertValidationComment(r *http.Request, req gitOpsValidationCommentRequest) (models.GitOpsCommentResult, error) {
 	project := url.PathEscape(req.Repository)
 	apiBase := strings.TrimRight(p.baseURL, "/") + "/api/v4/projects/" + project
+	path := fmt.Sprintf("%s/merge_requests/%d/notes", apiBase, req.Number)
+	body := gitOpsValidationCommentBodyWithMarker(req.Body)
+	var notes []struct {
+		ID     int64  `json:"id"`
+		WebURL string `json:"web_url"`
+		Body   string `json:"body"`
+	}
+	if err := doGitOpsJSON(r, p.client, http.MethodGet, path, map[string]string{"PRIVATE-TOKEN": p.token}, nil, &notes); err != nil {
+		return models.GitOpsCommentResult{}, err
+	}
 	var note struct {
 		ID     int64  `json:"id"`
 		WebURL string `json:"web_url"`
 	}
-	path := fmt.Sprintf("%s/merge_requests/%d/notes", apiBase, req.Number)
-	if err := doGitOpsJSON(r, p.client, http.MethodPost, path, map[string]string{"PRIVATE-TOKEN": p.token}, map[string]string{"body": req.Body}, &note); err != nil {
+	for _, existing := range notes {
+		if strings.Contains(existing.Body, gitOpsValidationCommentMarker) {
+			updatePath := fmt.Sprintf("%s/merge_requests/%d/notes/%d", apiBase, req.Number, existing.ID)
+			if err := doGitOpsJSON(r, p.client, http.MethodPut, updatePath, map[string]string{"PRIVATE-TOKEN": p.token}, map[string]string{"body": body}, &note); err != nil {
+				return models.GitOpsCommentResult{}, err
+			}
+			return models.GitOpsCommentResult{Provider: "gitlab", URL: note.WebURL, CommentID: strconv.FormatInt(note.ID, 10)}, nil
+		}
+	}
+	if err := doGitOpsJSON(r, p.client, http.MethodPost, path, map[string]string{"PRIVATE-TOKEN": p.token}, map[string]string{"body": body}, &note); err != nil {
 		return models.GitOpsCommentResult{}, err
 	}
 	return models.GitOpsCommentResult{Provider: "gitlab", URL: note.WebURL, CommentID: strconv.FormatInt(note.ID, 10)}, nil
@@ -459,6 +505,7 @@ func (p *gitlabGitOpsProvider) HandleWebhook(_ *http.Request, req gitOpsWebhookR
 		ObjectKind       string `json:"object_kind"`
 		ObjectAttributes struct {
 			Action       string `json:"action"`
+			Description  string `json:"description"`
 			SourceBranch string `json:"source_branch"`
 			LastCommit   struct {
 				ID string `json:"id"`
@@ -466,7 +513,30 @@ func (p *gitlabGitOpsProvider) HandleWebhook(_ *http.Request, req gitOpsWebhookR
 		} `json:"object_attributes"`
 	}
 	_ = json.Unmarshal(req.Payload, &payload)
-	return models.GitOpsWebhookResult{Provider: "gitlab", Event: req.Event, Action: payload.ObjectAttributes.Action, ValidationStatus: "received", SourceRef: payload.ObjectAttributes.SourceBranch, CommitSHA: payload.ObjectAttributes.LastCommit.ID}, nil
+	return models.GitOpsWebhookResult{Provider: "gitlab", Event: req.Event, Action: payload.ObjectAttributes.Action, ValidationStatus: "received", SourcePath: gitOpsSourcePathFromMarker(payload.ObjectAttributes.Description), SourceRef: payload.ObjectAttributes.SourceBranch, CommitSHA: payload.ObjectAttributes.LastCommit.ID}, nil
+}
+
+func gitOpsPRBodyWithSourceMarker(body, path string) string {
+	marker := "<!-- otel-magnify: path=" + path + " -->"
+	if strings.Contains(body, marker) {
+		return body
+	}
+	if strings.TrimSpace(body) == "" {
+		return marker
+	}
+	return strings.TrimRight(body, "\n") + "\n\n" + marker
+}
+
+func gitOpsSourcePathFromMarker(body string) string {
+	match := gitOpsSourcePathMarkerRegexp.FindStringSubmatch(body)
+	if len(match) != 2 {
+		return ""
+	}
+	path := match[1]
+	if err := validateGitPath(path); err != nil {
+		return ""
+	}
+	return path
 }
 
 func doGitOpsJSON(r *http.Request, client *http.Client, method, endpoint string, headers map[string]string, body any, out any) error {

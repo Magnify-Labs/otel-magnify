@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +38,12 @@ func (f *fakeGitOpsProvider) UpsertValidationComment(_ *http.Request, req gitOps
 func (f *fakeGitOpsProvider) HandleWebhook(_ *http.Request, req gitOpsWebhookRequest) (models.GitOpsWebhookResult, error) {
 	f.webhookReq = req
 	return models.GitOpsWebhookResult{Provider: req.Provider, Event: req.Event, Action: "opened", ValidationStatus: "pass", SourcePath: "otel/collector.yaml", SourceRef: "refs/pull/42/head", CommitSHA: "0123456789abcdef0123456789abcdef01234567"}, nil
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }
 
 func TestExportConfigAsPR_UnconfiguredProviderReturnsDisabled(t *testing.T) {
@@ -173,6 +180,60 @@ func TestGitOpsWebhook_AcceptsValidSignatureAndTriggersProvider(t *testing.T) {
 	}
 }
 
+func TestGitOpsWebhook_RejectsMissingSignatureWhenSecretConfigured(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	resetGitOpsProviderForTest(t, &fakeGitOpsProvider{})
+	setGitOpsWebhookSecretForTest(t, "github", "top-secret")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/gitops/webhooks/github", strings.NewReader(`{"action":"opened"}`))
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGitHubWebhookMapsPathRefAndCommitFromPRBodyMarker(t *testing.T) {
+	provider := &githubGitOpsProvider{}
+	payload := `{"action":"synchronize","pull_request":{"body":"Update config\n\n<!-- otel-magnify: path=otel/collector.yaml -->","head":{"ref":"otel-magnify/cfg-valid","sha":"0123456789abcdef0123456789abcdef01234567"}}}`
+
+	result, err := provider.HandleWebhook(httptest.NewRequest(http.MethodPost, "/", nil), gitOpsWebhookRequest{Provider: "github", Event: "pull_request", Payload: []byte(payload)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.SourcePath != "otel/collector.yaml" || result.SourceRef != "otel-magnify/cfg-valid" || result.CommitSHA != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("webhook result did not map source: %+v", result)
+	}
+}
+
+func TestGitLabWebhookAcceptsTokenAndStoresMappedPathRefCommit(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	resetGitOpsProviderForTest(t, nil)
+	setGitOpsWebhookSecretForTest(t, "gitlab", "top-secret")
+	t.Setenv("GITOPS_GITLAB_TOKEN", "provider-token")
+	body := `{"object_kind":"merge_request","object_attributes":{"action":"update","source_branch":"otel-magnify/cfg-valid","description":"Update config\n\n<!-- otel-magnify: path=otel/collector.yaml -->","last_commit":{"id":"fedcba9876543210fedcba9876543210fedcba98"}}}`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/gitops/webhooks/gitlab", strings.NewReader(body))
+	req.Header.Set("X-Gitlab-Event", "Merge Request Hook")
+	req.Header.Set("X-Gitlab-Token", "top-secret")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	stored, err := db.GetLatestGitOpsValidationStatus("gitlab", "otel/collector.yaml", "fedcba9876543210fedcba9876543210fedcba98")
+	if err != nil {
+		t.Fatalf("GetLatestGitOpsValidationStatus: %v", err)
+	}
+	if stored == nil || stored.Status != "received" || stored.SourceRef != "otel-magnify/cfg-valid" {
+		t.Fatalf("stored webhook validation status = %+v", stored)
+	}
+}
+
 func TestValidationCommentBodyRedactsSecretsAndIncludesProvenance(t *testing.T) {
 	result := gitOpsValidationCommentResult{
 		Valid:    false,
@@ -190,6 +251,39 @@ func TestValidationCommentBodyRedactsSecretsAndIncludesProvenance(t *testing.T) 
 		if !strings.Contains(body, required) {
 			t.Fatalf("comment missing %q: %s", required, body)
 		}
+	}
+}
+
+func TestGitHubValidationCommentUpdatesExistingBotComment(t *testing.T) {
+	var calls []string
+	var updatedBody string
+	provider := &githubGitOpsProvider{token: "token", client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "GET /repos/acme/collectors/issues/42/comments":
+			return jsonResponse(http.StatusOK, `[{"id":123,"html_url":"https://github.com/acme/collectors/pull/42#issuecomment-123","body":"old\n<!-- otel-magnify: validation-comment -->"}]`), nil
+		case "PATCH /repos/acme/collectors/issues/comments/123":
+			body, _ := io.ReadAll(r.Body)
+			updatedBody = string(body)
+			return jsonResponse(http.StatusOK, `{"id":123,"html_url":"https://github.com/acme/collectors/pull/42#issuecomment-123"}`), nil
+		default:
+			return jsonResponse(http.StatusNotFound, `{}`), nil
+		}
+	})}}
+
+	result, err := provider.UpsertValidationComment(httptest.NewRequest(http.MethodPost, "/", nil), gitOpsValidationCommentRequest{Provider: "github", Repository: "acme/collectors", Number: 42, Body: "new validation body"})
+	if err != nil {
+		t.Fatalf("%v; calls=%v", err, calls)
+	}
+
+	if result.CommentID != "123" || result.URL == "" {
+		t.Fatalf("unexpected comment result: %+v", result)
+	}
+	if strings.Join(calls, ",") != "GET /repos/acme/collectors/issues/42/comments,PATCH /repos/acme/collectors/issues/comments/123" {
+		t.Fatalf("unexpected provider calls: %v", calls)
+	}
+	if !strings.Contains(updatedBody, "new validation body") || !strings.Contains(updatedBody, "otel-magnify: validation-comment") {
+		t.Fatalf("updated body missing validation content/marker: %s", updatedBody)
 	}
 }
 
@@ -216,5 +310,13 @@ func assertJSONErrorContains(t *testing.T, body, want string) {
 	t.Helper()
 	if !strings.Contains(body, want) {
 		t.Fatalf("body %q does not contain %q", body, want)
+	}
+}
+
+func jsonResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
 	}
 }
