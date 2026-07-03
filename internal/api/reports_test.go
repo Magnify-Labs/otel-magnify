@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -189,7 +190,7 @@ func TestConfigSafetyReportJSONIncludesEvidenceAndUnsignedDigest(t *testing.T) {
 	db, router, fake, recAudit := newAuditTestAPI(t)
 	seedReportWorkload(t, db, fake)
 
-	req := authedRequest(t, http.MethodGet, "/api/reports/config-safety?format=json&recommended_version=1.0.0")
+	req := authedRequest(t, http.MethodGet, "/api/reports/config-safety?format=json&workload_id=w-report&recommended_version=1.0.0")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -242,7 +243,7 @@ func TestConfigSafetyReportExportsMarkdownCSVAndPDF(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.format, func(t *testing.T) {
-			req := authedRequest(t, http.MethodGet, "/api/reports/config-safety?format="+tc.format+"&recommended_version=1.0.0")
+			req := authedRequest(t, http.MethodGet, "/api/reports/config-safety?format="+tc.format+"&workload_id=w-report&recommended_version=1.0.0")
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
@@ -255,5 +256,42 @@ func TestConfigSafetyReportExportsMarkdownCSVAndPDF(t *testing.T) {
 				t.Fatalf("body missing %q: %s", tc.want, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestConfigSafetyReportRequiresExplicitScope(t *testing.T) {
+	_, router, _, _ := newAuditTestAPI(t)
+	req := authedRequest(t, http.MethodGet, "/api/reports/config-safety?format=json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid scope") {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConfigSafetyReportCSVNeutralizesSpreadsheetFormulaCells(t *testing.T) {
+	db, router, fake, _ := newAuditTestAPI(t)
+	seedReportWorkload(t, db, fake)
+	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	if err := db.UpsertWorkload(models.Workload{ID: "w-report", DisplayName: "=HYPERLINK(\"https://evil.example\")", Type: "collector", Version: "0.99.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "checkout"}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true}); err != nil {
+		t.Fatalf("Upsert formula workload: %v", err)
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/reports/config-safety?format=csv&workload_id=w-report&recommended_version=1.0.0")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	rows, err := csv.NewReader(strings.NewReader(rec.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("parse CSV: %v", err)
+	}
+	for _, row := range rows[1:] {
+		for _, cell := range row {
+			if strings.HasPrefix(cell, "=HYPERLINK") {
+				t.Fatalf("formula cell was not neutralized: row=%q", row)
+			}
+		}
 	}
 }
