@@ -166,6 +166,48 @@ type Config struct {
 	ImportedAt  *time.Time       `json:"imported_at,omitempty"`
 }
 
+// GitOpsExportResult is the provider-neutral response returned after exporting
+// a validated config to a provider pull/merge request.
+type GitOpsExportResult struct {
+	Provider  string `json:"provider"`
+	URL       string `json:"url"`
+	Number    int    `json:"number"`
+	Branch    string `json:"branch"`
+	CommitSHA string `json:"commit_sha"`
+}
+
+// GitOpsCommentResult describes the provider validation comment created or
+// updated for a pull/merge request.
+type GitOpsCommentResult struct {
+	Provider  string `json:"provider"`
+	URL       string `json:"url"`
+	CommentID string `json:"comment_id"`
+}
+
+// GitOpsWebhookResult is a normalized webhook ingestion result for PR/MR events.
+type GitOpsWebhookResult struct {
+	Provider         string `json:"provider"`
+	Event            string `json:"event"`
+	Action           string `json:"action"`
+	ValidationStatus string `json:"validation_status"`
+	SourcePath       string `json:"source_path,omitempty"`
+	SourceRef        string `json:"source_ref,omitempty"`
+	CommitSHA        string `json:"commit_sha,omitempty"`
+}
+
+// GitOpsValidationStatus persists the latest validation signal observed from a
+// provider PR/MR webhook for a source path/ref/commit.
+type GitOpsValidationStatus struct {
+	Provider   string    `json:"provider"`
+	Event      string    `json:"event"`
+	Action     string    `json:"action"`
+	Status     string    `json:"status"`
+	SourcePath string    `json:"source_path"`
+	SourceRef  string    `json:"source_ref"`
+	CommitSHA  string    `json:"commit_sha"`
+	ObservedAt time.Time `json:"observed_at"`
+}
+
 const (
 	// ConfigSourceManual marks configs created directly through the API/UI.
 	ConfigSourceManual = "manual"
