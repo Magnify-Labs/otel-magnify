@@ -12,7 +12,7 @@ CREATE TABLE gitops_validation_statuses (
     observed_at TIMESTAMP NOT NULL
 );
 CREATE INDEX idx_gitops_validation_statuses_lookup
-    ON gitops_validation_statuses(provider, source_path, commit_sha, observed_at DESC);
+    ON gitops_validation_statuses(provider, source_path, source_ref, commit_sha, observed_at DESC);
 -- +goose StatementEnd
 
 -- +goose Down

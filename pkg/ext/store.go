@@ -40,7 +40,7 @@ type Store interface {
 	GetConfig(id string) (models.Config, error)
 	ListConfigs() ([]models.Config, error)
 	RecordGitOpsValidationStatus(status models.GitOpsValidationStatus) error
-	GetLatestGitOpsValidationStatus(provider, sourcePath, commitSHA string) (*models.GitOpsValidationStatus, error)
+	GetLatestGitOpsValidationStatus(provider, sourcePath, sourceRef, commitSHA string) (*models.GitOpsValidationStatus, error)
 
 	RecordWorkloadConfig(wc models.WorkloadConfig) error
 	UpdateWorkloadConfigStatus(workloadID, configID, status, errorMessage string) error
