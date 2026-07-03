@@ -315,6 +315,36 @@ func TestImportConfigFromGit_RejectsUnsafeURLBeforeFetch(t *testing.T) {
 	}
 }
 
+func TestImportConfigFromGit_RedactsFetchFailure(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	old := gitImportConfig
+	oldAllowPrivate := allowPrivateGitURLs
+	allowPrivateGitURLs = true
+	gitImportConfig = func(context.Context, gitImportRequest) (gitImportResult, error) {
+		return gitImportResult{}, errors.New("git fetch failed for http://token:secret@git.example.com/repo.git with access_token=query-secret")
+	}
+	t.Cleanup(func() {
+		gitImportConfig = old
+		allowPrivateGitURLs = oldAllowPrivate
+	})
+
+	body := `{"name":"unsafe","git_url":"http://token:secret@git.example.com/repo.git","git_ref":"main","git_path":"otel.yaml"}`
+	req := authedRequest(t, "POST", "/api/configs/import/git")
+	req.Body = httptest.NewRequest("POST", "/", bytes.NewBufferString(body)).Body
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"token:secret", "access_token", "query-secret"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("import failure leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
 func TestPreviewConfigPolicy_ReturnsStableFindingsContract(t *testing.T) {
 	_, router, _ := newTestAPI(t)
 	body := `{

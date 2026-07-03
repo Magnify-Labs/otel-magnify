@@ -85,7 +85,7 @@ var (
 	gitOpsWebhookSecretOverrides = map[string]string{}
 	gitOpsHTTPClient             = &http.Client{Timeout: 10 * time.Second}
 	sensitiveCommentValueRegexp  = regexp.MustCompile(`(?i)(secret[_-]?token|access[_-]?token|private[_-]?token|authorization|bearer|password|api[_-]?key|client[_-]?secret)([=: ]+)([^\s,;&]+)`)
-	credentialURLUserinfoRegexp  = regexp.MustCompile(`https://[^/@\s]+@`)
+	credentialURLUserinfoRegexp  = regexp.MustCompile(`https?://[^/@\s]+@`)
 	gitOpsSourcePathMarkerRegexp = regexp.MustCompile(`(?i)otel-magnify:\s*path=([^\s<]+)`)
 )
 
