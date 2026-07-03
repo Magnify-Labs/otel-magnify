@@ -331,7 +331,9 @@ test('community features keep shared config primitives but disable paid safety c
   await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
   await expect(page.getByText('Guided rollback is not enabled for this workspace.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Rollback' }).first()).toBeDisabled()
-  await expect(page.getByRole('button', { name: /Mark as known-good|Clear known-good/ }).first()).toBeDisabled()
+  await expect(
+    page.getByRole('button', { name: /Mark as known-good|Clear known-good/ }).first(),
+  ).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Start canary' })).toBeDisabled()
   await expect(page.locator('.push-scope-panel')).toContainText('Scoped push is not enabled')
   expect(knownGoodHit).toBe(false)
@@ -405,6 +407,18 @@ test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page
       body: JSON.stringify(HIGH_OTEL_DIFF),
     }),
   )
+  await page.route('**/api/configs/policy/preview', async (route, request) => {
+    expect(request.postDataJSON()).toMatchObject({
+      current_yaml: YAML_OLD,
+      candidate_yaml: YAML_NEW,
+      target: { workload_id: WORKLOAD_ID },
+    })
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(BLOCKING_POLICY),
+    })
+  })
 
   await gotoWorkloadDetail(page)
   await page.getByRole('button', { name: 'Compare revisions' }).click()
@@ -1111,7 +1125,9 @@ test('known-good panel renders config states and defaults rollback to Last known
     .locator('.history-table tbody tr')
     .filter({ hasText: HASH_OLD.substring(0, 8) })
   await expect(knownGoodRow.getByText('Previous')).toBeVisible()
-  await expect(knownGoodRow.locator('.history-state-badge', { hasText: 'Last known-good' })).toBeVisible()
+  await expect(
+    knownGoodRow.locator('.history-state-badge', { hasText: 'Last known-good' }),
+  ).toBeVisible()
 
   await page.getByRole('button', { name: 'Rollback to Last known-good' }).click()
   const dialog = page.getByRole('dialog', { name: 'Guided rollback' })
