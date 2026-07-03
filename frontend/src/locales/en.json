@@ -98,6 +98,54 @@
       "last_7d_pushes": "Last 7d pushes",
       "cta": "Review supervised workloads",
       "drift_cta": "Open fleet drift dashboard",
+      "evidence": {
+        "title": "Evidence pack",
+        "hint": "Preview redacted Config Safety evidence and export it for audits.",
+        "loading": "Loading evidence report…",
+        "error": "Unable to load evidence report.",
+        "empty": "No Config Safety evidence is available yet.",
+        "exports_aria": "Evidence report exports",
+        "exporting": "Exporting…",
+        "export_ready": "Export ready",
+        "export_error": "Failed to export evidence report.",
+        "generated_at": "Generated {{date}}",
+        "summary_aria": "Evidence report summary",
+        "redacted_content": "Preview uses redacted backend evidence only; raw config content is not included.",
+        "no_config_changes": "No config changes in this report.",
+        "no_validation_failures": "No failed validations in this report.",
+        "no_rollbacks": "No rollbacks in this report.",
+        "no_drift": "No drift findings in this report.",
+        "no_outdated_collectors": "No outdated collectors in this report.",
+        "no_audit_trail": "No audit trail entries in this report.",
+        "export": {
+          "markdown": "Export Markdown",
+          "csv": "Export CSV",
+          "pdf": "Export PDF"
+        },
+        "summary": {
+          "config_changes": "Config changes",
+          "validation_failures": "Failed validations",
+          "rollbacks": "Rollbacks",
+          "drifted_collectors": "Drifted collectors",
+          "outdated_collectors": "Outdated collectors",
+          "audit_events": "Audit events"
+        },
+        "sections": {
+          "config_changes": "Config changes",
+          "validation_failures": "Failed validations",
+          "rollbacks": "Rollbacks",
+          "drift": "Drift findings",
+          "outdated_collectors": "Outdated collectors",
+          "audit_trail": "Audit trail"
+        },
+        "signature": {
+          "title": "Enterprise signed audit metadata",
+          "algorithm": "Algorithm",
+          "key_id": "Key ID",
+          "digest": "Payload digest",
+          "hint": "Verification"
+        }
+      },
       "status": {
         "ready": "Validation, diff, safe push and rollback are available on workload detail pages.",
         "empty": "No supervised collectors report remote config yet.",

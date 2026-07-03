@@ -269,6 +269,186 @@
   padding: 0.5rem 0;
 }
 
+/* ── Config Safety evidence ── */
+.config-safety-status-panel .config-evidence-panel {
+  margin-top: 0.85rem;
+  padding: 0.85rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.config-evidence-head {
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.config-evidence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.config-evidence-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.config-evidence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.config-evidence-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .config-evidence-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.config-evidence-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.config-evidence-summary-card span {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.config-evidence-summary-card strong {
+  font-family: var(--mono);
+  color: var(--text-hi);
+}
+
+.config-evidence-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.config-evidence-preview-section h3,
+.config-evidence-signature h3 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text-hi);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.config-evidence-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.config-evidence-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.4fr);
+  gap: 0.35rem 0.65rem;
+  padding: 0.55rem;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+
+.config-evidence-row strong {
+  color: var(--text-hi);
+}
+
+.config-evidence-row span,
+.config-evidence-row em {
+  color: var(--text-muted);
+}
+
+.config-evidence-row em {
+  grid-column: 1 / -1;
+  font-style: normal;
+  font-size: 0.72rem;
+}
+
+.config-evidence-row-danger {
+  border-left-color: var(--red);
+}
+
+.config-evidence-row-warning {
+  border-left-color: var(--amber);
+}
+
+.config-evidence-muted,
+.config-evidence-error,
+.config-evidence-success {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.config-evidence-muted {
+  color: var(--text-muted);
+}
+
+.config-evidence-error {
+  color: var(--red);
+}
+
+.config-evidence-success {
+  color: var(--green);
+}
+
+.config-evidence-signature {
+  padding: 0.65rem;
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.config-evidence-signature dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0.55rem 0 0;
+}
+
+.config-evidence-signature div {
+  min-width: 0;
+}
+
+.config-evidence-signature dt {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.config-evidence-signature dd {
+  margin: 0.15rem 0 0;
+  color: var(--text-hi);
+  overflow-wrap: anywhere;
+}
+
 /* ── Fleet version intelligence ── */
 .version-intelligence-panel .panel-head {
   align-items: flex-start;
