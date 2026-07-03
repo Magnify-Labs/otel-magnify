@@ -269,10 +269,11 @@ func (s *Server) onMessage(_ context.Context, conn types.Connection, msg *protob
 		prevVersion, _ := s.registry.PreviousVersion(uid)
 
 		ins := Instance{
-			PodName:             attrs["k8s.pod.name"],
-			Version:             version,
-			Healthy:             true,
-			AcceptsRemoteConfig: msg.Capabilities&acceptsRemoteConfigCap != 0,
+			PodName:                     attrs["k8s.pod.name"],
+			Version:                     version,
+			Healthy:                     true,
+			AcceptsRemoteConfig:         msg.Capabilities&acceptsRemoteConfigCap != 0,
+			RemoteConfigCapabilityKnown: true,
 		}
 		if msg.Health != nil && !msg.Health.Healthy {
 			ins.Healthy = false

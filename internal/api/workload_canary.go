@@ -347,6 +347,12 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 	now := time.Now().UTC()
 	for _, inst := range selected {
 		t := models.CanaryTarget{InstanceUID: inst.InstanceUID, PodName: inst.PodName, Status: models.InstanceStatusSent, UpdatedAt: now}
+		if instanceRejectsRemoteConfig(inst) {
+			t.StopReason = "remote_config_unsupported"
+			reasons = appendUnique(reasons, t.StopReason)
+			errs = append(errs, "instance does not accept remote config: "+inst.InstanceUID)
+			errorCodes = appendUnique(errorCodes, "instance_remote_config_unsupported")
+		}
 		if !inst.Healthy {
 			t.StopReason = models.CanaryStopCollectorDegraded
 			reasons = appendUnique(reasons, t.StopReason)
@@ -418,7 +424,7 @@ func (a *API) rollbackConfigForCanary(workloadID, excludeHash string) (*models.W
 func eligibleRemainingTargets(instances []opamp.Instance, selected map[string]bool) []opamp.Instance {
 	var out []opamp.Instance
 	for _, inst := range instances {
-		if !selected[inst.InstanceUID] && inst.Healthy && !inst.LastMessageAt.IsZero() && time.Since(inst.LastMessageAt) <= canaryHeartbeatFreshness {
+		if !selected[inst.InstanceUID] && !instanceRejectsRemoteConfig(inst) && inst.Healthy && !inst.LastMessageAt.IsZero() && time.Since(inst.LastMessageAt) <= canaryHeartbeatFreshness {
 			out = append(out, inst)
 		}
 	}
@@ -426,9 +432,13 @@ func eligibleRemainingTargets(instances []opamp.Instance, selected map[string]bo
 	return out
 }
 
+func instanceRejectsRemoteConfig(inst opamp.Instance) bool {
+	return inst.RemoteConfigCapabilityKnown && !inst.AcceptsRemoteConfig
+}
+
 func canaryHTTPStatus(result models.CanaryValidationResult) int {
 	for _, code := range result.ErrorCodes {
-		if code == "instance_target_not_connected" || code == "instance_target_cross_workload" || code == "remote_config_unsupported" {
+		if code == "instance_target_not_connected" || code == "instance_target_cross_workload" || code == "remote_config_unsupported" || code == "instance_remote_config_unsupported" {
 			return http.StatusConflict
 		}
 	}

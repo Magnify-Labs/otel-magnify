@@ -538,6 +538,10 @@ func TestOnMessage_AcceptsRemoteConfigCapabilityPersisted(t *testing.T) {
 	if !wl.AcceptsRemoteConfig {
 		t.Fatalf("after full-status: accepts_remote_config=false, want true")
 	}
+	instances := s.Instances(wlID)
+	if len(instances) != 1 || !instances[0].RemoteConfigCapabilityKnown {
+		t.Fatalf("instance capability known = %v want true", instances)
+	}
 
 	// Heartbeat (no AgentDescription): must preserve the previous value.
 	hb := &protobufs.AgentToServer{InstanceUid: uid}

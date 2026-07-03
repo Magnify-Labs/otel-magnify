@@ -249,6 +249,33 @@ func TestCanaryStartRejectsReadOnlyWorkloadWithMachineReadableCode(t *testing.T)
 	}
 }
 
+func TestCanaryStartRejectsReadOnlyInstanceBeforePush(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	fake.instances["wl-canary"] = []opamp.Instance{
+		{InstanceUID: "inst-readonly", PodName: "pod-readonly", Healthy: true, AcceptsRemoteConfig: false, RemoteConfigCapabilityKnown: true, LastMessageAt: time.Now().UTC()},
+		{InstanceUID: "inst-eligible", PodName: "pod-eligible", Healthy: true, AcceptsRemoteConfig: true, LastMessageAt: time.Now().UTC()},
+	}
+
+	rec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one","instance_uid":"inst-readonly"}}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d want 409 body=%s", rec.Code, rec.Body.String())
+	}
+	var got models.CanaryValidationResult
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !containsCanaryString(got.ErrorCodes, "instance_remote_config_unsupported") {
+		t.Fatalf("error_codes=%v want instance_remote_config_unsupported; body=%s", got.ErrorCodes, rec.Body.String())
+	}
+	if len(got.Targets) != 1 || got.Targets[0].InstanceUID != "inst-readonly" || got.Targets[0].StopReason != "remote_config_unsupported" {
+		t.Fatalf("targets=%+v want read-only target with remote_config_unsupported", got.Targets)
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("read-only instance pushed unexpectedly: %+v", fake.pushed)
+	}
+}
+
 func TestCanaryStartReturnsSanitizedOpAMPPushFailure(t *testing.T) {
 	db, router, fake := newTestAPI(t)
 	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
