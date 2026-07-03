@@ -207,6 +207,7 @@ Once connected, agents are grouped into workloads and appear automatically in th
 | `GET` | `/api/workloads` | Yes | List all workloads |
 | `GET` | `/api/workloads/:id` | Yes | Get workload details |
 | `GET` | `/api/workloads/:id/instances` | Yes | Live OpAMP-connected pods for the workload |
+| `GET` | `/api/workloads/:id/topology` | Yes | Live instances plus workload topology/heterogeneity summary |
 | `GET` | `/api/workloads/:id/events` | Yes | Append-only pod-lifecycle log (Activity tab) |
 | `GET` | `/api/workloads/:id/configs` | Yes | Workload config push history |
 | `POST` | `/api/workloads/:id/config` | Yes | Push config to workload |

@@ -10,6 +10,7 @@ All endpoints return JSON. Most expect JSON request bodies; the two config endpo
 | `GET` | `/api/workloads` | Yes | List all workloads. |
 | `GET` | `/api/workloads/{id}` | Yes | Get workload details. |
 | `GET` | `/api/workloads/{id}/instances` | Yes | Live OpAMP-connected pods for the workload (in-memory, not persisted). |
+| `GET` | `/api/workloads/{id}/topology` | Yes | Live instance topology plus workload-level heterogeneity summary. |
 | `GET` | `/api/workloads/{id}/events` | Yes | Append-only pod-lifecycle log (connect / disconnect / version change). |
 | `GET` | `/api/workloads/{id}/events/stats` | Yes | Event counts for the Activity tab sparkline (takes `?window=`). |
 | `GET` | `/api/workloads/{id}/configs` | Yes | Config push history for the workload. |
@@ -57,7 +58,191 @@ Response:
 
 ### `GET /api/workloads`
 
-Response is an array of workload summaries. The exact fields are defined in `pkg/models/workload.go`. Treat it as the source of truth; do not hand-maintain the shape here — link to the file from the rendered doc instead.
+Response is an array of workload summaries. The exact fields are defined by `models.Workload` in `pkg/models/models.go`. Treat it as the source of truth; do not hand-maintain the shape here — link to the file from the rendered doc instead.
+
+### `GET /api/workloads/{id}/instances`
+
+Returns the live OpAMP-connected instances for a workload as an array. This endpoint is backed by the in-memory OpAMP registry, not the database; after a server restart it is empty until agents reconnect. If the workload has no live instances, the response is the JSON array `[]`, not `null`.
+
+Each item uses `internal/opamp.Instance`:
+
+| Field | Meaning |
+|-------|---------|
+| `instance_uid` | Stable OpAMP instance UID for this live connection. |
+| `pod_name` | Kubernetes pod name when reported; omitted otherwise. |
+| `version` | Collector/agent version when reported; omitted otherwise. |
+| `connected_at` | UTC timestamp for when this instance entered the registry. |
+| `last_message_at` | UTC timestamp for the latest OpAMP message from the instance. |
+| `effective_config_hash` | Hash from the latest reported remote config status; omitted until known. |
+| `healthy` | `true` when the registry considers this instance healthy. Any unhealthy live instance makes the workload aggregate `status` become `degraded`. |
+| `accepts_remote_config` | Whether this instance reports OpAMP remote-config support. |
+| `remote_config_status` | Per-instance `RemoteConfigStatus`; omitted until the instance reports one. Status values currently used here are `applying`, `applied`, and `failed`; error text is sanitized before JSON serialization. |
+
+Compatibility notes:
+
+- Existing clients can keep using `GET /api/workloads/{id}/instances`; its top-level response shape remains an array.
+- The instance objects now include per-instance config fields (`effective_config_hash`, `accepts_remote_config`, and optional `remote_config_status`) in addition to the existing live identity/health fields. Clients should ignore unknown fields for forward compatibility.
+- Consumers that need workload-level rollups should prefer `GET /api/workloads/{id}/topology` instead of recalculating mixed versions, config drift, or remote-config states from this array.
+
+### `GET /api/workloads/{id}/topology`
+
+Returns the same live instance array as `/instances`, wrapped with a versioned schema and a workload-level summary. This is the preferred contract for frontend topology views because it centralizes heterogeneity rules in the backend.
+
+Response fields:
+
+| Field | Meaning |
+|-------|---------|
+| `schema_version` | Contract identifier. Current value: `workload-topology.v1`. |
+| `workload_id` | The workload id from the path. The endpoint currently returns a well-formed empty topology for unknown or disconnected workloads; it does not 404 just because there are no live instances. |
+| `instances` | Live `internal/opamp.Instance[]`; same per-instance shape as `/instances`. Always an array. |
+| `summary.connected_count` | Number of live instances in `instances`. |
+| `summary.healthy_count` / `summary.unhealthy_count` | Health split across live instances. |
+| `summary.drifted_count` | When two or more distinct non-empty `effective_config_hash` values are present, the number of instances not on the majority reported hash. `0` when there are zero or one distinct reported hashes. |
+| `summary.version_diversity` | Sorted unique non-empty versions reported by instances. Always an array. |
+| `summary.config_hash_diversity` | Sorted unique non-empty effective config hashes reported by instances. Always an array. |
+| `summary.remote_config_status_counts` | Object with stable keys: `capable`, `no_status`, `sent`, `applying`, `applied`, `failed`. `capable` counts instances with `accepts_remote_config=true`; the other keys count the latest per-instance remote-config state, with `no_status` used when `remote_config_status` is absent or has an empty `status`. |
+| `summary.heterogeneity` | Object with stable boolean flags: `mixed_versions`, `mixed_effective_config_hashes`, `unhealthy_instances`, `mixed_remote_config_statuses`, `applying_remote_config`, `failed_remote_config`. |
+| `summary.heterogeneity_reasons` | Ordered list of the `true` heterogeneity flags, in backend evaluation order. Always an array. |
+
+Non-empty mixed topology example:
+
+```json
+{
+  "schema_version": "workload-topology.v1",
+  "workload_id": "checkout-collector",
+  "instances": [
+    {
+      "instance_uid": "uid-a",
+      "pod_name": "checkout-collector-7c9d8f6f5f-a",
+      "version": "0.98.0",
+      "connected_at": "2026-07-02T11:57:00Z",
+      "last_message_at": "2026-07-02T12:00:00Z",
+      "effective_config_hash": "hash-a",
+      "healthy": true,
+      "accepts_remote_config": true,
+      "remote_config_status": {
+        "status": "applied",
+        "config_hash": "hash-a",
+        "updated_at": "2026-07-02T12:00:00Z"
+      }
+    },
+    {
+      "instance_uid": "uid-b",
+      "pod_name": "checkout-collector-7c9d8f6f5f-b",
+      "version": "0.99.0",
+      "connected_at": "2026-07-02T11:58:00Z",
+      "last_message_at": "2026-07-02T12:00:00Z",
+      "effective_config_hash": "hash-b",
+      "healthy": false,
+      "accepts_remote_config": true,
+      "remote_config_status": {
+        "status": "failed",
+        "config_hash": "hash-b",
+        "error_message": "Remote config error details redacted",
+        "updated_at": "2026-07-02T12:00:00Z"
+      }
+    },
+    {
+      "instance_uid": "uid-c",
+      "pod_name": "checkout-collector-7c9d8f6f5f-c",
+      "version": "0.99.0",
+      "connected_at": "2026-07-02T11:59:00Z",
+      "last_message_at": "2026-07-02T12:00:00Z",
+      "effective_config_hash": "hash-b",
+      "healthy": true,
+      "accepts_remote_config": true,
+      "remote_config_status": {
+        "status": "applying",
+        "config_hash": "hash-b",
+        "updated_at": "2026-07-02T12:00:00Z"
+      }
+    },
+    {
+      "instance_uid": "uid-d",
+      "pod_name": "checkout-collector-7c9d8f6f5f-d",
+      "version": "0.99.0",
+      "connected_at": "2026-07-02T11:59:30Z",
+      "last_message_at": "2026-07-02T12:00:00Z",
+      "effective_config_hash": "hash-b",
+      "healthy": true,
+      "accepts_remote_config": true
+    }
+  ],
+  "summary": {
+    "connected_count": 4,
+    "healthy_count": 3,
+    "unhealthy_count": 1,
+    "drifted_count": 1,
+    "version_diversity": ["0.98.0", "0.99.0"],
+    "config_hash_diversity": ["hash-a", "hash-b"],
+    "remote_config_status_counts": {
+      "capable": 4,
+      "no_status": 1,
+      "sent": 0,
+      "applying": 1,
+      "applied": 1,
+      "failed": 1
+    },
+    "heterogeneity": {
+      "mixed_versions": true,
+      "mixed_effective_config_hashes": true,
+      "unhealthy_instances": true,
+      "mixed_remote_config_statuses": true,
+      "applying_remote_config": true,
+      "failed_remote_config": true
+    },
+    "heterogeneity_reasons": [
+      "mixed_versions",
+      "mixed_effective_config_hashes",
+      "unhealthy_instances",
+      "mixed_remote_config_statuses",
+      "applying_remote_config",
+      "failed_remote_config"
+    ]
+  }
+}
+```
+
+Empty topology example:
+
+```json
+{
+  "schema_version": "workload-topology.v1",
+  "workload_id": "checkout-collector",
+  "instances": [],
+  "summary": {
+    "connected_count": 0,
+    "healthy_count": 0,
+    "unhealthy_count": 0,
+    "drifted_count": 0,
+    "version_diversity": [],
+    "config_hash_diversity": [],
+    "remote_config_status_counts": {
+      "capable": 0,
+      "no_status": 0,
+      "sent": 0,
+      "applying": 0,
+      "applied": 0,
+      "failed": 0
+    },
+    "heterogeneity": {
+      "mixed_versions": false,
+      "mixed_effective_config_hashes": false,
+      "unhealthy_instances": false,
+      "mixed_remote_config_statuses": false,
+      "applying_remote_config": false,
+      "failed_remote_config": false
+    },
+    "heterogeneity_reasons": []
+  }
+}
+```
+
+Intentional response shape changes introduced for topology work:
+
+- New endpoint: `GET /api/workloads/{id}/topology`.
+- `/topology` returns a wrapper object with `schema_version`, `workload_id`, `instances`, and `summary`; it does not replace the existing `/instances` array contract.
+- The `/instances` item shape now exposes per-instance config status/capability fields so frontend consumers can render each pod's latest remote-config state without relying on workload-level aggregation.
 
 ### `POST /api/workloads/{id}/config`
 

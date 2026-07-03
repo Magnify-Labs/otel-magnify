@@ -143,6 +143,96 @@ func TestOnMessage_RemoteConfigStatusApplied(t *testing.T) {
 	}
 }
 
+func TestOnMessage_RemoteConfigStatusIsStoredOnInstance(t *testing.T) {
+	s, db, _ := newTestServer(t)
+
+	uid := make([]byte, 16)
+	uid[0] = 0xAC
+	uidHex := hex.EncodeToString(uid)
+	wlID := fingerprintUIDHex(uidHex)
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID: wlID, Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+	}); err != nil {
+		t.Fatalf("seed workload: %v", err)
+	}
+
+	s.onMessage(context.TODO(), nil, &protobufs.AgentToServer{
+		InstanceUid: uid,
+		AgentDescription: &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{
+				{Key: "service.name", Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "otelcol-contrib"}}},
+			},
+		},
+	})
+
+	hashBytes, _ := hex.DecodeString("deadbeef")
+	s.onMessage(context.TODO(), nil, &protobufs.AgentToServer{
+		InstanceUid: uid,
+		RemoteConfigStatus: &protobufs.RemoteConfigStatus{
+			LastRemoteConfigHash: hashBytes,
+			Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
+			ErrorMessage:         "bad exporter",
+		},
+	})
+
+	instances := s.Instances(wlID)
+	if len(instances) != 1 || instances[0].RemoteConfigStatus == nil {
+		t.Fatalf("remote config status missing from instance snapshot: %+v", instances)
+	}
+	got := instances[0].RemoteConfigStatus
+	if got.Status != "failed" || got.ConfigHash != "deadbeef" || got.ErrorMessage != models.SanitizeRemoteConfigErrorMessage("bad exporter") || got.UpdatedAt.IsZero() {
+		t.Fatalf("remote config status = %+v", got)
+	}
+}
+
+func TestOnMessage_RemoteConfigStatusApplyingIsStoredOnInstance(t *testing.T) {
+	s, db, _ := newTestServer(t)
+
+	uid := make([]byte, 16)
+	uid[0] = 0xAD
+	uidHex := hex.EncodeToString(uid)
+	wlID := fingerprintUIDHex(uidHex)
+
+	if err := db.UpsertWorkload(models.Workload{
+		ID: wlID, Type: "collector", Status: "connected",
+		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
+	}); err != nil {
+		t.Fatalf("seed workload: %v", err)
+	}
+
+	s.onMessage(context.TODO(), nil, &protobufs.AgentToServer{
+		InstanceUid: uid,
+		AgentDescription: &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{
+				{Key: "service.name", Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "otelcol-contrib"}}},
+			},
+		},
+	})
+
+	hashBytes, _ := hex.DecodeString("cafebabe")
+	s.onMessage(context.TODO(), nil, &protobufs.AgentToServer{
+		InstanceUid: uid,
+		RemoteConfigStatus: &protobufs.RemoteConfigStatus{
+			LastRemoteConfigHash: hashBytes,
+			Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLYING,
+		},
+	})
+
+	instances := s.Instances(wlID)
+	if len(instances) != 1 || instances[0].RemoteConfigStatus == nil {
+		t.Fatalf("remote config status missing from instance snapshot: %+v", instances)
+	}
+	got := instances[0].RemoteConfigStatus
+	if got.Status != "applying" || got.ConfigHash != "cafebabe" || got.UpdatedAt.IsZero() {
+		t.Fatalf("remote config status = %+v", got)
+	}
+	if instances[0].EffectiveConfigHash != "cafebabe" {
+		t.Fatalf("effective_config_hash = %q, want cafebabe", instances[0].EffectiveConfigHash)
+	}
+}
+
 func TestOnMessage_RemoteConfigStatusFailed_AutoRollback(t *testing.T) {
 	s, db, n := newTestServer(t)
 

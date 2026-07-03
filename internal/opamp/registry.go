@@ -3,17 +3,21 @@ package opamp
 import (
 	"sync"
 	"time"
+
+	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
 // Instance is a live pod view held in memory by the OpAMP server.
 type Instance struct {
-	InstanceUID         string    `json:"instance_uid"`
-	PodName             string    `json:"pod_name,omitempty"`
-	Version             string    `json:"version,omitempty"`
-	ConnectedAt         time.Time `json:"connected_at"`
-	LastMessageAt       time.Time `json:"last_message_at"`
-	EffectiveConfigHash string    `json:"effective_config_hash,omitempty"`
-	Healthy             bool      `json:"healthy"`
+	InstanceUID         string                     `json:"instance_uid"`
+	PodName             string                     `json:"pod_name,omitempty"`
+	Version             string                     `json:"version,omitempty"`
+	ConnectedAt         time.Time                  `json:"connected_at"`
+	LastMessageAt       time.Time                  `json:"last_message_at"`
+	EffectiveConfigHash string                     `json:"effective_config_hash,omitempty"`
+	Healthy             bool                       `json:"healthy"`
+	AcceptsRemoteConfig bool                       `json:"accepts_remote_config"`
+	RemoteConfigStatus  *models.RemoteConfigStatus `json:"remote_config_status,omitempty"`
 }
 
 // InstanceRegistry is the in-memory source of truth for "who is currently

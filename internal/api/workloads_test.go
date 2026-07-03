@@ -309,6 +309,274 @@ func TestListWorkloadInstances_EmptyArrayNotNull(t *testing.T) {
 	}
 }
 
+func TestListWorkloadInstances_IncludesPerInstanceConfigStatus(t *testing.T) {
+	_, router, fake := newTestAPI(t)
+	updatedAt := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	fake.instances["w1"] = []opamp.Instance{
+		{
+			InstanceUID: "uid-a", PodName: "pod-a", Version: "0.98.0", Healthy: true,
+			RemoteConfigStatus: &models.RemoteConfigStatus{
+				Status: "failed", ConfigHash: "hash-a", ErrorMessage: "bad exporter", UpdatedAt: updatedAt,
+			},
+		},
+	}
+
+	req := authedRequest(t, "GET", "/api/workloads/w1/instances")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var out []opamp.Instance
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out) != 1 || out[0].RemoteConfigStatus == nil {
+		t.Fatalf("remote_config_status missing: %+v", out)
+	}
+	got := out[0].RemoteConfigStatus
+	if got.Status != "failed" || got.ConfigHash != "hash-a" || got.ErrorMessage != models.SanitizeRemoteConfigErrorMessage("bad exporter") || !got.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("remote_config_status = %+v", got)
+	}
+}
+
+func TestGetWorkloadTopology_SummarizesMixedInstanceState(t *testing.T) {
+	_, router, fake := newTestAPI(t)
+	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	fake.instances["w1"] = []opamp.Instance{
+		{
+			InstanceUID: "uid-a", PodName: "pod-a", Version: "0.98.0", Healthy: true, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-a", LastMessageAt: now,
+			RemoteConfigStatus: &models.RemoteConfigStatus{Status: "applied", ConfigHash: "hash-a", UpdatedAt: now},
+		},
+		{
+			InstanceUID: "uid-b", PodName: "pod-b", Version: "0.99.0", Healthy: false, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-b", LastMessageAt: now,
+			RemoteConfigStatus: &models.RemoteConfigStatus{Status: "failed", ConfigHash: "hash-b", ErrorMessage: "bad exporter", UpdatedAt: now},
+		},
+		{
+			InstanceUID: "uid-c", PodName: "pod-c", Version: "0.99.0", Healthy: true, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-b", LastMessageAt: now,
+			RemoteConfigStatus: &models.RemoteConfigStatus{Status: "applying", ConfigHash: "hash-b", UpdatedAt: now},
+		},
+	}
+
+	req := authedRequest(t, "GET", "/api/workloads/w1/topology")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		WorkloadID string           `json:"workload_id"`
+		Instances  []opamp.Instance `json:"instances"`
+		Summary    struct {
+			ConnectedCount          int             `json:"connected_count"`
+			HealthyCount            int             `json:"healthy_count"`
+			UnhealthyCount          int             `json:"unhealthy_count"`
+			DriftedCount            int             `json:"drifted_count"`
+			VersionDiversity        []string        `json:"version_diversity"`
+			ConfigHashDiversity     []string        `json:"config_hash_diversity"`
+			RemoteConfigStatusCount map[string]int  `json:"remote_config_status_counts"`
+			Heterogeneity           map[string]bool `json:"heterogeneity"`
+			HeterogeneityReasons    []string        `json:"heterogeneity_reasons"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.WorkloadID != "w1" || len(body.Instances) != 3 {
+		t.Fatalf("unexpected topology header: %+v", body)
+	}
+	if body.Summary.ConnectedCount != 3 || body.Summary.HealthyCount != 2 || body.Summary.UnhealthyCount != 1 || body.Summary.DriftedCount != 1 {
+		t.Fatalf("bad counts: %+v", body.Summary)
+	}
+	if got, want := body.Summary.VersionDiversity, []string{"0.98.0", "0.99.0"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("version_diversity = %v, want %v", got, want)
+	}
+	if got, want := body.Summary.ConfigHashDiversity, []string{"hash-a", "hash-b"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("config_hash_diversity = %v, want %v", got, want)
+	}
+	if body.Summary.RemoteConfigStatusCount["applied"] != 1 || body.Summary.RemoteConfigStatusCount["failed"] != 1 || body.Summary.RemoteConfigStatusCount["applying"] != 1 {
+		t.Fatalf("remote_config_status_counts = %+v", body.Summary.RemoteConfigStatusCount)
+	}
+	wantReasons := []string{"mixed_versions", "mixed_effective_config_hashes", "unhealthy_instances", "mixed_remote_config_statuses", "applying_remote_config", "failed_remote_config"}
+	for _, reason := range wantReasons {
+		if !body.Summary.Heterogeneity[reason] {
+			t.Fatalf("heterogeneity[%s] = false; heterogeneity=%+v", reason, body.Summary.Heterogeneity)
+		}
+	}
+	if !stringSlicesEqual(body.Summary.HeterogeneityReasons, wantReasons) {
+		t.Fatalf("heterogeneity reasons=%v, want %v", body.Summary.HeterogeneityReasons, wantReasons)
+	}
+}
+
+func TestGetWorkloadTopology_ContractIncludesSchemaCapabilityCountsAndHeterogeneityFlags(t *testing.T) {
+	_, router, fake := newTestAPI(t)
+	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	fake.instances["w-topology"] = []opamp.Instance{
+		{
+			InstanceUID: "uid-a", PodName: "pod-a", Version: "0.98.0", Healthy: true, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-a", ConnectedAt: now.Add(-3 * time.Minute), LastMessageAt: now,
+			RemoteConfigStatus: &models.RemoteConfigStatus{Status: "applied", ConfigHash: "hash-a", UpdatedAt: now},
+		},
+		{
+			InstanceUID: "uid-b", PodName: "pod-b", Version: "0.99.0", Healthy: false, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-b", ConnectedAt: now.Add(-2 * time.Minute), LastMessageAt: now,
+			RemoteConfigStatus: &models.RemoteConfigStatus{Status: "failed", ConfigHash: "hash-b", ErrorMessage: sensitiveOpAMPErrorFixture, UpdatedAt: now},
+		},
+		{
+			InstanceUID: "uid-c", PodName: "pod-c", Version: "0.99.0", Healthy: true, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-b", ConnectedAt: now.Add(-time.Minute), LastMessageAt: now,
+			RemoteConfigStatus: &models.RemoteConfigStatus{Status: "applying", ConfigHash: "hash-b", UpdatedAt: now},
+		},
+		{
+			InstanceUID: "uid-d", PodName: "pod-d", Version: "0.99.0", Healthy: true, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-b", ConnectedAt: now.Add(-30 * time.Second), LastMessageAt: now,
+		},
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/w-topology/topology")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	assertNoSensitiveRemoteConfigStatusLeak(t, rec.Body.String())
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode topology: %v", err)
+	}
+	if body["schema_version"] != "workload-topology.v1" {
+		t.Fatalf("schema_version = %v, want workload-topology.v1; body=%s", body["schema_version"], rec.Body.String())
+	}
+	instances, ok := body["instances"].([]any)
+	if !ok || len(instances) != 4 {
+		t.Fatalf("instances = %#v", body["instances"])
+	}
+	first := instances[0].(map[string]any)
+	for _, key := range []string{"instance_uid", "pod_name", "version", "connected_at", "last_message_at", "effective_config_hash", "healthy", "accepts_remote_config"} {
+		if _, ok := first[key]; !ok {
+			t.Fatalf("instance missing %q: %+v", key, first)
+		}
+	}
+	summary := body["summary"].(map[string]any)
+	statusCounts := summary["remote_config_status_counts"].(map[string]any)
+	wantStatusCounts := map[string]float64{
+		"capable":   4,
+		"no_status": 1,
+		"sent":      0,
+		"applying":  1,
+		"applied":   1,
+		"failed":    1,
+	}
+	for key, want := range wantStatusCounts {
+		if got := statusCounts[key]; got != want {
+			t.Fatalf("remote_config_status_counts[%s] = %v, want %v; counts=%+v", key, got, want, statusCounts)
+		}
+	}
+	heterogeneity := summary["heterogeneity"].(map[string]any)
+	for _, key := range []string{"mixed_versions", "mixed_effective_config_hashes", "unhealthy_instances", "mixed_remote_config_statuses", "applying_remote_config", "failed_remote_config"} {
+		if heterogeneity[key] != true {
+			t.Fatalf("heterogeneity[%s] = %v, want true; heterogeneity=%+v", key, heterogeneity[key], heterogeneity)
+		}
+	}
+	wantReasons := []string{"mixed_versions", "mixed_effective_config_hashes", "unhealthy_instances", "mixed_remote_config_statuses", "applying_remote_config", "failed_remote_config"}
+	if got := stringSliceFromAny(summary["heterogeneity_reasons"]); !stringSlicesEqual(got, wantReasons) {
+		t.Fatalf("heterogeneity_reasons = %v, want %v", got, wantReasons)
+	}
+}
+
+func TestGetWorkloadTopology_EmptyShapeHasArraysAndObjects(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	req := authedRequest(t, "GET", "/api/workloads/w-empty/topology")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	body := strings.TrimSpace(rec.Body.String())
+	for _, want := range []string{`"instances":[]`, `"version_diversity":[]`, `"config_hash_diversity":[]`, `"remote_config_status_counts":{`, `"heterogeneity_reasons":[]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %s: %s", want, body)
+		}
+	}
+}
+
+func TestGetWorkloadTopology_EmptyContractShapeHasNoNullArraysMapsOrHeterogeneity(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	req := authedRequest(t, http.MethodGet, "/api/workloads/w-empty/topology")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode topology: %v", err)
+	}
+	if body["schema_version"] != "workload-topology.v1" {
+		t.Fatalf("schema_version = %v, want workload-topology.v1; body=%s", body["schema_version"], rec.Body.String())
+	}
+	if instances, ok := body["instances"].([]any); !ok || len(instances) != 0 {
+		t.Fatalf("instances = %#v, want empty array", body["instances"])
+	}
+	summary := body["summary"].(map[string]any)
+	for _, key := range []string{"version_diversity", "config_hash_diversity", "heterogeneity_reasons"} {
+		items, ok := summary[key].([]any)
+		if !ok || len(items) != 0 {
+			t.Fatalf("summary[%s] = %#v, want empty array", key, summary[key])
+		}
+	}
+	for _, key := range []string{"remote_config_status_counts", "heterogeneity"} {
+		value, ok := summary[key].(map[string]any)
+		if !ok {
+			t.Fatalf("summary[%s] = %#v, want object", key, summary[key])
+		}
+		if key == "heterogeneity" {
+			for _, flag := range []string{"mixed_versions", "mixed_effective_config_hashes", "unhealthy_instances", "mixed_remote_config_statuses", "applying_remote_config", "failed_remote_config"} {
+				if value[flag] != false {
+					t.Fatalf("heterogeneity[%s] = %v, want false; heterogeneity=%+v", flag, value[flag], value)
+				}
+			}
+		}
+	}
+}
+
+func stringSliceFromAny(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if !ok {
+			return nil
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // --- Fleet version intelligence ---
 
 func TestFleetVersionIntelligence_EmptyFleet(t *testing.T) {

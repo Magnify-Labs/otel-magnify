@@ -24,6 +24,10 @@ func (s *Server) handleRemoteConfigStatus(workloadID, instanceUID string, rcs *p
 		ErrorMessage: errorMessage,
 		UpdatedAt:    time.Now().UTC(),
 	}
+	s.registry.UpdateInstance(instanceUID, func(i *Instance) {
+		i.EffectiveConfigHash = configHash
+		i.RemoteConfigStatus = &snap
+	})
 
 	if err := s.store.UpdateWorkloadConfigStatus(workloadID, configHash, statusStr, errorMessage); err != nil {
 		log.Printf("update workload_config status %s/%s: %v", shortID(workloadID), shortID(configHash), err)
