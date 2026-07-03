@@ -1,4 +1,4 @@
-import { test, expect, mockMe } from './fixtures'
+import { test, expect, mockFeatures, mockMe } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -213,9 +213,20 @@ function mockConfigsList(page: Page) {
   )
 }
 
-async function gotoWorkloadDetail(page: Page, role: 'editor' | 'viewer' = 'editor') {
+async function gotoWorkloadDetail(
+  page: Page,
+  role: 'editor' | 'viewer' = 'editor',
+  features: Record<string, boolean> = {
+    'config_safety.guided_rollback': true,
+    'config_safety.canary_rollout': true,
+    'config_safety.scoped_push': true,
+    'config_safety.approvals': true,
+    'config_safety.gitops_export': true,
+  },
+) {
   // Seed auth on the app origin through a stable document before hitting the
   // protected route; this keeps the spec independent from login submission.
+  await mockFeatures(page, features)
   await page.route('**/api/auth/methods', (route) =>
     route.fulfill({
       status: 200,
@@ -267,6 +278,34 @@ const BASE_HISTORY = [
     label: 'stable-2026-04',
   },
 ]
+
+test('community features keep shared config primitives but disable paid safety controls', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, BASE_HISTORY)
+  await mockConfigsList(page)
+
+  let knownGoodHit = false
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/known-good`, (route) => {
+    knownGoodHit = true
+    return route.fulfill({ status: 500, body: 'known-good should be feature gated' })
+  })
+
+  await gotoWorkloadDetail(page, 'editor', {})
+
+  await expect(page.getByText('Push history', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Compare revisions' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
+  await expect(page.getByText('Guided rollback is not enabled for this workspace.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Rollback' }).first()).toBeDisabled()
+  await expect(page.getByRole('button', { name: /Mark as known-good|Clear known-good/ }).first()).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Start canary' })).toBeDisabled()
+  await expect(page.locator('.push-scope-panel')).toContainText('Scoped push is not enabled')
+  expect(knownGoodHit).toBe(false)
+})
 
 test('label can be set inline via double-click', async ({ loggedInPage: page }) => {
   await mockWorkload(page)

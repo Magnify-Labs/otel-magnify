@@ -447,7 +447,9 @@
         "errors": {
           "start": "Failed to start canary",
           "action": "Canary action failed"
-        }
+        },
+        "feature_disabled": "Manual canary rollout is not enabled for this workspace.",
+        "feature_loading": "Loading canary rollout entitlement…"
       },
       "application_plan": {
         "title": "Config Safety Plan",
@@ -489,7 +491,9 @@
           "exporting": "Exporting plan…",
           "save_rollout": "Save as rollout",
           "rollout_title": "Persisted rollout storage is not implemented by the backend yet."
-        }
+        },
+        "gitops_export_disabled": "GitOps export is not enabled for this workspace.",
+        "export_loading": "Loading GitOps export entitlement…"
       },
       "apply": {
         "aria": "Apply a saved config",
@@ -601,7 +605,9 @@
         "group": {
           "payments": "Payments collectors",
           "read_only": "Read-only collectors"
-        }
+        },
+        "feature_disabled": "Scoped push is not enabled for this workspace.",
+        "loading": "Loading scoped push entitlement…"
       },
       "recovery": {
         "aria_label": "Configuration recovery states",
@@ -625,7 +631,8 @@
         "previous_fallback": "Rollback will use Previous until a known-good revision is marked.",
         "failed_candidate": "Failed candidate",
         "candidate_failed": "Candidate failed",
-        "known_good_load_error": "Failed to load Last known-good configuration."
+        "known_good_load_error": "Failed to load Last known-good configuration.",
+        "feature_disabled": "Guided rollback is not enabled for this workspace."
       },
       "editor": {
         "validation_request_failed": "Validation request failed",
@@ -776,7 +783,9 @@
           "approved": "Ready to push",
           "pushed": "Pushed",
           "break_glass": "Break-glass pushed"
-        }
+        },
+        "feature_disabled": "Config approvals are not enabled for this workspace.",
+        "loading": "Loading approval entitlement…"
       }
     }
   },
@@ -1042,6 +1051,10 @@
       "ignore_not_implemented": "Ignore persistence is not implemented yet.",
       "remote_config_unsupported": "Remote config is not supported by this collector.",
       "push_pending_too_long": "A config push is already pending too long; review status before retrying."
+    },
+    "disabled": {
+      "title": "Fleet drift dashboard not enabled",
+      "body": "Fleet drift insights are not enabled for this workspace."
     }
   }
 }

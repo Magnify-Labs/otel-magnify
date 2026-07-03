@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { auditAPI, buildAuditEventsCSVUrl, getAPIErrorDetails } from '../api/client'
 import { hasPerm } from '../lib/perm'
 import { useStore } from '../store'
+import { useFeature } from '../hooks/useFeature'
 import type { AuditEventFilters, AuditRecord } from '../types'
 import '../styles/audit.css'
 
@@ -211,7 +212,8 @@ export default function Audit() {
   const { t } = useTranslation()
   const me = useStore((s) => s.me)
   const [searchParams, setSearchParams] = useSearchParams()
-  const canViewAudit = hasPerm(me?.groups, 'audit:view')
+  const { enabled: auditViewerEnabled, isLoading: auditViewerLoading } = useFeature('audit.viewer')
+  const canViewAudit = auditViewerEnabled && hasPerm(me?.groups, 'audit:view')
   const filters = useMemo(() => filtersFromSearch(searchParams), [searchParams])
   const auditFilters = useMemo(() => toAuditFilters(filters), [filters])
   const csvHref = useMemo(() => buildAuditEventsCSVUrl(auditFilters), [auditFilters])
@@ -224,6 +226,13 @@ export default function Audit() {
   })
 
   if (!me) return null
+  if (auditViewerLoading) {
+    return (
+      <section className="panel audit-access-panel">
+        <p className="panel-hint">{t('common.loading')}</p>
+      </section>
+    )
+  }
   if (!canViewAudit) return <AuditAccessDenied />
 
   const applyFilters = (form: AuditFormState) => {

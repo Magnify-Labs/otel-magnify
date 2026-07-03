@@ -1,4 +1,4 @@
-import { test, expect, mockMe } from './fixtures'
+import { test, expect, mockFeatures, mockMe } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -38,6 +38,7 @@ test.describe('Audit viewer', () => {
     loggedInPage: page,
   }) => {
     await routeDashboardNoise(page)
+    await mockFeatures(page, { 'audit.viewer': true })
     await mockMe(page, { groups: [adminGroup] })
 
     const requests: URL[] = []
@@ -121,6 +122,7 @@ test.describe('Audit viewer', () => {
     loggedInPage: page,
   }) => {
     await routeDashboardNoise(page)
+    await mockFeatures(page, { 'audit.viewer': true })
     await mockMe(page, { groups: [viewerGroup] })
 
     let auditHit = false
@@ -142,6 +144,7 @@ test.describe('Audit viewer', () => {
     loggedInPage: page,
   }) => {
     await routeDashboardNoise(page)
+    await mockFeatures(page, { 'audit.viewer': true })
     await mockMe(page, { groups: [adminGroup] })
 
     await page.route('**/api/audit/events?**', (route, request) => {

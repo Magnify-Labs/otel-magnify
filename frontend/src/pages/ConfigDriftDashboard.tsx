@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { configSafetyAPI } from '../api/client'
+import { useFeature } from '../hooks/useFeature'
 import type { ConfigDriftAction, ConfigDriftItem, ConfigDriftSummary } from '../types'
 import '../styles/config-drift.css'
 
@@ -81,11 +82,32 @@ function DriftBadge({ item }: { item: ConfigDriftItem }) {
 
 export default function ConfigDriftDashboard() {
   const { t } = useTranslation()
+  const { enabled: driftDashboardEnabled, isLoading: driftDashboardLoading } = useFeature(
+    'config_safety.drift_dashboard',
+  )
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['config-safety', 'drift'],
     queryFn: configSafetyAPI.drift,
     staleTime: 30_000,
+    enabled: driftDashboardEnabled,
   })
+
+  if (driftDashboardLoading) {
+    return (
+      <section className="panel config-drift-panel">
+        <p className="panel-hint">{t('common.loading')}</p>
+      </section>
+    )
+  }
+
+  if (!driftDashboardEnabled) {
+    return (
+      <section className="panel config-drift-panel">
+        <h1 className="page-title">{t('config_drift.disabled.title')}</h1>
+        <p className="panel-hint">{t('config_drift.disabled.body')}</p>
+      </section>
+    )
+  }
 
   return (
     <div>

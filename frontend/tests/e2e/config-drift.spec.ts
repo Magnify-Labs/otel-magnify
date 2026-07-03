@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, mockFeatures } from './fixtures'
 
 const driftDashboard = {
   generated_at: new Date().toISOString(),
@@ -72,7 +72,8 @@ const driftDashboard = {
 
 test.describe('Config drift dashboard', () => {
   test.beforeEach(async ({ loggedInPage: page }) => {
-    await page.route('**/api/config-safety/drift', (route) =>
+    await mockFeatures(page, { 'config_safety.drift_dashboard': true })
+  await page.route('**/api/config-safety/drift', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',

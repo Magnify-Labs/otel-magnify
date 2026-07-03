@@ -9,6 +9,7 @@ interface Props {
   workloadId: string
   draftYaml: string
   disabled: boolean
+  disabledReason?: string
   canPush: boolean
   safetyPlanReady: boolean
 }
@@ -72,6 +73,7 @@ export default function ManualCanaryPanel({
   workloadId,
   draftYaml,
   disabled,
+  disabledReason,
   canPush,
   safetyPlanReady,
 }: Props) {
@@ -205,11 +207,12 @@ export default function ManualCanaryPanel({
           onClick={() => setOpen((next) => !next)}
           disabled={disabled || !draftYaml || canaryBlocked}
           title={
-            !canPush
+            disabledReason ||
+            (!canPush
               ? t('workloads.config.canary.permission_required')
               : !safetyPlanReady
                 ? t('workloads.config.canary.safety_plan_required')
-                : undefined
+                : undefined)
           }
         >
           {open ? t('workloads.config.canary.close') : t('workloads.config.canary.start')}

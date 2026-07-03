@@ -14,6 +14,7 @@ import ManualCanaryPanel from './ManualCanaryPanel'
 import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
+import { useFeature } from '../../hooks/useFeature'
 import type {
   PushGroup,
   PushGroupSelector,
@@ -124,6 +125,7 @@ interface RecoveryPanelProps {
   knownGoodError?: unknown
   loading: boolean
   canRollback: boolean
+  featureDisabledReason?: string
   onRollback: (target: WorkloadConfig) => void
 }
 
@@ -134,6 +136,7 @@ function ConfigRecoveryPanel({
   knownGoodError,
   loading,
   canRollback,
+  featureDisabledReason,
   onRollback,
 }: RecoveryPanelProps) {
   const { t } = useTranslation()
@@ -167,11 +170,13 @@ function ConfigRecoveryPanel({
     rollbackKind === 'last_known_good'
       ? t('workloads.config.recovery.rollback_last_known_good')
       : t('workloads.config.recovery.rollback_previous')
-  const disableReason = !canRollback
-    ? t('workloads.config.recovery.requires_push_permission')
-    : hasKnownGood && !knownGoodAvailable
-      ? t('workloads.config.recovery.known_good_unavailable')
-      : t('workloads.config.recovery.no_recovery_target')
+  const disableReason = featureDisabledReason
+    ? featureDisabledReason
+    : !canRollback
+      ? t('workloads.config.recovery.requires_push_permission')
+      : hasKnownGood && !knownGoodAvailable
+        ? t('workloads.config.recovery.known_good_unavailable')
+        : t('workloads.config.recovery.no_recovery_target')
 
   return (
     <section
@@ -183,6 +188,7 @@ function ConfigRecoveryPanel({
         <div>
           <p className="section-title">{t('workloads.config.recovery.title')}</p>
           <p className="config-recovery-help">{t('workloads.config.recovery.help')}</p>
+          {featureDisabledReason && <p className="config-recovery-help">{featureDisabledReason}</p>}
         </div>
         <button
           className="btn btn-primary"
@@ -272,11 +278,13 @@ function ConfigApplicationPlanPanel({
   plan,
   isExporting,
   exportStatus,
+  exportDisabledReason,
   onExport,
 }: {
   plan: ConfigApplicationPlan
   isExporting: boolean
   exportStatus: PlanExportStatus
+  exportDisabledReason?: string
   onExport: () => void
 }) {
   const { t } = useTranslation()
@@ -415,7 +423,8 @@ function ConfigApplicationPlanPanel({
         <button
           className="btn"
           onClick={onExport}
-          disabled={isExporting}
+          disabled={isExporting || !!exportDisabledReason}
+          title={exportDisabledReason}
           aria-describedby="config-plan-export-status"
         >
           {isExporting
@@ -434,9 +443,11 @@ function ConfigApplicationPlanPanel({
             ? t('workloads.config.application_plan.export_ready')
             : exportStatus === 'error'
               ? t('workloads.config.application_plan.export_error')
-              : hasBackendExport
-                ? t('workloads.config.application_plan.rollout_not_persisted')
-                : t('workloads.config.application_plan.export_fallback')}
+              : exportDisabledReason
+                ? exportDisabledReason
+                : hasBackendExport
+                  ? t('workloads.config.application_plan.rollout_not_persisted')
+                  : t('workloads.config.application_plan.export_fallback')}
         </span>
       </div>
     </section>
@@ -449,6 +460,20 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const rollback = useStore((s) => s.lastRollback[workload.id])
   const clearRollback = useStore((s) => s.clearAutoRollback)
   const me = useStore((s) => s.me)
+  const { enabled: guidedRollbackEnabled, isLoading: guidedRollbackLoading } = useFeature(
+    'config_safety.guided_rollback',
+  )
+  const { enabled: canaryEnabled, isLoading: canaryLoading } = useFeature(
+    'config_safety.canary_rollout',
+  )
+  const { enabled: scopedPushEnabled, isLoading: scopedPushLoading } = useFeature(
+    'config_safety.scoped_push',
+  )
+  const { enabled: approvalsEnabled, isLoading: approvalsLoading } =
+    useFeature('config_safety.approvals')
+  const { enabled: gitOpsExportEnabled, isLoading: gitOpsExportLoading } = useFeature(
+    'config_safety.gitops_export',
+  )
 
   const [editMode, setEditMode] = useState(false)
   const [tab, setTab] = useState<Tab>('edit')
@@ -515,14 +540,14 @@ export default function WorkloadConfigSection({ workload }: Props) {
   } = useQuery({
     queryKey: ['workload-known-good', workload.id],
     queryFn: () => workloadsAPI.getKnownGood(workload.id),
-    enabled: workload.type === 'collector',
+    enabled: workload.type === 'collector' && guidedRollbackEnabled,
     retry: false,
   })
 
   const { data: approvalRequests = [] } = useQuery({
     queryKey: ['workload-config-approvals', workload.id],
     queryFn: () => workloadsAPI.listConfigApprovals(workload.id),
-    enabled: workload.type === 'collector' && editMode,
+    enabled: workload.type === 'collector' && editMode && approvalsEnabled,
     retry: false,
   })
 
@@ -789,8 +814,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
   }
 
   function updateScopeMode(next: PushScopeMode) {
-    if (!hasPushPermission) {
-      setPushError(t('workloads.config.permission.push_blocked'))
+    if (scopeDisabled) {
+      setPushError(scopedPushDisabledReason || t('workloads.config.permission.push_blocked'))
       return
     }
     setScopeMode(next)
@@ -799,8 +824,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
   }
 
   function updateDynamicSelector(field: keyof DynamicSelectorState, value: string) {
-    if (!hasPushPermission) {
-      setPushError(t('workloads.config.permission.push_blocked'))
+    if (scopeDisabled) {
+      setPushError(scopedPushDisabledReason || t('workloads.config.permission.push_blocked'))
       return
     }
     setDynamicSelector((current) => ({ ...current, [field]: value }))
@@ -887,6 +912,31 @@ export default function WorkloadConfigSection({ workload }: Props) {
 
   const hasPushPermission = hasPerm(me?.groups, 'workload:push_config')
   const canValidateConfig = hasPerm(me?.groups, 'workload:validate_config')
+  const guidedRollbackDisabledReason = guidedRollbackLoading
+    ? t('workloads.config.recovery.loading')
+    : !guidedRollbackEnabled
+      ? t('workloads.config.recovery.feature_disabled')
+      : ''
+  const canaryDisabledReason = canaryLoading
+    ? t('workloads.config.canary.feature_loading')
+    : !canaryEnabled
+      ? t('workloads.config.canary.feature_disabled')
+      : ''
+  const scopedPushDisabledReason = scopedPushLoading
+    ? t('workloads.config.scope.loading')
+    : !scopedPushEnabled
+      ? t('workloads.config.scope.feature_disabled')
+      : ''
+  const approvalsDisabledReason = approvalsLoading
+    ? t('workloads.config.approval.loading')
+    : !approvalsEnabled
+      ? t('workloads.config.approval.feature_disabled')
+      : ''
+  const gitOpsExportDisabledReason = gitOpsExportLoading
+    ? t('workloads.config.application_plan.export_loading')
+    : !gitOpsExportEnabled
+      ? t('workloads.config.application_plan.gitops_export_disabled')
+      : ''
   const canGeneratePlan =
     canValidateConfig &&
     !!draftYaml &&
@@ -939,6 +989,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     prodDoubleConfirmed &&
     !pushApprovalMutation.isPending
   const canPreview =
+    scopedPushEnabled &&
     canValidateConfig &&
     hasPushPermission &&
     !!draftYaml &&
@@ -961,23 +1012,25 @@ export default function WorkloadConfigSection({ workload }: Props) {
       : pendingHash
         ? t('workloads.config.scope.disabled.wait_current_validate')
         : ''
-  const previewDisabledReason = !hasPushPermission
-    ? t('workloads.config.permission.push_blocked')
-    : !canValidateConfig
-      ? t('workloads.config.permission.validate_blocked')
-      : !draftYaml
-        ? t('workloads.config.scope.disabled.enter_yaml_preview')
-        : validation === null
-          ? t('workloads.config.scope.disabled.validate_first')
-          : !validation.valid
-            ? t('workloads.config.scope.disabled.fix_validation_preview')
-            : pendingHash
-              ? t('workloads.config.scope.disabled.wait_current_preview')
-              : scopeMode === 'saved' && !selectedPushGroupId
-                ? t('workloads.config.scope.disabled.select_saved_group')
-                : scopeMode === 'dynamic' && !hasDynamicSelector(dynamicSelector)
-                  ? t('workloads.config.scope.disabled.enter_selector')
-                  : ''
+  const previewDisabledReason = scopedPushDisabledReason
+    ? scopedPushDisabledReason
+    : !hasPushPermission
+      ? t('workloads.config.permission.push_blocked')
+      : !canValidateConfig
+        ? t('workloads.config.permission.validate_blocked')
+        : !draftYaml
+          ? t('workloads.config.scope.disabled.enter_yaml_preview')
+          : validation === null
+            ? t('workloads.config.scope.disabled.validate_first')
+            : !validation.valid
+              ? t('workloads.config.scope.disabled.fix_validation_preview')
+              : pendingHash
+                ? t('workloads.config.scope.disabled.wait_current_preview')
+                : scopeMode === 'saved' && !selectedPushGroupId
+                  ? t('workloads.config.scope.disabled.select_saved_group')
+                  : scopeMode === 'dynamic' && !hasDynamicSelector(dynamicSelector)
+                    ? t('workloads.config.scope.disabled.enter_selector')
+                    : ''
   const planDisabledReason =
     validation === null
       ? t('workloads.config.scope.disabled.validate_first')
@@ -989,12 +1042,13 @@ export default function WorkloadConfigSection({ workload }: Props) {
             ? t('workloads.config.permission.validate_blocked')
             : ''
 
-  const canRollback = hasPushPermission
-  const scopePermissionDescription = !hasPushPermission ? 'push-scope-permission-note' : undefined
-  const scopePermissionTitle = !hasPushPermission
-    ? t('workloads.config.permission.push_blocked')
-    : ''
-  const scopeInputReadOnlyProps = !hasPushPermission
+  const canRollback = hasPushPermission && guidedRollbackEnabled
+  const scopeDisabled = !scopedPushEnabled || !hasPushPermission
+  const scopePermissionDescription = scopeDisabled ? 'push-scope-permission-note' : undefined
+  const scopePermissionTitle =
+    scopedPushDisabledReason ||
+    (!hasPushPermission ? t('workloads.config.permission.push_blocked') : '')
+  const scopeInputReadOnlyProps = scopeDisabled
     ? {
         title: scopePermissionTitle,
         'aria-describedby': scopePermissionDescription,
@@ -1007,19 +1061,21 @@ export default function WorkloadConfigSection({ workload }: Props) {
       knownGood={knownGood}
       knownGoodMissing={knownGoodMissing}
       knownGoodError={knownGoodError}
-      loading={historyLoading || knownGoodLoading}
+      loading={historyLoading || (guidedRollbackEnabled && knownGoodLoading)}
       canRollback={canRollback}
+      featureDisabledReason={guidedRollbackDisabledReason}
       onRollback={setDefaultRollbackTarget}
     />
   )
 
-  const defaultRollbackDialog = defaultRollbackTarget ? (
-    <GuidedRollbackDialog
-      workloadId={workload.id}
-      target={defaultRollbackTarget}
-      onClose={() => setDefaultRollbackTarget(null)}
-    />
-  ) : null
+  const defaultRollbackDialog =
+    defaultRollbackTarget && guidedRollbackEnabled ? (
+      <GuidedRollbackDialog
+        workloadId={workload.id}
+        target={defaultRollbackTarget}
+        onClose={() => setDefaultRollbackTarget(null)}
+      />
+    ) : null
 
   const visiblePlan = applicationPlan ?? readOnlyPlan ?? null
   const applicationPlanPanel = visiblePlan ? (
@@ -1027,6 +1083,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       plan={visiblePlan}
       isExporting={exportPlanMutation.isPending}
       exportStatus={planExportStatus}
+      exportDisabledReason={gitOpsExportDisabledReason}
       onExport={() => exportApplicationPlan(visiblePlan)}
     />
   ) : readOnlyPlanLoading ? (
@@ -1035,8 +1092,15 @@ export default function WorkloadConfigSection({ workload }: Props) {
     <div className="error-text">{t('workloads.config.editor.plan_load_failed')}</div>
   ) : null
 
+  const approvalUnavailablePanel =
+    hasPushPermission && !approvalsEnabled && editMode && applicationPlan ? (
+      <section className="config-approval-panel" aria-label={t('workloads.config.approval.title')}>
+        <p>{approvalsDisabledReason}</p>
+      </section>
+    ) : null
+
   const approvalPanel =
-    hasPushPermission && editMode && applicationPlan ? (
+    hasPushPermission && approvalsEnabled && editMode && applicationPlan ? (
       <section
         className={`config-approval-panel ${breakGlass ? 'config-approval-panel-break-glass' : ''}`}
         aria-labelledby="config-approval-title"
@@ -1296,13 +1360,14 @@ export default function WorkloadConfigSection({ workload }: Props) {
       <ManualCanaryPanel
         workloadId={workload.id}
         draftYaml={draftYaml}
-        disabled={!!pendingHash || pushMutation.isPending}
-        canPush={hasPushPermission}
+        disabled={!!pendingHash || pushMutation.isPending || !canaryEnabled}
+        disabledReason={canaryDisabledReason}
+        canPush={hasPushPermission && canaryEnabled}
         safetyPlanReady={canPush}
       />
 
       <section
-        className={`push-scope-panel ${!hasPushPermission ? 'push-scope-panel-readonly' : ''}`}
+        className={`push-scope-panel ${scopeDisabled ? 'push-scope-panel-readonly' : ''}`}
         aria-labelledby="push-scope-title"
         aria-describedby={scopePermissionDescription}
       >
@@ -1325,7 +1390,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               className="filter-select push-scope-mode-select"
               value={scopeMode}
               onChange={(e) => updateScopeMode(e.target.value as PushScopeMode)}
-              disabled={!!pendingHash || !hasPushPermission}
+              disabled={!!pendingHash || scopeDisabled}
               title={scopePermissionTitle}
               aria-describedby={scopePermissionDescription}
             >
@@ -1342,11 +1407,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 className="filter-select push-saved-group-select"
                 value={selectedPushGroupId}
                 onChange={(e) => {
-                  if (!hasPushPermission) return
+                  if (scopeDisabled) return
                   setSelectedPushGroupId(e.target.value)
                   setPushPreview(null)
                 }}
-                disabled={!!pendingHash || !hasPushPermission || pushGroupsError}
+                disabled={!!pendingHash || scopeDisabled || pushGroupsError}
                 title={scopePermissionTitle}
                 aria-describedby={scopePermissionDescription}
               >
@@ -1376,7 +1441,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.cluster}
                 onChange={(e) => updateDynamicSelector('cluster', e.target.value)}
-                disabled={!!pendingHash || !hasPushPermission}
+                disabled={!!pendingHash || scopeDisabled}
                 {...scopeInputReadOnlyProps}
               />
             </label>
@@ -1385,7 +1450,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.namespace}
                 onChange={(e) => updateDynamicSelector('namespace', e.target.value)}
-                disabled={!!pendingHash || !hasPushPermission}
+                disabled={!!pendingHash || scopeDisabled}
                 {...scopeInputReadOnlyProps}
               />
             </label>
@@ -1394,7 +1459,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.env}
                 onChange={(e) => updateDynamicSelector('env', e.target.value)}
-                disabled={!!pendingHash || !hasPushPermission}
+                disabled={!!pendingHash || scopeDisabled}
                 {...scopeInputReadOnlyProps}
               />
             </label>
@@ -1403,7 +1468,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.team}
                 onChange={(e) => updateDynamicSelector('team', e.target.value)}
-                disabled={!!pendingHash || !hasPushPermission}
+                disabled={!!pendingHash || scopeDisabled}
                 {...scopeInputReadOnlyProps}
               />
             </label>
@@ -1412,7 +1477,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
               <input
                 value={dynamicSelector.workloadType}
                 onChange={(e) => updateDynamicSelector('workloadType', e.target.value)}
-                disabled={!!pendingHash || !hasPushPermission}
+                disabled={!!pendingHash || scopeDisabled}
                 {...scopeInputReadOnlyProps}
               />
             </label>
@@ -1422,7 +1487,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.version}
                 onChange={(e) => updateDynamicSelector('version', e.target.value)}
                 placeholder={t('workloads.config.scope.placeholder.version')}
-                disabled={!!pendingHash || !hasPushPermission}
+                disabled={!!pendingHash || scopeDisabled}
                 {...scopeInputReadOnlyProps}
               />
             </label>
@@ -1432,7 +1497,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
                 value={dynamicSelector.capabilities}
                 onChange={(e) => updateDynamicSelector('capabilities', e.target.value)}
                 placeholder={t('workloads.config.scope.placeholder.capabilities')}
-                disabled={!!pendingHash || !hasPushPermission}
+                disabled={!!pendingHash || scopeDisabled}
                 {...scopeInputReadOnlyProps}
               />
             </label>
@@ -1497,13 +1562,14 @@ export default function WorkloadConfigSection({ workload }: Props) {
             )}
           </div>
         )}
-        {!hasPushPermission && (
+        {scopeDisabled && (
           <div className="push-scope-permission-note" id="push-scope-permission-note" role="note">
-            {t('workloads.config.permission.push_blocked')}
+            {scopePermissionTitle}
           </div>
         )}
       </section>
       {applicationPlanPanel}
+      {approvalUnavailablePanel}
       {approvalPanel}
 
       {pushError && <div className="error-text error-text-push">{pushError}</div>}
@@ -1524,7 +1590,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
           onClick={previewTargets}
           disabled={!canPreview}
           title={previewDisabledReason}
-          aria-describedby={!hasPushPermission ? 'push-scope-permission-note' : undefined}
+          aria-describedby={scopeDisabled ? 'push-scope-permission-note' : undefined}
         >
           {previewMutation.isPending
             ? t('workloads.config.scope.previewing')

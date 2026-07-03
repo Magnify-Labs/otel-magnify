@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workloadsAPI } from '../../api/client'
 import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
+import { useFeature } from '../../hooks/useFeature'
 import YamlEditor from '../config/YamlEditor'
 import ConfigCompareDialog from './ConfigCompareDialog'
 import GuidedRollbackDialog from './GuidedRollbackDialog'
@@ -30,7 +31,9 @@ function knownGoodDisableReason(
   row: WorkloadConfig,
   canMark: boolean,
   t: ReturnType<typeof useTranslation>['t'],
+  featureDisabledReason = '',
 ) {
+  if (featureDisabledReason) return featureDisabledReason
   if (!canMark) return t('workloads.config.versioning.requires_push_permission')
   if (row.status !== 'applied') return t('workloads.config.versioning.known_good_only_applied')
   if (!hasContent(row)) return t('workloads.config.versioning.content_unavailable')
@@ -41,7 +44,9 @@ function rollbackDisableReason(
   row: WorkloadConfig,
   canRollback: boolean,
   t: ReturnType<typeof useTranslation>['t'],
+  featureDisabledReason = '',
 ) {
+  if (featureDisabledReason) return featureDisabledReason
   if (!canRollback) return t('workloads.config.versioning.requires_push_permission')
   if (row.status !== 'applied') {
     return t('workloads.config.versioning.rollback_only_applied')
@@ -55,6 +60,14 @@ export default function PushHistoryTable({ workloadId }: Props) {
   const queryClient = useQueryClient()
   const me = useStore((s) => s.me)
   const canPushConfig = hasPerm(me?.groups, 'workload:push_config')
+  const { enabled: guidedRollbackEnabled, isLoading: guidedRollbackLoading } = useFeature(
+    'config_safety.guided_rollback',
+  )
+  const guidedRollbackDisabledReason = guidedRollbackLoading
+    ? t('workloads.config.recovery.loading')
+    : !guidedRollbackEnabled
+      ? t('workloads.config.recovery.feature_disabled')
+      : ''
   const [viewing, setViewing] = useState<WorkloadConfig | null>(null)
   const [rollbackTarget, setRollbackTarget] = useState<WorkloadConfig | null>(null)
   const [confirmKnownGood, setConfirmKnownGood] = useState<WorkloadConfig | null>(null)
@@ -70,6 +83,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
   const { data: knownGood, error: knownGoodQueryError } = useQuery({
     queryKey: ['workload-known-good', workloadId],
     queryFn: () => workloadsAPI.getKnownGood(workloadId),
+    enabled: guidedRollbackEnabled,
     retry: false,
   })
 
@@ -216,9 +230,19 @@ export default function PushHistoryTable({ workloadId }: Props) {
           {history.map((row) => {
             const rowKey = `${row.config_id}-${row.applied_at}`
             const isEditing = editingLabel === rowKey
-            const markDisabledReason = knownGoodDisableReason(row, canPushConfig, t)
+            const markDisabledReason = knownGoodDisableReason(
+              row,
+              canPushConfig,
+              t,
+              guidedRollbackDisabledReason,
+            )
             const markDisabled = !!markDisabledReason || markKnownGoodMutation.isPending
-            const rollbackDisabledReason = rollbackDisableReason(row, canPushConfig, t)
+            const rollbackDisabledReason = rollbackDisableReason(
+              row,
+              canPushConfig,
+              t,
+              guidedRollbackDisabledReason,
+            )
             const rollbackDisabled = !!rollbackDisabledReason
             const isKnownGood = row.is_last_known_good || row.config_id === activeKnownGoodHash
             return (
@@ -279,11 +303,16 @@ export default function PushHistoryTable({ workloadId }: Props) {
                     <button
                       className="btn btn-small"
                       onClick={() => clearKnownGoodMutation.mutate()}
-                      disabled={!canPushConfig || clearKnownGoodMutation.isPending}
+                      disabled={
+                        !!guidedRollbackDisabledReason ||
+                        !canPushConfig ||
+                        clearKnownGoodMutation.isPending
+                      }
                       title={
-                        canPushConfig
+                        guidedRollbackDisabledReason ||
+                        (canPushConfig
                           ? t('workloads.config.versioning.clear_known_good')
-                          : t('workloads.config.versioning.requires_push_permission')
+                          : t('workloads.config.versioning.requires_push_permission'))
                       }
                     >
                       {t('workloads.config.versioning.clear_known_good')}
