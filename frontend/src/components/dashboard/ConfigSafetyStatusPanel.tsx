@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { pushesAPI } from '../../api/client'
+import { useFeature } from '../../hooks/useFeature'
 import type { Workload } from '../../types'
 import { isSupervised } from '../../lib/workloadCapabilities'
 
@@ -17,6 +18,7 @@ export default function ConfigSafetyStatusPanel({
   isError = false,
 }: Props) {
   const { t } = useTranslation()
+  const { enabled: driftDashboardEnabled } = useFeature('config_safety.drift_dashboard')
   const { data: activity, isError: activityError } = useQuery({
     queryKey: ['push-activity', '7d'],
     queryFn: () => pushesAPI.activity('7d'),
@@ -81,9 +83,11 @@ export default function ConfigSafetyStatusPanel({
           <Link className="config-safety-status-link" to="/inventory?control=supervised">
             {t('dashboard.config_safety.cta')}
           </Link>
-          <Link className="config-safety-status-link" to="/config-safety/drift">
-            {t('dashboard.config_safety.drift_cta')}
-          </Link>
+          {driftDashboardEnabled && (
+            <Link className="config-safety-status-link" to="/config-safety/drift">
+              {t('dashboard.config_safety.drift_cta')}
+            </Link>
+          )}
         </>
       )}
     </section>
