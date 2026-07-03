@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, mockFeatures } from './fixtures'
 
 const mockWorkloads = [
   {
@@ -156,7 +156,21 @@ test.describe('Dashboard', () => {
     await expect(page.locator('.versions-row').first()).toContainText('2')
   })
 
+  test('hides fleet version intelligence and does not call paid endpoint without feature', async ({ loggedInPage: page }) => {
+    let versionIntelligenceHit = false
+    await page.route('**/api/workloads/version-intelligence*', (route) => {
+      versionIntelligenceHit = true
+      return route.fulfill({ status: 500, body: 'version intelligence should be gated' })
+    })
+
+    await page.goto('/')
+
+    await expect(page.getByRole('heading', { name: 'Fleet version intelligence' })).toHaveCount(0)
+    expect(versionIntelligenceHit).toBe(false)
+  })
+
   test('renders fleet version intelligence recommendations', async ({ loggedInPage: page }) => {
+    await mockFeatures(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -250,6 +264,7 @@ test.describe('Dashboard', () => {
   test('fleet version matrix renders groups, versions, status badges, and counts', async ({
     loggedInPage: page,
   }) => {
+    await mockFeatures(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -323,6 +338,7 @@ test.describe('Dashboard', () => {
   test('fleet version intelligence surfaces all three recommendation paths for unsupported components', async ({
     loggedInPage: page,
   }) => {
+    await mockFeatures(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -414,6 +430,7 @@ test.describe('Dashboard', () => {
   test('fleet version intelligence localizes recommendation reasons in French', async ({
     loggedInPage: page,
   }) => {
+    await mockFeatures(page, { 'config_safety.version_intelligence': true })
     await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
@@ -505,6 +522,7 @@ test.describe('Dashboard', () => {
   test('fleet version intelligence represents loading, empty, and error states', async ({
     loggedInPage: page,
   }) => {
+    await mockFeatures(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1000))
       await route.fulfill({

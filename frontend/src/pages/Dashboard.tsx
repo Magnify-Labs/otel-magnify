@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { workloadsAPI, alertsAPI } from '../api/client'
 import { useStore } from '../store'
 import { isSupervised } from '../lib/workloadCapabilities'
+import { useFeature } from '../hooks/useFeature'
 import StatCard from '../components/dashboard/StatCard'
 import PushActivityPanel from '../components/dashboard/PushActivityPanel'
 import RecentAlertsPanel from '../components/dashboard/RecentAlertsPanel'
@@ -17,6 +18,7 @@ const DEFAULT_RECOMMENDED_COLLECTOR_VERSION = '0.100.0'
 
 export default function Dashboard() {
   const { t } = useTranslation()
+  const { enabled: versionIntelligenceEnabled } = useFeature('config_safety.version_intelligence')
   const workloadsQuery = useQuery({
     queryKey: ['workloads'],
     queryFn: () => workloadsAPI.list(),
@@ -29,6 +31,7 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ['workloads', 'version-intelligence', DEFAULT_RECOMMENDED_COLLECTOR_VERSION],
     queryFn: () => workloadsAPI.versionIntelligence(DEFAULT_RECOMMENDED_COLLECTOR_VERSION),
+    enabled: versionIntelligenceEnabled,
   })
 
   const setWorkloads = useStore((s) => s.setWorkloads)
@@ -91,11 +94,13 @@ export default function Dashboard() {
         <aside className="dashboard-col">
           <FleetHealthPanel workloads={ws} />
           <DeployedVersionsPanel workloads={ws} />
-          <FleetVersionIntelligencePanel
-            intelligence={versionIntelligence}
-            isLoading={isVersionIntelligenceLoading}
-            isError={isVersionIntelligenceError}
-          />
+          {versionIntelligenceEnabled && (
+            <FleetVersionIntelligencePanel
+              intelligence={versionIntelligence}
+              isLoading={isVersionIntelligenceLoading}
+              isError={isVersionIntelligenceError}
+            />
+          )}
         </aside>
       </section>
     </div>

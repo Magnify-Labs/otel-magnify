@@ -170,6 +170,16 @@ export const pushPreviewScenarios = {
   dynamicCapableCollectors: buildPushPreview(dynamicCapableTargets, dynamicPaymentsSelector),
 }
 
+export async function mockFeatures(page: Page, features: Record<string, boolean> = {}) {
+  return page.route('**/api/features', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ features }),
+    }),
+  )
+}
+
 export async function mockPushGroups(page: Page, groups: PushGroup[] = savedPushGroups) {
   return page.route('**/api/push-groups', (route) =>
     route.fulfill({
@@ -282,6 +292,7 @@ export const test = base.extend<{ loggedInPage: Page }>({
         body: JSON.stringify(defaultMe),
       }),
     )
+    await mockFeatures(page, {})
     await page.route('**/api/push-groups', (route) =>
       route.fulfill({
         status: 200,

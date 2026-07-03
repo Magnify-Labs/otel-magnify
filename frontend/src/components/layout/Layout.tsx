@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type React from 'react'
 import { useStore } from '../../store'
 import { hasPerm, type Permission } from '../../lib/perm'
+import { useFeatures } from '../../hooks/useFeature'
 import '../../styles/sidebar.css'
 
 function IconDashboard() {
@@ -140,15 +141,29 @@ type FleetNavItem = {
   Icon: () => React.ReactNode
   end: boolean
   perm?: Permission
+  feature?: string
 }
 
 const fleetNav: FleetNavItem[] = [
   { path: '/', key: 'dashboard', Icon: IconDashboard, end: true },
   { path: '/inventory', key: 'inventory', Icon: IconInventory, end: false },
-  { path: '/config-safety/drift', key: 'config_drift', Icon: IconDrift, end: false },
+  {
+    path: '/config-safety/drift',
+    key: 'config_drift',
+    Icon: IconDrift,
+    end: false,
+    feature: 'config_safety.drift_dashboard',
+  },
   { path: '/configs', key: 'configs', Icon: IconConfigs, end: false },
   { path: '/alerts', key: 'alerts', Icon: IconAlerts, end: false },
-  { path: '/audit', key: 'audit', Icon: IconAudit, end: false, perm: 'audit:view' },
+  {
+    path: '/audit',
+    key: 'audit',
+    Icon: IconAudit,
+    end: false,
+    perm: 'audit:view',
+    feature: 'audit.viewer',
+  },
 ]
 
 function initials(email: string): string {
@@ -207,7 +222,12 @@ export default function Layout() {
   const me = useStore((s) => s.me)
 
   const canAdmin = hasPerm(me?.groups, 'users:manage')
-  const visibleFleetNav = fleetNav.filter((item) => !item.perm || hasPerm(me?.groups, item.perm))
+  const { data: features = {} } = useFeatures()
+  const visibleFleetNav = fleetNav.filter(
+    (item) =>
+      (!item.perm || hasPerm(me?.groups, item.perm)) &&
+      (!item.feature || features[item.feature] === true),
+  )
 
   return (
     <div className="app-layout">

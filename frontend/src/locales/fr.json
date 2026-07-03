@@ -447,7 +447,9 @@
         "errors": {
           "start": "Échec du démarrage canary",
           "action": "Action canary échouée"
-        }
+        },
+        "feature_disabled": "Le déploiement canary manuel n’est pas activé pour cet espace de travail.",
+        "feature_loading": "Chargement du droit canary…"
       },
       "application_plan": {
         "title": "Plan de sécurité de config",
@@ -489,7 +491,9 @@
           "exporting": "Export du plan…",
           "save_rollout": "Enregistrer comme rollout",
           "rollout_title": "Le stockage de rollouts persistés n’est pas encore implémenté côté backend."
-        }
+        },
+        "gitops_export_disabled": "L’export GitOps n’est pas activé pour cet espace de travail.",
+        "export_loading": "Chargement du droit d’export GitOps…"
       },
       "apply": {
         "aria": "Appliquer une configuration sauvegardée",
@@ -601,7 +605,9 @@
         "group": {
           "payments": "Collecteurs paiements",
           "read_only": "Collecteurs en lecture seule"
-        }
+        },
+        "feature_disabled": "Le push ciblé n’est pas activé pour cet espace de travail.",
+        "loading": "Chargement du droit de push ciblé…"
       },
       "recovery": {
         "aria_label": "États de récupération de configuration",
@@ -625,7 +631,8 @@
         "previous_fallback": "Le rollback utilisera Précédente jusqu’à ce qu’une révision known-good soit marquée.",
         "failed_candidate": "Candidate échouée",
         "candidate_failed": "Candidate échouée",
-        "known_good_load_error": "Échec du chargement de la configuration Last known-good."
+        "known_good_load_error": "Échec du chargement de la configuration Last known-good.",
+        "feature_disabled": "Le rollback guidé n’est pas activé pour cet espace de travail."
       },
       "editor": {
         "validation_request_failed": "Échec de la requête de validation",
@@ -776,7 +783,9 @@
           "approved": "Prêt à pousser",
           "pushed": "Poussé",
           "break_glass": "Push break-glass effectué"
-        }
+        },
+        "feature_disabled": "Les approbations de configuration ne sont pas activées pour cet espace de travail.",
+        "loading": "Chargement du droit d’approbation…"
       }
     }
   },
@@ -1042,6 +1051,10 @@
       "ignore_not_implemented": "La persistance de l’ignoré n’est pas encore implémentée.",
       "remote_config_unsupported": "La config distante n’est pas supportée par ce collector.",
       "push_pending_too_long": "Un push de config est déjà en attente depuis trop longtemps ; vérifiez le statut avant de réessayer."
+    },
+    "disabled": {
+      "title": "Tableau de drift de flotte non activé",
+      "body": "Les insights de drift de flotte ne sont pas activés pour cet espace de travail."
     }
   }
 }
