@@ -23,6 +23,7 @@ import (
 type OpAMPPusher interface {
 	PushConfig(ctx context.Context, workloadID string, yamlContent []byte, targetInstanceUID string) error
 	Instances(workloadID string) []opamp.Instance
+	InstanceWorkload(instanceUID string) (string, bool)
 }
 
 // API holds the HTTP handler dependencies (store, auth, WS hub, OpAMP pusher, feature flags) shared across all routes.

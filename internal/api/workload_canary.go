@@ -81,7 +81,7 @@ func (a *API) handleStartCanary(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := audit.Emit(r.Context(), a.audit, "config.canary.start", "workload", workloadID, status.ID+":"+hash); err != nil {
+	if err := audit.Emit(r.Context(), a.audit, "config.canary.start", "workload", workloadID, canaryAuditDetail(status.ID, hash, status.Targets)); err != nil {
 		respondAuditUnavailable(w, sideEffectApplied)
 		return
 	}
@@ -261,11 +261,11 @@ func (a *API) validateCanaryRequest(r *http.Request, workloadID string, req cana
 	if result := validator.ValidateWithRuntime(r.Context(), body, available, runtimeOpts); !result.Valid {
 		return models.CanaryValidationResult{Valid: false, Errors: append([]string{"configuration failed validation"}, validationMessages(result.Errors)...)}, wl, available
 	}
-	targets, stop, errors := a.selectCanaryTargets(wl, req.Selection)
-	return models.CanaryValidationResult{Valid: len(errors) == 0, Targets: targets, StopReasons: stop, Errors: errors}, wl, available
+	targets, stop, errors, errorCodes := a.selectCanaryTargets(wl, req.Selection)
+	return models.CanaryValidationResult{Valid: len(errors) == 0, Targets: targets, StopReasons: stop, ErrorCodes: errorCodes, Errors: errors}, wl, available
 }
 
-func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySelection) ([]models.CanaryTarget, []string, []string) {
+func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySelection) ([]models.CanaryTarget, []string, []string, []string) {
 	instances := a.opamp.Instances(wl.ID)
 	sort.Slice(instances, func(i, j int) bool { return instances[i].InstanceUID < instances[j].InstanceUID })
 	byUID := map[string]opamp.Instance{}
@@ -273,26 +273,35 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 		byUID[inst.InstanceUID] = inst
 	}
 	var selected []opamp.Instance
+	var errs []string
+	var errorCodes []string
 	switch selection.Strategy {
 	case "one":
+		if strings.TrimSpace(selection.InstanceUID) == "" {
+			return nil, nil, []string{"instance_uid is required"}, []string{"invalid_instance_target"}
+		}
 		if inst, ok := byUID[selection.InstanceUID]; ok {
 			selected = append(selected, inst)
+		} else if boundWorkloadID, found := a.opamp.InstanceWorkload(selection.InstanceUID); found && boundWorkloadID != wl.ID {
+			return nil, nil, []string{"instance target belongs to a different workload: " + selection.InstanceUID}, []string{"instance_target_cross_workload"}
+		} else {
+			return nil, nil, []string{"instance target is not connected: " + selection.InstanceUID}, []string{"instance_target_not_connected"}
 		}
 	case "count", "n":
 		n := selection.Count
 		if n <= 0 {
-			return nil, nil, []string{"count must be positive"}
+			return nil, nil, []string{"count must be positive"}, nil
 		}
 		if n >= len(instances) {
-			return nil, nil, []string{"canary target count must be smaller than eligible instances"}
+			return nil, nil, []string{"canary target count must be smaller than eligible instances"}, nil
 		}
 		selected = append(selected, instances[:n]...)
 	case "percentage":
 		if selection.Percentage <= 0 {
-			return nil, nil, []string{"percentage must be positive"}
+			return nil, nil, []string{"percentage must be positive"}, nil
 		}
 		if selection.Percentage >= 100 {
-			return nil, nil, []string{"percentage must be less than 100"}
+			return nil, nil, []string{"percentage must be less than 100"}, nil
 		}
 		n := int(math.Ceil(float64(len(instances)) * float64(selection.Percentage) / 100))
 		if n < 1 && len(instances) > 0 {
@@ -311,20 +320,30 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 			if inst, ok := byUID[uid]; ok && !seen[uid] {
 				selected = append(selected, inst)
 				seen[uid] = true
+			} else if uid != "" {
+				if boundWorkloadID, found := a.opamp.InstanceWorkload(uid); found && boundWorkloadID != wl.ID {
+					errs = append(errs, "instance target belongs to a different workload: "+uid)
+					errorCodes = appendUnique(errorCodes, "instance_target_cross_workload")
+				} else {
+					errs = append(errs, "instance target is not connected: "+uid)
+					errorCodes = appendUnique(errorCodes, "instance_target_not_connected")
+				}
 			}
 		}
 	default:
-		return nil, nil, []string{"unsupported selection strategy"}
+		return nil, nil, []string{"unsupported selection strategy"}, nil
+	}
+	if len(errs) > 0 {
+		return nil, nil, errs, errorCodes
 	}
 	if len(selected) == 0 {
-		return nil, nil, []string{"canary target set is empty"}
+		return nil, nil, []string{"canary target set is empty"}, nil
 	}
 	if len(selected) >= len(instances) {
-		return nil, nil, []string{"canary target set must be smaller than eligible instances"}
+		return nil, nil, []string{"canary target set must be smaller than eligible instances"}, nil
 	}
 	var targets []models.CanaryTarget
 	var reasons []string
-	var errs []string
 	now := time.Now().UTC()
 	for _, inst := range selected {
 		t := models.CanaryTarget{InstanceUID: inst.InstanceUID, PodName: inst.PodName, Status: models.InstanceStatusSent, UpdatedAt: now}
@@ -340,7 +359,7 @@ func (a *API) selectCanaryTargets(wl models.Workload, selection models.CanarySel
 		}
 		targets = append(targets, t)
 	}
-	return targets, reasons, errs
+	return targets, reasons, errs, errorCodes
 }
 
 func (a *API) loadCanaryWithHealth(workloadID, canaryID string) (*models.CanaryStatus, error) {
@@ -408,6 +427,11 @@ func eligibleRemainingTargets(instances []opamp.Instance, selected map[string]bo
 }
 
 func canaryHTTPStatus(result models.CanaryValidationResult) int {
+	for _, code := range result.ErrorCodes {
+		if code == "instance_target_not_connected" || code == "instance_target_cross_workload" || code == "remote_config_unsupported" {
+			return http.StatusConflict
+		}
+	}
 	for _, reason := range result.StopReasons {
 		if reason == models.CanaryStopCollectorDegraded || reason == models.CanaryStopNoHeartbeat || reason == "remote_config_unsupported" {
 			return http.StatusConflict
@@ -424,8 +448,20 @@ func invalidCanary(msg, reason string) models.CanaryValidationResult {
 	r := models.CanaryValidationResult{Valid: false, Errors: []string{msg}}
 	if reason != "" {
 		r.StopReasons = []string{reason}
+		r.ErrorCodes = []string{reason}
 	}
 	return r
+}
+func canaryAuditDetail(canaryID, hash string, targets []models.CanaryTarget) string {
+	uids := make([]string, 0, len(targets))
+	for _, target := range targets {
+		uids = append(uids, target.InstanceUID)
+	}
+	sort.Strings(uids)
+	if len(uids) == 0 {
+		return canaryID + ":" + hash
+	}
+	return fmt.Sprintf("%s:%s instance_uids=%s", canaryID, hash, strings.Join(uids, ","))
 }
 func canarySHA256Hex(body []byte) string {
 	sum := sha256.Sum256(body)
