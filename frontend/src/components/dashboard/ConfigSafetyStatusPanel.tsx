@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { pushesAPI } from '../../api/client'
 import { useFeature } from '../../hooks/useFeature'
+import ConfigEvidencePanel from './ConfigEvidencePanel'
 import type { Workload } from '../../types'
 import { isSupervised } from '../../lib/workloadCapabilities'
 
@@ -88,6 +89,7 @@ export default function ConfigSafetyStatusPanel({
               {t('dashboard.config_safety.drift_cta')}
             </Link>
           )}
+          <ConfigEvidencePanel />
         </>
       )}
     </section>

@@ -98,6 +98,54 @@
       "last_7d_pushes": "Pushes sur 7j",
       "cta": "Voir les workloads supervisés",
       "drift_cta": "Ouvrir le dashboard de drift",
+      "evidence": {
+        "title": "Pack de preuves",
+        "hint": "Prévisualisez les preuves Config Safety redigées et exportez-les pour l’audit.",
+        "loading": "Chargement du rapport de preuves…",
+        "error": "Impossible de charger le rapport de preuves.",
+        "empty": "Aucune preuve Config Safety n’est encore disponible.",
+        "exports_aria": "Exports du rapport de preuves",
+        "exporting": "Export…",
+        "export_ready": "Export prêt",
+        "export_error": "Échec de l’export du rapport de preuves.",
+        "generated_at": "Généré le {{date}}",
+        "summary_aria": "Résumé du rapport de preuves",
+        "redacted_content": "La prévisualisation utilise uniquement les preuves redigées par le backend ; le contenu brut des configs n’est pas inclus.",
+        "no_config_changes": "Aucun changement de config dans ce rapport.",
+        "no_validation_failures": "Aucune validation échouée dans ce rapport.",
+        "no_rollbacks": "Aucun rollback dans ce rapport.",
+        "no_drift": "Aucun drift dans ce rapport.",
+        "no_outdated_collectors": "Aucun collecteur obsolète dans ce rapport.",
+        "no_audit_trail": "Aucune entrée d’audit dans ce rapport.",
+        "export": {
+          "markdown": "Exporter Markdown",
+          "csv": "Exporter CSV",
+          "pdf": "Exporter PDF"
+        },
+        "summary": {
+          "config_changes": "Changements de config",
+          "validation_failures": "Validations échouées",
+          "rollbacks": "Rollbacks",
+          "drifted_collectors": "Collecteurs en drift",
+          "outdated_collectors": "Collecteurs obsolètes",
+          "audit_events": "Événements d’audit"
+        },
+        "sections": {
+          "config_changes": "Changements de config",
+          "validation_failures": "Validations échouées",
+          "rollbacks": "Rollbacks",
+          "drift": "Constats de drift",
+          "outdated_collectors": "Collecteurs obsolètes",
+          "audit_trail": "Journal d’audit"
+        },
+        "signature": {
+          "title": "Métadonnées d’audit signées Enterprise",
+          "algorithm": "Algorithme",
+          "key_id": "ID de clé",
+          "digest": "Digest du payload",
+          "hint": "Vérification"
+        }
+      },
       "status": {
         "ready": "Validation, diff, push sécurisé et rollback sont disponibles sur les pages détail workload.",
         "empty": "Aucun collecteur supervisé ne remonte encore de config distante.",

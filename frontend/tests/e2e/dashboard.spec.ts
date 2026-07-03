@@ -1,4 +1,4 @@
-import { test, expect, mockFeatures } from './fixtures'
+import { test, expect, mockFeatures, mockMe } from './fixtures'
 
 const mockWorkloads = [
   {
@@ -182,6 +182,177 @@ test.describe('Dashboard', () => {
     const alertsTop = await page.locator('.panel', { hasText: 'Recent alerts' }).boundingBox()
     expect(pushPanelTop?.y).toBeLessThan(safetyTop?.y ?? Number.POSITIVE_INFINITY)
     expect(safetyTop?.y).toBeLessThan(alertsTop?.y ?? Number.POSITIVE_INFINITY)
+  })
+
+  test('config safety evidence pack previews redacted report data and exports formats', async ({
+    loggedInPage: page,
+  }) => {
+    await mockMe(page, {
+      groups: [
+        {
+          id: 'grp-editor',
+          name: 'editor',
+          role: 'editor',
+          is_system: true,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    })
+
+    let requestedFormat = ''
+    await page.route('**/api/reports/config-safety*', async (route, request) => {
+      const url = new URL(request.url())
+      const format = url.searchParams.get('format') ?? 'json'
+      if (format === 'json') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            schema_version: 'config_safety_evidence_report.v1',
+            report_id: 'rpt_123',
+            generated_at: '2026-05-09T12:00:00Z',
+            summary: {
+              config_changes: 2,
+              validation_failures: 1,
+              rollbacks: 1,
+              drifted_collectors: 1,
+              outdated_collectors: 1,
+              audit_events: 2,
+            },
+            config_changes: [
+              {
+                workload_id: 'w1',
+                display_name: 'coll-a',
+                config_hash: 'hash-redacted-1234',
+                previous_hash: 'prev-redacted-9876',
+                status: 'applied',
+                pushed_by: 'ops@example.com',
+                applied_at: '2026-05-09T11:30:00Z',
+                content_available: false,
+                diff_summary: 'Added memory limiter; redacted endpoint values.',
+              },
+            ],
+            validation_failures: [
+              {
+                workload_id: 'w2',
+                display_name: 'coll-b',
+                config_hash: 'bad-redacted-1234',
+                status: 'failed',
+                error: 'receiver type is unavailable',
+                occurred_at: '2026-05-09T10:00:00Z',
+              },
+            ],
+            rollbacks: [
+              {
+                workload_id: 'w1',
+                display_name: 'coll-a',
+                config_hash: 'rollback-redacted-1234',
+                rollback_of_push_id: 'push-1',
+                status: 'rollback_applied',
+                occurred_at: '2026-05-09T11:45:00Z',
+              },
+            ],
+            drift: {
+              generated_at: '2026-05-09T12:00:00Z',
+              summary: {
+                total_collectors: 2,
+                drifted_collectors: 1,
+                pending_too_long: 0,
+                missing_effective_config: 0,
+                remote_config_unsupported: 0,
+                outdated_versions: 1,
+                unknown_incomplete_components: 0,
+                heterogeneous_groups: 0,
+              },
+              items: [
+                {
+                  workload_id: 'w1',
+                  collector: 'coll-a',
+                  env: 'prod',
+                  version: '0.99.0',
+                  expected_config_hash: 'hash-redacted-1234',
+                  effective_config_hash: 'live-redacted-9999',
+                  drift_status: 'drifted',
+                  drift_reasons: ['effective config hash differs'],
+                  pending_too_long: false,
+                  accepts_remote_config: true,
+                  missing_effective_config: false,
+                  unknown_incomplete_components: false,
+                  group_heterogeneous_config: false,
+                  has_config_drift_alert: true,
+                  has_version_outdated_alert: true,
+                  actions: {},
+                },
+              ],
+            },
+            outdated_collectors: [
+              {
+                workload_id: 'w1',
+                display_name: 'coll-a',
+                group: 'prod',
+                version: '0.99.0',
+                recommended_version: '0.100.0',
+              },
+            ],
+            audit_trail: [
+              {
+                action: 'config.push',
+                resource: 'workload',
+                resource_id: 'w1',
+                detail: 'redacted audit detail',
+                at: '2026-05-09T11:30:00Z',
+              },
+            ],
+            signature: {
+              algorithm: 'ed25519',
+              payload_digest_sha256: 'abc123',
+              key_id: 'enterprise-key-1',
+              verification_hint: 'Verify with Enterprise audit key.',
+            },
+          }),
+        })
+        return
+      }
+      requestedFormat = format
+      await route.fulfill({
+        status: 200,
+        contentType: format === 'csv' ? 'text/csv' : 'text/markdown',
+        headers: { 'content-disposition': `attachment; filename="evidence.${format}"` },
+        body: 'redacted export body',
+      })
+    })
+
+    await page.goto('/')
+
+    const panel = page.locator('.config-evidence-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText('Evidence pack')
+    await expect(panel).toContainText('Config changes')
+    await expect(panel).toContainText('2')
+    await expect(panel).toContainText('Added memory limiter; redacted endpoint values.')
+    await expect(panel).toContainText('receiver type is unavailable')
+    await expect(panel).toContainText('effective config hash differs')
+    await expect(panel).toContainText('coll-a 0.99.0 → 0.100.0')
+    await expect(panel).toContainText('Enterprise signed audit metadata')
+    await expect(panel).toContainText('enterprise-key-1')
+
+    await panel.getByRole('button', { name: 'Export Markdown' }).click()
+    await expect.poll(() => requestedFormat).toBe('markdown')
+    await expect(panel).toContainText('Export ready')
+    await panel.getByRole('button', { name: 'Export CSV' }).click()
+    await expect.poll(() => requestedFormat).toBe('csv')
+    await panel.getByRole('button', { name: 'Export PDF' }).click()
+    await expect.poll(() => requestedFormat).toBe('pdf')
+  })
+
+  test('config safety evidence export actions are hidden without push permission', async ({
+    loggedInPage: page,
+  }) => {
+    await page.goto('/')
+
+    const panel = page.locator('.config-evidence-panel')
+    await expect(panel).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Export Markdown|Exporter Markdown/ })).toHaveCount(0)
   })
 
   test('deployed versions panel groups by version', async ({ loggedInPage: page }) => {
