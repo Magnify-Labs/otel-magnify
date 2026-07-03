@@ -56,7 +56,7 @@ function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
   )
 }
 
-function mockConfig(page: Page, content: string) {
+function mockConfig(page: Page, content: string, overrides: Record<string, unknown> = {}) {
   return page.route(`**/api/configs/${ACTIVE_CONFIG_ID}`, (route) =>
     route.fulfill({
       status: 200,
@@ -67,6 +67,7 @@ function mockConfig(page: Page, content: string) {
         content,
         created_at: new Date().toISOString(),
         created_by: 'test',
+        ...overrides,
       }),
     }),
   )
@@ -269,6 +270,164 @@ const PUSH_STATUS_LABEL_CASES = [
   ['rollback_applied', 'Rolled back'],
   ['rollback_failed', 'Rollback failed'],
 ] as const
+
+test('imports a config from Git and displays sanitized provenance', async ({ loggedInPage: page }) => {
+  await mockProConfigSafetyFeatures(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+
+  let importPayload: unknown = null
+  await page.route('**/api/configs/import/git', async (route, request) => {
+    importPayload = request.postDataJSON()
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        config: {
+          id: 'git-config-hash',
+          name: 'prod collector from git',
+          content: 'receivers:\n  otlp: {}\nexporters:\n  debug: {}\n',
+          created_at: '2026-07-01T12:00:00Z',
+          created_by: 'test@example.com',
+          source_type: 'git',
+          git_url: 'https://github.com/acme/collectors.git',
+          git_provider: 'github',
+          git_ref: 'main',
+          git_path: 'otel/prod.yaml',
+          commit_sha: '1234567890abcdef1234567890abcdef12345678',
+          imported_at: '2026-07-01T12:34:56Z',
+        },
+        validation: { valid: true },
+      }),
+    })
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Import from Git' }).click()
+  await page.getByLabel('Git config name').fill('prod collector from git')
+  await page.getByLabel('Git repository URL').fill('https://token:secret@github.com/acme/collectors.git')
+  await page.getByLabel('Git ref').fill('main')
+  await page.getByLabel('Git file path').fill('otel/prod.yaml')
+  await page.getByRole('button', { name: 'Import Git config' }).click()
+
+  await expect.poll(() => importPayload).toEqual({
+    name: 'prod collector from git',
+    git_url: 'https://token:secret@github.com/acme/collectors.git',
+    git_ref: 'main',
+    git_path: 'otel/prod.yaml',
+  })
+  const provenance = page.locator('.config-provenance-card').first()
+  await expect(provenance).toContainText('Git provenance')
+  await expect(provenance).toContainText('github')
+  await expect(provenance).toContainText('https://github.com/acme/collectors.git')
+  await expect(provenance).not.toContainText('token:secret')
+  await expect(provenance).toContainText('main')
+  await expect(provenance).toContainText('otel/prod.yaml')
+  await expect(provenance.getByTitle('1234567890abcdef1234567890abcdef12345678')).toContainText(
+    '12345678',
+  )
+  await expect(page.locator('.validation-ok')).toContainText('valid')
+})
+
+test('export as PR stays disabled until Git provider and validation gates pass', async ({
+  loggedInPage: page,
+}) => {
+  await mockProConfigSafetyFeatures(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n', {
+    source_type: 'git',
+    git_url: 'https://github.com/acme/collectors.git',
+    git_provider: 'github',
+    git_ref: 'main',
+    git_path: 'otel/prod.yaml',
+    commit_sha: '1234567890abcdef1234567890abcdef12345678',
+    imported_at: '2026-07-01T12:34:56Z',
+  })
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true, checks: VALIDATION_CHECKS_SUCCESS })
+  await mockPlan(page, buildPlan())
+
+  let exportPayload: unknown = null
+  await page.route('**/api/configs/abc123/export/git', async (route, request) => {
+    exportPayload = request.postDataJSON()
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        result: {
+          provider: 'github',
+          url: 'https://github.com/acme/collectors/pull/42',
+          number: 42,
+          branch: 'otel-magnify/prod-update',
+          commit_sha: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+        },
+        comment: {
+          provider: 'github',
+          url: 'https://github.com/acme/collectors/pull/42#issuecomment-1',
+          comment_id: '1',
+        },
+        validation: { valid: true },
+      }),
+    })
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Export as PR/MR' })).toBeDisabled()
+  await expect(page.getByText('Validate and generate a safety plan before exporting to Git.')).toBeVisible()
+
+  await generateSafetyPlan(page)
+  await page.getByLabel('Provider').selectOption('github')
+  await page.getByLabel('Repository').fill('acme/collectors')
+  await page.getByLabel('Target path').fill('otel/prod.yaml')
+  await page.getByLabel('Base branch').fill('main')
+  await page.getByLabel('Export branch').fill('otel-magnify/prod-update')
+  await page.getByLabel('PR/MR title').fill('Update collector config')
+  await page.getByRole('button', { name: 'Export as PR/MR' }).click()
+
+  await expect.poll(() => exportPayload).toEqual({
+    provider: 'github',
+    repository: 'acme/collectors',
+    path: 'otel/prod.yaml',
+    base_branch: 'main',
+    branch: 'otel-magnify/prod-update',
+    title: 'Update collector config',
+    body: '',
+  })
+  await expect(page.getByRole('link', { name: 'Open PR/MR' })).toHaveAttribute(
+    'href',
+    'https://github.com/acme/collectors/pull/42',
+  )
+})
+
+test('read-only collectors compare Git expected provenance with OpAMP effective config', async ({
+  loggedInPage: page,
+}) => {
+  await mockProConfigSafetyFeatures(page)
+  await mockWorkload(page, { accepts_remote_config: false, active_config_hash: 'effec7edcafebabe' })
+  await mockConfig(page, 'receivers:\n  otlp: {}\n', {
+    source_type: 'git',
+    git_url: 'https://gitlab.com/acme/collectors.git',
+    git_provider: 'gitlab',
+    git_ref: 'release/2026-07',
+    git_path: 'otel/readonly.yaml',
+    commit_sha: 'fedcba9876543210fedcba9876543210fedcba98',
+    imported_at: '2026-07-02T08:15:00Z',
+  })
+  await mockHistory(page, [])
+  await mockPlan(page, buildPlan({ summary: { ...buildPlan().summary, read_only_count: 1 } }))
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  await expect(page.getByText('Git expected vs OpAMP effective')).toBeVisible()
+  await expect(page.locator('.config-provenance-card')).toContainText('gitlab')
+  await expect(page.locator('.config-provenance-card')).toContainText('fedcba98')
+  await expect(page.getByText('OpAMP effective hash')).toBeVisible()
+  await expect(page.getByText('effec7ed')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Push config' })).toHaveCount(0)
+})
 
 test('push status labels render every backend status', async ({ loggedInPage: page }) => {
   let currentStatus: (typeof PUSH_STATUS_LABEL_CASES)[number][0] = 'pending'
@@ -558,6 +717,7 @@ async function requestAndApproveDraft(page: Page) {
 }
 
 test('blocked policy finding is visible and gates approval request', async ({ loggedInPage: page }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -614,6 +774,7 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
 test('policy evaluation unavailable state is explicit and non-alarming', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
