@@ -1159,6 +1159,51 @@
       "remote_config_unsupported": "Remote config is not supported by this collector.",
       "push_pending_too_long": "A config push is already pending too long; review status before retrying."
     },
+    "report": {
+      "title": "Evidence report",
+      "subtitle": "Report ID {{id}}",
+      "loading": "Loading evidence report…",
+      "error": "Unable to load evidence report.",
+      "summary_aria": "Evidence report summary",
+      "export_aria": "Evidence report exports",
+      "exporting": "Exporting…",
+      "export_error": "Export failed. Try again.",
+      "signature_aria": "Evidence report signature metadata",
+      "signature_status": "Signature status",
+      "algorithm": "Algorithm",
+      "digest": "Payload digest",
+      "key_id": "Key ID",
+      "community_signature_note": "Community/Pro exports are not shown as enterprise signed.",
+      "download": {
+        "markdown": "Download Markdown",
+        "csv": "Download CSV",
+        "pdf": "Download PDF"
+      },
+      "summary": {
+        "config_changes": "Config changes",
+        "validation_failures": "Failed validations",
+        "rollbacks": "Rollbacks",
+        "drifted_collectors": "Drifted collectors",
+        "outdated_collectors": "Outdated collectors",
+        "audit_events": "Audit events"
+      },
+      "signature": {
+        "unsigned_digest": "Unsigned digest ready",
+        "signed": "Enterprise signature present"
+      },
+      "sections": {
+        "config_changes": "Config changes",
+        "validation_failures": "Failed validations",
+        "rollbacks": "Rollbacks",
+        "audit_trail": "Audit trail"
+      },
+      "empty": {
+        "config_changes": "No config changes were included in this report.",
+        "validation_failures": "No failed validations were included in this report.",
+        "rollbacks": "No rollbacks were included in this report.",
+        "audit_trail": "No audit trail entries were included in this report."
+      }
+    },
     "disabled": {
       "title": "Fleet drift dashboard not enabled",
       "body": "Fleet drift insights are not enabled for this workspace."

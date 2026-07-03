@@ -1,4 +1,12 @@
-import { test, expect, mockFeatures } from './fixtures'
+import { test, expect, mockFeatures, mockMe } from './fixtures'
+
+const editorGroup = {
+  id: 'grp_system_editor',
+  name: 'editor' as const,
+  role: 'editor' as const,
+  is_system: true,
+  created_at: '2026-06-30T10:00:00.000Z',
+}
 
 const driftDashboard = {
   generated_at: new Date().toISOString(),
@@ -70,10 +78,86 @@ const driftDashboard = {
   ],
 }
 
+const evidenceReport = {
+  schema_version: 'config_safety_evidence_report.v1',
+  report_id: 'rpt-config-safety-1234567890',
+  generated_at: '2026-07-02T20:00:00Z',
+  recommended_version: '0.100.0',
+  summary: {
+    config_changes: 2,
+    validation_failures: 1,
+    rollbacks: 1,
+    drifted_collectors: 1,
+    outdated_collectors: 1,
+    audit_events: 4,
+  },
+  config_changes: [
+    {
+      workload_id: 'wl-drift',
+      display_name: 'collector-prod',
+      config_hash: 'cfg-redacted-a',
+      previous_hash: 'cfg-redacted-prev',
+      status: 'applied',
+      pushed_by: 'operator@example.com',
+      applied_at: '2026-07-02T18:00:00Z',
+      content_available: false,
+      diff_summary: 'receivers changed; secret values redacted by backend',
+    },
+  ],
+  validation_failures: [
+    {
+      workload_id: 'wl-drift',
+      display_name: 'collector-prod',
+      config_hash: 'cfg-bad',
+      status: 'failed',
+      error: 'processor batch is unavailable',
+      occurred_at: '2026-07-02T18:10:00Z',
+    },
+  ],
+  rollbacks: [
+    {
+      workload_id: 'wl-drift',
+      display_name: 'collector-prod',
+      config_hash: 'cfg-known-good',
+      rollback_of_push_id: 'push-123',
+      status: 'applied',
+      occurred_at: '2026-07-02T18:20:00Z',
+    },
+  ],
+  drift: driftDashboard,
+  outdated_collectors: [
+    {
+      workload_id: 'wl-drift',
+      display_name: 'collector-prod',
+      current_version: '0.88.0',
+      recommended_version: '0.100.0',
+      severity: 'warning',
+      reason: 'collector is behind the recommended version',
+    },
+  ],
+  audit_trail: [
+    {
+      action: 'report.config_safety.export',
+      resource: 'report',
+      resource_id: 'rpt-config-safety-1234567890',
+      detail: 'format=json',
+      at: '2026-07-02T20:00:01Z',
+    },
+  ],
+  signature: {
+    algorithm: 'sha256-unsigned-digest-v1',
+    payload_digest_sha256: 'abcdef1234567890',
+    verification_hint: 'Community unsigned digest. Enterprise builds may attach a detached signature.',
+  },
+}
+
 test.describe('Config drift dashboard', () => {
   test.beforeEach(async ({ loggedInPage: page }) => {
-    await mockFeatures(page, { 'config_safety.drift_dashboard': true })
-  await page.route('**/api/config-safety/drift', (route) =>
+    await mockFeatures(page, {
+      'config_safety.drift_dashboard': true,
+      'reports.evidence_pack': true,
+    })
+    await page.route('**/api/config-safety/drift', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -119,5 +203,65 @@ test.describe('Config drift dashboard', () => {
     await expect(row.getByRole('button', { name: 'Voir diff' })).toBeDisabled()
     await expect(row).toContainText('La vue diff nécessite un contenu de config récupérable')
     await expect(row).not.toContainText('Diff view needs retrievable config content')
+  })
+
+  test('shows evidence report summary, signed metadata, and downloadable formats for report exporters', async ({
+    loggedInPage: page,
+  }) => {
+    await mockMe(page, { groups: [editorGroup] })
+    const exportedFormats: string[] = []
+    await page.route('**/api/reports/config-safety*', async (route) => {
+      const url = new URL(route.request().url())
+      const format = url.searchParams.get('format') ?? 'json'
+      if (format === 'json') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(evidenceReport),
+        })
+        return
+      }
+      exportedFormats.push(format)
+      await route.fulfill({
+        status: 200,
+        contentType:
+          format === 'pdf'
+            ? 'application/pdf'
+            : format === 'csv'
+              ? 'text/csv'
+              : 'text/markdown',
+        body: format === 'pdf' ? '%PDF-1.4' : 'redacted report export',
+      })
+    })
+
+    await page.goto('/config-safety/drift')
+
+    await expect(page.getByRole('heading', { name: 'Evidence report' })).toBeVisible()
+    await expect(page.getByText('Report ID rpt-config-safety-1234567890')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Config changes' })).toBeVisible()
+    await expect(
+      page.getByLabel('Evidence report summary').getByRole('article').filter({ hasText: 'Config changes' }),
+    ).toContainText('2')
+    await expect(page.getByText('processor batch is unavailable')).toBeVisible()
+    await expect(page.getByText('collector-prod').first()).toBeVisible()
+    await expect(page.getByText('cfg-redacted…')).toBeVisible()
+    await expect(page.getByText('Unsigned digest ready')).toBeVisible()
+    await expect(page.getByText('sha256-unsigned-digest-v1')).toBeVisible()
+    await expect(page.getByText('Community/Pro exports are not shown as enterprise signed.')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Download Markdown' }).click()
+    await page.getByRole('button', { name: 'Download CSV' }).click()
+    await page.getByRole('button', { name: 'Download PDF' }).click()
+
+    expect(exportedFormats).toEqual(['markdown', 'csv', 'pdf'])
+  })
+
+  test('hides evidence report actions from viewers without report export permission', async ({
+    loggedInPage: page,
+  }) => {
+    await page.goto('/config-safety/drift')
+
+    await expect(page.getByRole('heading', { name: 'Evidence report' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Download Markdown' })).toHaveCount(0)
   })
 })

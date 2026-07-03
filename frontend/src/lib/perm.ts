@@ -5,6 +5,7 @@ export type Permission =
   | 'workload:validate_config'
   | 'config:create'
   | 'alert:resolve'
+  | 'reports:export'
   | 'workload:archive'
   | 'workload:delete'
   | 'audit:view'
@@ -18,6 +19,7 @@ const matrix: Record<string, Set<Permission>> = {
     'workload:validate_config',
     'config:create',
     'alert:resolve',
+    'reports:export',
     'workload:archive',
   ]),
   administrator: new Set<Permission>([
@@ -25,6 +27,7 @@ const matrix: Record<string, Set<Permission>> = {
     'workload:validate_config',
     'config:create',
     'alert:resolve',
+    'reports:export',
     'workload:archive',
     'workload:delete',
     'audit:view',
