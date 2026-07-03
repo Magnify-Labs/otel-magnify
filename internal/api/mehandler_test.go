@@ -30,7 +30,7 @@ func newMeTestAPI(t *testing.T) (*store.DB, *auth.Auth) {
 
 // buildMeTestRouter wires a full router with no OpAMP pusher or WebSocket hub.
 func buildMeTestRouter(db *store.DB, a *auth.Auth) http.Handler {
-	return NewRouter(db, a, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil)
+	return NewRouter(db, a, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil, nil)
 }
 
 func TestHandleMe_ReturnsUserGroupsAndPreferences(t *testing.T) {

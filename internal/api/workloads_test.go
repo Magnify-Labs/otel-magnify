@@ -74,8 +74,23 @@ func newTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPusher) {
 	t.Cleanup(hub.Stop)
 
 	fake := &fakeOpAMPPusher{instances: make(map[string][]opamp.Instance)}
-	router := NewRouter(db, a, hub, fake, nil, "", nil, nil, 30*24*time.Hour, nil, nil)
+	router := NewRouter(db, a, hub, fake, nil, "", nil, nil, 30*24*time.Hour, testEnabledFeatures(), nil, nil)
 	return db, router, fake
+}
+
+func testEnabledFeatures() map[string]bool {
+	return map[string]bool{
+		FeatureConfigSafetyApprovals:           true,
+		FeatureConfigSafetyGuidedRollback:      true,
+		FeatureConfigSafetyCanaryRollout:       true,
+		FeatureConfigSafetyScopedPush:          true,
+		FeatureConfigSafetyDriftDashboard:      true,
+		FeatureConfigSafetyVersionIntelligence: true,
+		FeatureConfigSafetyGitOpsExport:        true,
+		FeatureConfigSafetyPolicyPreview:       true,
+		FeatureReportsEvidencePack:             true,
+		FeatureAuditViewer:                     true,
+	}
 }
 
 func authedRequest(t *testing.T, method, url string) *http.Request {

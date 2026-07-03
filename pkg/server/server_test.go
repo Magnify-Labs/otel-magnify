@@ -413,4 +413,70 @@ func TestWithFeatures_NotSet_ReturnsEmptyMap(t *testing.T) {
 	if len(body.Features) != 0 {
 		t.Fatalf("features: got %v, want empty map", body.Features)
 	}
+
+	for _, paidKey := range []string{
+		"config_safety.approvals",
+		"config_safety.guided_rollback",
+		"config_safety.canary_rollout",
+		"config_safety.scoped_push",
+		"config_safety.drift_dashboard",
+		"config_safety.version_intelligence",
+		"config_safety.gitops_export",
+		"config_safety.policy_preview",
+		"config_safety.policy_enforcement",
+		"reports.evidence_pack",
+		"reports.signed_evidence",
+		"audit.viewer",
+		"sso.admin",
+		"rbac.custom_roles",
+		"tenancy.multi_tenant",
+	} {
+		if body.Features[paidKey] {
+			t.Fatalf("community default must not advertise paid feature %q: %v", paidKey, body.Features)
+		}
+	}
+}
+
+type serverTestLicenseChecker map[string]bool
+
+func (s serverTestLicenseChecker) FeatureEnabled(feature string) bool { return s[feature] }
+
+func TestWithLicenseChecker_AllowsGatedEndpointWithoutAdvertisingFeature(t *testing.T) {
+	db, err := store.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	a := auth.New("test-secret-key-at-least-32-bytes!")
+	srv := server.New(server.Config{ListenAddr: ":0", OpAMPAddr: ":0"}, db, a,
+		server.WithLicenseChecker(serverTestLicenseChecker{"config_safety.version_intelligence": true}))
+	handler := srv.Handler()
+
+	featuresRec := httptest.NewRecorder()
+	handler.ServeHTTP(featuresRec, httptest.NewRequest(http.MethodGet, "/api/features", nil))
+	var featuresBody struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := json.Unmarshal(featuresRec.Body.Bytes(), &featuresBody); err != nil {
+		t.Fatalf("features body unmarshal: %v", err)
+	}
+	if len(featuresBody.Features) != 0 {
+		t.Fatalf("license checker should not mutate advertised features, got %v", featuresBody.Features)
+	}
+
+	token, err := a.GenerateToken("u1", "admin@x.com", []string{"administrator"})
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/workloads/version-intelligence?recommended_version=0.100.0", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
 }

@@ -36,6 +36,7 @@ type API struct {
 	authMethods       func() []ext.AuthMethod
 	workloadRetention time.Duration
 	features          map[string]bool
+	licenseChecker    ext.LicenseChecker
 	reportSigner      ext.ReportSigner
 }
 
@@ -52,11 +53,11 @@ type API struct {
 // auditLogger may be nil — handlers fall back to ext.NopAuditLogger so the
 // community binary works without an audit sink configured. EE wires its
 // sink via pkg/server.WithAuditLogger.
-func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, protectedHooks []func(chi.Router), reportSigner ...ext.ReportSigner) http.Handler {
+func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, licenseChecker ext.LicenseChecker, protectedHooks []func(chi.Router), reportSigner ...ext.ReportSigner) http.Handler {
 	if auditLogger == nil {
 		auditLogger = ext.NopAuditLogger{}
 	}
-	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features, reportSigner: ext.NopReportSigner{}}
+	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features, licenseChecker: licenseChecker, reportSigner: ext.NopReportSigner{}}
 	if len(reportSigner) > 0 && reportSigner[0] != nil {
 		api.reportSigner = reportSigner[0]
 	}
@@ -93,7 +94,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	r.Post("/api/auth/login", api.handleLogin)
 	r.Get("/api/auth/methods", api.handleListAuthMethods)
 	r.Get("/api/features", api.handleListFeatures)
-	r.Post("/api/gitops/webhooks/{provider}", api.handleGitOpsWebhook)
+	r.With(api.RequireFeature(FeatureConfigSafetyGitOpsExport)).Post("/api/gitops/webhooks/{provider}", api.handleGitOpsWebhook)
 
 	// WebSocket validates its own token via ?token= query param
 	// (browsers cannot set Authorization headers on WS handshakes, so it
@@ -115,42 +116,42 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	r.Group(func(r chi.Router) {
 		r.Use(a.Middleware)
 
-		r.Get("/api/config-safety/drift", api.handleListConfigDrift)
-		r.With(api.RequirePerm(perm.ExportReports)).Post("/api/reports/evidence-pack", api.handlePreviewEvidencePack)
-		r.With(api.RequirePerm(perm.ExportReports)).Post("/api/reports/evidence-pack/export", api.handleExportEvidencePack)
+		r.With(api.RequireFeature(FeatureConfigSafetyDriftDashboard)).Get("/api/config-safety/drift", api.handleListConfigDrift)
+		r.With(api.RequireFeature(FeatureReportsEvidencePack), api.RequirePerm(perm.ExportReports)).Post("/api/reports/evidence-pack", api.handlePreviewEvidencePack)
+		r.With(api.RequireFeature(FeatureReportsEvidencePack), api.RequirePerm(perm.ExportReports)).Post("/api/reports/evidence-pack/export", api.handleExportEvidencePack)
 
 		r.Get("/api/workloads", api.handleListWorkloads)
-		r.Get("/api/workloads/version-intelligence", api.handleFleetVersionIntelligence)
+		r.With(api.RequireFeature(FeatureConfigSafetyVersionIntelligence)).Get("/api/workloads/version-intelligence", api.handleFleetVersionIntelligence)
 		r.Get("/api/workloads/{id}", api.handleGetWorkload)
 		r.Get("/api/workloads/{id}/instances", api.handleListWorkloadInstances)
 		r.Get("/api/workloads/{id}/topology", api.handleGetWorkloadTopology)
 		r.Get("/api/workloads/{id}/events", api.handleListWorkloadEvents)
 		r.Get("/api/workloads/{id}/events/stats", api.handleWorkloadEventsStats)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config", api.handlePushWorkloadConfig)
-		r.With(api.RequirePerm(perm.PushConfig)).Get("/api/workloads/{id}/config/approvals", api.handleListConfigApprovals)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals", api.handleCreateOrUpdateConfigApproval)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals/{approval_id}/approve", api.handleApproveConfigApproval)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals/{approval_id}/push", api.handlePushConfigApproval)
-		r.With(api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/plan", api.handlePlanWorkloadConfig)
-		r.With(api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/plan/export", api.handleExportWorkloadConfigPlan)
+		r.With(api.RequireFeature(FeatureConfigSafetyApprovals), api.RequirePerm(perm.PushConfig)).Get("/api/workloads/{id}/config/approvals", api.handleListConfigApprovals)
+		r.With(api.RequireFeature(FeatureConfigSafetyApprovals), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals", api.handleCreateOrUpdateConfigApproval)
+		r.With(api.RequireFeature(FeatureConfigSafetyApprovals), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals/{approval_id}/approve", api.handleApproveConfigApproval)
+		r.With(api.RequireFeature(FeatureConfigSafetyApprovals), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/approvals/{approval_id}/push", api.handlePushConfigApproval)
+		r.With(api.RequireFeature(FeatureConfigSafetyPolicyPreview), api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/plan", api.handlePlanWorkloadConfig)
+		r.With(api.RequireFeature(FeatureConfigSafetyPolicyPreview), api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/plan/export", api.handleExportWorkloadConfigPlan)
 		r.With(api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/validate", api.handleValidateWorkloadConfig)
-		r.With(api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/canary/validate", api.handleValidateCanary)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary", api.handleStartCanary)
-		r.Get("/api/workloads/{id}/config/canary/{canary_id}", api.handleGetCanary)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary/{canary_id}/promote", api.handlePromoteCanary)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary/{canary_id}/abort", api.handleAbortCanary)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary/{canary_id}/rollback", api.handleRollbackCanary)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/rollback", api.handleRollbackWorkloadDefault)
+		r.With(api.RequireFeature(FeatureConfigSafetyCanaryRollout), api.RequirePerm(perm.ValidateConfig)).Post("/api/workloads/{id}/config/canary/validate", api.handleValidateCanary)
+		r.With(api.RequireFeature(FeatureConfigSafetyCanaryRollout), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary", api.handleStartCanary)
+		r.With(api.RequireFeature(FeatureConfigSafetyCanaryRollout)).Get("/api/workloads/{id}/config/canary/{canary_id}", api.handleGetCanary)
+		r.With(api.RequireFeature(FeatureConfigSafetyCanaryRollout), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary/{canary_id}/promote", api.handlePromoteCanary)
+		r.With(api.RequireFeature(FeatureConfigSafetyCanaryRollout), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary/{canary_id}/abort", api.handleAbortCanary)
+		r.With(api.RequireFeature(FeatureConfigSafetyCanaryRollout), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary/{canary_id}/rollback", api.handleRollbackCanary)
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/rollback", api.handleRollbackWorkloadDefault)
 		r.Get("/api/workloads/{id}/configs", api.handleGetWorkloadConfigHistory)
-		r.Get("/api/workloads/{id}/rollback/prepare", api.handlePrepareRollback)
-		r.Get("/api/workloads/{id}/rollback/status", api.handleRollbackStatus)
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/rollback/prepare", api.handlePrepareRollback)
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/rollback/status", api.handleRollbackStatus)
 		r.Get("/api/workloads/{id}/configs/{hash}", api.handleGetWorkloadConfigByHash)
-		r.Get("/api/workloads/{id}/known-good", api.handleGetWorkloadKnownGood)
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/known-good", api.handleGetWorkloadKnownGood)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/label", api.handleSetWorkloadConfigLabel)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/known-good", api.handleMarkWorkloadConfigKnownGood)
-		r.With(api.RequirePerm(perm.PushConfig)).Delete("/api/workloads/{id}/known-good", api.handleClearWorkloadKnownGood)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/rollback", api.handleRollbackWorkloadDefault)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/rollback", api.handleRollbackWorkloadConfig)
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/known-good", api.handleMarkWorkloadConfigKnownGood)
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback), api.RequirePerm(perm.PushConfig)).Delete("/api/workloads/{id}/known-good", api.handleClearWorkloadKnownGood)
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/rollback", api.handleRollbackWorkloadDefault)
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/rollback", api.handleRollbackWorkloadConfig)
 		r.With(api.RequirePerm(perm.ArchiveWorkload)).Post("/api/workloads/{id}/archive", api.handleArchiveWorkload)
 		r.With(api.RequirePerm(perm.DeleteWorkload)).Delete("/api/workloads/{id}", api.handleDeleteWorkload)
 
@@ -164,19 +165,19 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.Get("/api/configs", api.handleListConfigs)
 		r.With(api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs", api.handleCreateConfig)
 		r.Post("/api/configs/diff", api.handleDiffConfigs)
-		r.With(api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs/import/git", api.handleImportConfigFromGit)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/configs/{id}/export/git", api.handleExportConfigToGit)
+		r.With(api.RequireFeature(FeatureConfigSafetyGitOpsExport), api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs/import/git", api.handleImportConfigFromGit)
+		r.With(api.RequireFeature(FeatureConfigSafetyGitOpsExport), api.RequirePerm(perm.PushConfig)).Post("/api/configs/{id}/export/git", api.handleExportConfigToGit)
 		r.Get("/api/configs/{id}", api.handleGetConfig)
 
 		r.Get("/api/alerts", api.handleListAlerts)
 		r.With(api.RequirePerm(perm.ResolveAlert)).Post("/api/alerts/{id}/resolve", api.handleResolveAlert)
 
-		r.With(api.RequirePerm(perm.ViewAudit)).Get("/api/audit/events", api.handleListAuditEvents)
-		r.With(api.RequirePerm(perm.ViewAudit)).Get("/api/audit/events.csv", api.handleExportAuditEventsCSV)
+		r.With(api.RequireFeature(FeatureAuditViewer), api.RequirePerm(perm.ViewAudit)).Get("/api/audit/events", api.handleListAuditEvents)
+		r.With(api.RequireFeature(FeatureAuditViewer), api.RequirePerm(perm.ViewAudit)).Get("/api/audit/events.csv", api.handleExportAuditEventsCSV)
 
 		r.Get("/api/pushes/activity", api.handleListPushActivity)
 		r.Get("/api/push-groups", api.handleListPushGroups)
-		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/pushes/preview", api.handlePreviewPush)
+		r.With(api.RequireFeature(FeatureConfigSafetyScopedPush), api.RequirePerm(perm.PushConfig)).Post("/api/pushes/preview", api.handlePreviewPush)
 
 		r.Get("/api/me", api.handleGetMe)
 		r.Put("/api/me/password", api.handlePutPassword)
