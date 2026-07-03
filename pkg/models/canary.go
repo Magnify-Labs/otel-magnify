@@ -80,6 +80,7 @@ type CanaryValidationResult struct {
 	Valid       bool           `json:"valid"`
 	Targets     []CanaryTarget `json:"targets"`
 	StopReasons []string       `json:"stop_reasons,omitempty"`
+	ErrorCodes  []string       `json:"error_codes,omitempty"`
 	Errors      []string       `json:"errors,omitempty"`
 }
 

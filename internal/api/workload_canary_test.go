@@ -152,6 +152,103 @@ func TestCanaryStartPushesOnlySelectedInstanceAndStatusIsSanitized(t *testing.T)
 	}
 }
 
+func TestCanaryStartRejectsDisconnectedInstanceUIDBeforePush(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	seedCanaryInstances(fake, "wl-canary")
+
+	rec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one","instance_uid":"inst-disconnected"}}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d want 409 body=%s", rec.Code, rec.Body.String())
+	}
+	var got models.CanaryValidationResult
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !containsCanaryString(got.ErrorCodes, "instance_target_not_connected") {
+		t.Fatalf("error_codes=%v want instance_target_not_connected; body=%s", got.ErrorCodes, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("disconnected target pushed unexpectedly: %+v", fake.pushed)
+	}
+}
+
+func TestCanaryStartRejectsInvalidInstanceTargetBeforePush(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	seedCanaryInstances(fake, "wl-canary")
+
+	rec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one"}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d want 400 body=%s", rec.Code, rec.Body.String())
+	}
+	var got models.CanaryValidationResult
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !containsCanaryString(got.ErrorCodes, "invalid_instance_target") {
+		t.Fatalf("error_codes=%v want invalid_instance_target; body=%s", got.ErrorCodes, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("invalid target pushed unexpectedly: %+v", fake.pushed)
+	}
+}
+
+func TestCanaryStartRejectsCrossWorkloadInstanceUIDBeforePush(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
+	seedCanaryWorkload(t, db, "wl-other", models.Labels{})
+	seedCanaryInstances(fake, "wl-canary")
+	fake.instances["wl-other"] = []opamp.Instance{{InstanceUID: "inst-other", PodName: "other", Healthy: true, LastMessageAt: time.Now().UTC()}}
+
+	rec := postCanary(t, router, "wl-canary", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one","instance_uid":"inst-other"}}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d want 409 body=%s", rec.Code, rec.Body.String())
+	}
+	var got models.CanaryValidationResult
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !containsCanaryString(got.ErrorCodes, "instance_target_cross_workload") {
+		t.Fatalf("error_codes=%v want instance_target_cross_workload; body=%s", got.ErrorCodes, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("cross-workload target pushed unexpectedly: %+v", fake.pushed)
+	}
+}
+
+func TestCanaryStartRejectsReadOnlyWorkloadWithMachineReadableCode(t *testing.T) {
+	db, router, fake := newTestAPI(t)
+	seedCanaryWorkload(t, db, "wl-readonly", models.Labels{})
+	wl, err := db.GetWorkload("wl-readonly")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wl.AcceptsRemoteConfig = false
+	if err := db.UpsertWorkload(wl); err != nil {
+		t.Fatal(err)
+	}
+	fake.instances["wl-readonly"] = []opamp.Instance{
+		{InstanceUID: "inst-a", Healthy: true, LastMessageAt: time.Now().UTC()},
+		{InstanceUID: "inst-b", Healthy: true, LastMessageAt: time.Now().UTC()},
+	}
+
+	rec := postCanary(t, router, "wl-readonly", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one","instance_uid":"inst-a"}}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d want 409 body=%s", rec.Code, rec.Body.String())
+	}
+	var got models.CanaryValidationResult
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !containsCanaryString(got.ErrorCodes, "remote_config_unsupported") {
+		t.Fatalf("error_codes=%v want remote_config_unsupported; body=%s", got.ErrorCodes, rec.Body.String())
+	}
+	if len(fake.pushed) != 0 {
+		t.Fatalf("read-only workload pushed unexpectedly: %+v", fake.pushed)
+	}
+}
+
 func TestCanaryStartReturnsSanitizedOpAMPPushFailure(t *testing.T) {
 	db, router, fake := newTestAPI(t)
 	seedCanaryWorkload(t, db, "wl-canary", models.Labels{})
@@ -198,6 +295,15 @@ func TestCanaryRejectsEmptyUnsupportedStaleDegradedInvalidAndViewer(t *testing.T
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("viewer status=%d body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+func containsCanaryString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCanaryPromoteAbortRollbackAndAuditFailure(t *testing.T) {

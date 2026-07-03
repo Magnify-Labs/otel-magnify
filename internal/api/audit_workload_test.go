@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -41,6 +43,32 @@ func TestAudit_WorkloadConfigPush_LegacyEndpointDoesNotEmitDirectPushAudit(t *te
 	}
 	if got := findEvent(audit.snapshot(), "config.push"); got != nil {
 		t.Fatalf("legacy direct push emitted config.push audit event: %+v", got)
+	}
+}
+
+func TestAudit_WorkloadConfigPushTarget_EmitsTargetWithoutConfigBody(t *testing.T) {
+	db, router, fake, audit := newAuditTestAPI(t)
+	seedCanaryWorkload(t, db, "w-push", models.Labels{})
+	fake.instances["w-push"] = []opamp.Instance{
+		{InstanceUID: "uid-canary", Healthy: true, LastMessageAt: time.Now().UTC()},
+		{InstanceUID: "uid-other", Healthy: true, LastMessageAt: time.Now().UTC()},
+	}
+
+	rec := postCanary(t, router, "w-push", `{"config":"`+jsonEsc(validCanaryConfig)+`","selection":{"strategy":"one","instance_uid":"uid-canary"}}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	got := findEvent(audit.snapshot(), "config.canary.start")
+	if got == nil {
+		t.Fatalf("missing config.canary.start")
+	}
+	if !strings.Contains(got.Detail, "uid-canary") {
+		t.Fatalf("audit detail %q does not include target uid", got.Detail)
+	}
+	for _, forbidden := range []string{"receivers:", "exporters:", "service:"} {
+		if strings.Contains(got.Detail, forbidden) {
+			t.Fatalf("audit detail leaked config body fragment %q: %s", forbidden, got.Detail)
+		}
 	}
 }
 

@@ -43,6 +43,17 @@ func (f *fakeOpAMPPusher) Instances(workloadID string) []opamp.Instance {
 	return f.instances[workloadID]
 }
 
+func (f *fakeOpAMPPusher) InstanceWorkload(instanceUID string) (string, bool) {
+	for workloadID, instances := range f.instances {
+		for _, instance := range instances {
+			if instance.InstanceUID == instanceUID {
+				return workloadID, true
+			}
+		}
+	}
+	return "", false
+}
+
 // newTestAPI is shared by workloads_test.go and configs_test.go. Returns the
 // store (seed test data), the wired HTTP router, and the fake OpAMP pusher so
 // tests can inspect what got pushed / stub instances.

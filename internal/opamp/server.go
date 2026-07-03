@@ -130,6 +130,11 @@ func (s *Server) Instances(workloadID string) []Instance {
 	return s.registry.Instances(workloadID)
 }
 
+// InstanceWorkload returns the live workload binding for an instance UID.
+func (s *Server) InstanceWorkload(instanceUID string) (string, bool) {
+	return s.registry.LookupWorkload(instanceUID)
+}
+
 // GetConnection returns the OpAMP connection for a given instance UID, or nil.
 func (s *Server) GetConnection(instanceUID string) types.Connection {
 	s.mu.RLock()

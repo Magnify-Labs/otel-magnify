@@ -2,10 +2,41 @@ package opamp
 
 import (
 	"context"
+	"net"
+	"sync"
 	"testing"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
+
+type recordingConn struct {
+	mu   sync.Mutex
+	sent []*protobufs.ServerToAgent
+}
+
+func (c *recordingConn) Connection() net.Conn { return nil }
+func (c *recordingConn) Disconnect() error    { return nil }
+func (c *recordingConn) Send(_ context.Context, msg *protobufs.ServerToAgent) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sent = append(c.sent, msg)
+	return nil
+}
+
+func (c *recordingConn) sentCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.sent)
+}
+
+func (c *recordingConn) onlyMessage() *protobufs.ServerToAgent {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.sent) != 1 {
+		return nil
+	}
+	return c.sent[0]
+}
 
 func TestNewOpAMPServer(t *testing.T) {
 	srv := New(nil, nil, Options{})
@@ -96,6 +127,33 @@ func TestInstanceCountStartsZero(t *testing.T) {
 	}
 	if srv.ConnectedInstanceCount() != 0 {
 		t.Errorf("expected 0 connected instances, got %d", srv.ConnectedInstanceCount())
+	}
+}
+
+func TestPushConfig_TargetInstanceSendsOnlyToThatConnection(t *testing.T) {
+	srv := New(nil, nil, Options{})
+	srv.registry.BindInstance("uid-a", "w1", Instance{Healthy: true})
+	srv.registry.BindInstance("uid-b", "w1", Instance{Healthy: true})
+	connA := &recordingConn{}
+	connB := &recordingConn{}
+	srv.mu.Lock()
+	srv.conns["uid-a"] = connA
+	srv.conns["uid-b"] = connB
+	srv.mu.Unlock()
+
+	if err := srv.PushConfig(context.Background(), "w1", []byte("receivers: {}"), "uid-b"); err != nil {
+		t.Fatalf("PushConfig target uid-b: %v", err)
+	}
+
+	if got := connA.sentCount(); got != 0 {
+		t.Fatalf("uid-a received %d messages, want 0", got)
+	}
+	msg := connB.onlyMessage()
+	if msg == nil {
+		t.Fatalf("uid-b messages = %d, want 1", connB.sentCount())
+	}
+	if string(msg.InstanceUid) != "uid-b" {
+		t.Fatalf("message InstanceUid = %q, want uid-b", string(msg.InstanceUid))
 	}
 }
 
