@@ -158,6 +158,50 @@
     }
   },
   "workloads": {
+    "instances": {
+      "loading": "Chargement de la topologie du workload…",
+      "empty": "Aucune topologie d’instance n’est disponible actuellement.",
+      "error": "Impossible de charger la topologie du workload.",
+      "summary_aria": "Résumé de topologie du workload",
+      "summary": {
+        "connected": "{{count}} connectées",
+        "healthy": "{{count}} saines",
+        "drifted": "{{count}} en dérive",
+        "failed": "{{count}} en échec"
+      },
+      "warnings": {
+        "title": "Avertissements de topologie",
+        "reason": {
+          "mixed_versions": "Versions collector mélangées",
+          "mixed_effective_config_hashes": "Hashs de config effective mélangés",
+          "mixed_remote_config_statuses": "Statuts de config distante mélangés",
+          "unhealthy_instances": "Instances non saines",
+          "failed_remote_config": "Échec de config distante",
+          "applying_remote_config": "Config distante encore en application"
+        }
+      },
+      "table": {
+        "instance": "Instance",
+        "pod": "Pod",
+        "health": "Santé",
+        "last_message": "Dernier message",
+        "version": "Version",
+        "effective_config": "Config effective",
+        "config_status": "Statut config"
+      },
+      "health": {
+        "healthy": "Saine",
+        "unhealthy": "Non saine"
+      },
+      "config_status": {
+        "sent": "Envoyé",
+        "applying": "Application",
+        "applied": "Appliqué",
+        "failed": "Échec",
+        "no_status": "Aucun statut"
+      },
+      "drift": "Dérive"
+    },
     "config": {
       "versioning": {
         "history_title": "Historique des pushes",
@@ -348,6 +392,13 @@
           "count": "Nombre de collecteurs",
           "percentage": "Pourcentage de collecteurs",
           "labels": "Labels (key=value, un par ligne)"
+        },
+        "ineligible": {
+          "offline": "hors ligne",
+          "unhealthy": "non saine",
+          "read_only": "lecture seule",
+          "unsupported": "non supportée",
+          "no_status": "aucun statut"
         },
         "validation": {
           "title": "Résultat de validation canary",
