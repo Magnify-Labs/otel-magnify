@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -83,7 +84,7 @@ var (
 	gitOpsProviderOverride       gitOpsProvider
 	gitOpsWebhookSecretOverrides = map[string]string{}
 	gitOpsHTTPClient             = &http.Client{Timeout: 10 * time.Second}
-	sensitiveCommentValueRegexp  = regexp.MustCompile(`(?i)(secret[_-]?token|authorization|bearer|password|api[_-]?key)([=: ]+)([^\s,;]+)`)
+	sensitiveCommentValueRegexp  = regexp.MustCompile(`(?i)(secret[_-]?token|access[_-]?token|private[_-]?token|authorization|bearer|password|api[_-]?key|client[_-]?secret)([=: ]+)([^\s,;&]+)`)
 	credentialURLUserinfoRegexp  = regexp.MustCompile(`https://[^/@\s]+@`)
 	gitOpsSourcePathMarkerRegexp = regexp.MustCompile(`(?i)otel-magnify:\s*path=([^\s<]+)`)
 )
@@ -138,6 +139,10 @@ func (a *API) handleExportConfigToGit(w http.ResponseWriter, r *http.Request) {
 	comment, err := provider.UpsertValidationComment(r, gitOpsValidationCommentRequest{Provider: req.Provider, Repository: req.Repository, Number: result.Number, Body: commentBody})
 	if err != nil {
 		respondError(w, http.StatusBadGateway, redactGitOpsText(err.Error()))
+		return
+	}
+	if err := audit.Emit(r.Context(), a.audit, "config.export_git", "config", cfg.ID, gitOpsExportAuditDetail(req, result, comment)); err != nil {
+		respondAuditUnavailable(w, sideEffectApplied)
 		return
 	}
 	respondJSON(w, http.StatusCreated, map[string]any{"result": result, "comment": comment, "validation": validation})
@@ -196,6 +201,9 @@ func validateGitOpsExportRequest(req *gitOpsExportRequest) error {
 	if req.Provider != "github" && req.Provider != "gitlab" {
 		return errors.New("provider must be github or gitlab")
 	}
+	if err := validateGitOpsRepository(req.Provider, req.Repository); err != nil {
+		return err
+	}
 	for name, value := range map[string]string{"repository": req.Repository, "path": req.Path, "base_branch": req.BaseBranch, "branch": req.Branch, "title": req.Title} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s is required", name)
@@ -209,6 +217,30 @@ func validateGitOpsExportRequest(req *gitOpsExportRequest) error {
 	}
 	if err := validateGitRef(req.Branch); err != nil {
 		return fmt.Errorf("invalid git ref: branch: %w", err)
+	}
+	return nil
+}
+
+func validateGitOpsRepository(provider, repository string) error {
+	raw := repository
+	repository = strings.TrimSpace(repository)
+	if repository == "" {
+		return errors.New("repository is required")
+	}
+	if repository != raw || strings.ContainsAny(repository, "\x00\r\n	 ") || strings.Contains(repository, `\`) || strings.ContainsAny(repository, "?#") || strings.Contains(repository, "://") || strings.HasPrefix(repository, "/") || strings.HasSuffix(repository, "/") {
+		return errors.New("invalid repository")
+	}
+	parts := strings.Split(repository, "/")
+	if provider == "github" && len(parts) != 2 {
+		return errors.New("invalid repository")
+	}
+	if provider == "gitlab" && len(parts) < 2 {
+		return errors.New("invalid repository")
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return errors.New("invalid repository")
+		}
 	}
 	return nil
 }
@@ -386,6 +418,10 @@ func gitOpsValidationCommentBodyWithMarker(body string) string {
 func redactGitOpsText(s string) string {
 	s = credentialURLUserinfoRegexp.ReplaceAllString(s, "https://")
 	return sensitiveCommentValueRegexp.ReplaceAllString(s, "[redacted]")
+}
+
+func gitOpsExportAuditDetail(req gitOpsExportRequest, result models.GitOpsExportResult, comment models.GitOpsCommentResult) string {
+	return redactGitOpsText(fmt.Sprintf("provider=%s repository=%s branch=%s pr_number=%d commit=%s comment_id=%s", req.Provider, req.Repository, result.Branch, result.Number, result.CommitSHA, comment.CommentID))
 }
 
 func resetGitOpsProviderForTest(t interface{ Cleanup(func()) }, provider gitOpsProvider) {

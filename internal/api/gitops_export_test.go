@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,12 +19,18 @@ import (
 type fakeGitOpsProvider struct {
 	exportReq  gitOpsExportRequest
 	exportResp models.GitOpsExportResult
+	exportErr  error
 	commentReq gitOpsValidationCommentRequest
+	commentErr error
 	webhookReq gitOpsWebhookRequest
+	webhookErr error
 }
 
 func (f *fakeGitOpsProvider) ExportConfig(_ *http.Request, req gitOpsExportRequest) (models.GitOpsExportResult, error) {
 	f.exportReq = req
+	if f.exportErr != nil {
+		return models.GitOpsExportResult{}, f.exportErr
+	}
 	if f.exportResp.Provider == "" {
 		f.exportResp = models.GitOpsExportResult{Provider: req.Provider, URL: "https://github.com/acme/collectors/pull/42", Number: 42, Branch: req.Branch, CommitSHA: "0123456789abcdef0123456789abcdef01234567"}
 	}
@@ -32,11 +39,17 @@ func (f *fakeGitOpsProvider) ExportConfig(_ *http.Request, req gitOpsExportReque
 
 func (f *fakeGitOpsProvider) UpsertValidationComment(_ *http.Request, req gitOpsValidationCommentRequest) (models.GitOpsCommentResult, error) {
 	f.commentReq = req
+	if f.commentErr != nil {
+		return models.GitOpsCommentResult{}, f.commentErr
+	}
 	return models.GitOpsCommentResult{Provider: req.Provider, URL: "https://github.com/acme/collectors/pull/42#issuecomment-1", CommentID: "1"}, nil
 }
 
 func (f *fakeGitOpsProvider) HandleWebhook(_ *http.Request, req gitOpsWebhookRequest) (models.GitOpsWebhookResult, error) {
 	f.webhookReq = req
+	if f.webhookErr != nil {
+		return models.GitOpsWebhookResult{}, f.webhookErr
+	}
 	return models.GitOpsWebhookResult{Provider: req.Provider, Event: req.Event, Action: "opened", ValidationStatus: "pass", SourcePath: "otel/collector.yaml", SourceRef: "refs/pull/42/head", CommitSHA: "0123456789abcdef0123456789abcdef01234567"}, nil
 }
 
@@ -46,7 +59,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
-func TestExportConfigAsPR_UnconfiguredProviderReturnsDisabled(t *testing.T) {
+func TestExportConfigAsPR_UnconfiguredGitHubProviderReturnsDisabled(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
 	resetGitOpsProviderForTest(t, nil)
@@ -60,6 +73,22 @@ func TestExportConfigAsPR_UnconfiguredProviderReturnsDisabled(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	assertJSONErrorContains(t, rec.Body.String(), "github gitops provider is disabled")
+}
+
+func TestExportConfigAsPR_UnconfiguredGitLabProviderReturnsDisabled(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
+	resetGitOpsProviderForTest(t, nil)
+	t.Setenv("GITOPS_GITLAB_TOKEN", "")
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/"+cfg.ID+"/export/git", `{"provider":"gitlab","repository":"platform/acme/collectors","path":"otel/collector.yaml","base_branch":"main","branch":"otel-magnify/cfg-valid","title":"Update collector config"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	assertJSONErrorContains(t, rec.Body.String(), "gitlab gitops provider is disabled")
 }
 
 func TestExportConfigAsPR_RejectsValidationFailure(t *testing.T) {
@@ -102,6 +131,44 @@ func TestExportConfigAsPR_RejectsUnsafeGitRefBeforeProviderCall(t *testing.T) {
 	assertJSONErrorContains(t, rec.Body.String(), "invalid git ref")
 }
 
+func TestExportConfigAsPR_RejectsUnsafeRepositoryBeforeProviderCall(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/"+cfg.ID+"/export/git", `{"provider":"github","repository":"https://token:secret@github.com/acme/collectors","path":"otel/collector.yaml","base_branch":"main","branch":"otel-magnify/cfg-valid","title":"Update collector config"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.exportReq.ConfigID != "" {
+		t.Fatalf("provider called despite unsafe repository: %+v", fake.exportReq)
+	}
+	assertJSONErrorContains(t, rec.Body.String(), "invalid repository")
+}
+
+func TestExportConfigAsPR_ViewerForbiddenBeforeProviderCall(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
+	seedGitOpsValidationPass(t, db, cfg)
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/"+cfg.ID+"/export/git", `{"provider":"github","repository":"acme/collectors","path":"otel/collector.yaml","base_branch":"main","branch":"otel-magnify/cfg-valid","title":"Update collector config"}`, []string{"viewer"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.exportReq.ConfigID != "" {
+		t.Fatalf("provider called despite missing PushConfig permission: %+v", fake.exportReq)
+	}
+}
+
 func TestExportConfigAsPR_UsesProviderAndReturnsResult(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
@@ -133,6 +200,53 @@ func TestExportConfigAsPR_UsesProviderAndReturnsResult(t *testing.T) {
 	}
 	if !strings.Contains(fake.commentReq.Body, "Warnings:") || !strings.Contains(fake.commentReq.Body, "AvailableComponents") {
 		t.Fatalf("validation comment omitted validator warnings: %s", fake.commentReq.Body)
+	}
+}
+
+func TestExportConfigAsPR_EmitsRedactedAuditEvent(t *testing.T) {
+	db, router, _, auditLog := newAuditTestAPI(t)
+	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
+	seedGitOpsValidationPass(t, db, cfg)
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/"+cfg.ID+"/export/git", `{"provider":"github","repository":"acme/collectors","path":"otel/collector.yaml","base_branch":"main","branch":"otel-magnify/cfg-valid","title":"Update collector config","body":"do not audit SECRET_TOKEN=abc123"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	got := findEvent(auditLog.snapshot(), "config.export_git")
+	if got == nil {
+		t.Fatalf("missing config.export_git: %+v", auditLog.snapshot())
+	}
+	if got.Resource != "config" || got.ResourceID != cfg.ID {
+		t.Fatalf("audit resource = (%q, %q), want (config, %q)", got.Resource, got.ResourceID, cfg.ID)
+	}
+	if strings.Contains(got.Detail, "SECRET_TOKEN") || strings.Contains(got.Detail, "abc123") {
+		t.Fatalf("audit detail leaked request body secret: %q", got.Detail)
+	}
+}
+
+func TestExportConfigAsPR_RedactsProviderFailure(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	cfg := seedExportConfig(t, db, "cfg-valid", validGitOpsYAML())
+	seedGitOpsValidationPass(t, db, cfg)
+	fake := &fakeGitOpsProvider{exportErr: errors.New("github failed PRIVATE-TOKEN=provider-secret at https://token:secret@git.example.com/repo?access_token=querysecret")}
+	resetGitOpsProviderForTest(t, fake)
+
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/"+cfg.ID+"/export/git", `{"provider":"github","repository":"acme/collectors","path":"otel/collector.yaml","base_branch":"main","branch":"otel-magnify/cfg-valid","title":"Update collector config"}`, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"PRIVATE-TOKEN", "provider-secret", "token:secret", "access_token", "querysecret"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("provider failure leaked %q: %s", forbidden, rec.Body.String())
+		}
 	}
 }
 
@@ -194,6 +308,44 @@ func TestGitOpsWebhook_RejectsInvalidSignatureWhenSecretConfigured(t *testing.T)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGitOpsWebhook_DisabledWhenSecretMissing(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+	setGitOpsWebhookSecretForTest(t, "github", "")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/gitops/webhooks/github", strings.NewReader(`{"action":"opened"}`))
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.webhookReq.Provider != "" {
+		t.Fatalf("provider called despite disabled webhook: %+v", fake.webhookReq)
+	}
+}
+
+func TestGitLabWebhookDisabledWhenSecretMissing(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+	setGitOpsWebhookSecretForTest(t, "gitlab", "")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/gitops/webhooks/gitlab", strings.NewReader(`{"object_kind":"merge_request"}`))
+	req.Header.Set("X-Gitlab-Event", "Merge Request Hook")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.webhookReq.Provider != "" {
+		t.Fatalf("provider called despite disabled gitlab webhook: %+v", fake.webhookReq)
 	}
 }
 
@@ -277,6 +429,45 @@ func TestGitLabWebhookAcceptsTokenAndStoresMappedPathRefCommit(t *testing.T) {
 	}
 	if stored == nil || stored.Status != "received" || stored.SourceRef != "otel-magnify/cfg-valid" {
 		t.Fatalf("stored webhook validation status = %+v", stored)
+	}
+}
+
+func TestGitLabWebhookRejectsInvalidTokenWhenSecretConfigured(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+	setGitOpsWebhookSecretForTest(t, "gitlab", "top-secret")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/gitops/webhooks/gitlab", strings.NewReader(`{"object_kind":"merge_request"}`))
+	req.Header.Set("X-Gitlab-Event", "Merge Request Hook")
+	req.Header.Set("X-Gitlab-Token", "wrong-secret")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.webhookReq.Provider != "" {
+		t.Fatalf("provider called despite invalid gitlab token: %+v", fake.webhookReq)
+	}
+}
+
+func TestGitLabWebhookRejectsMissingTokenWhenSecretConfigured(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	fake := &fakeGitOpsProvider{}
+	resetGitOpsProviderForTest(t, fake)
+	setGitOpsWebhookSecretForTest(t, "gitlab", "top-secret")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/gitops/webhooks/gitlab", strings.NewReader(`{"object_kind":"merge_request"}`))
+	req.Header.Set("X-Gitlab-Event", "Merge Request Hook")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.webhookReq.Provider != "" {
+		t.Fatalf("provider called despite missing gitlab token: %+v", fake.webhookReq)
 	}
 }
 
