@@ -6,6 +6,7 @@ import {
   test,
   expect,
   mockMe,
+  mockFeatures,
 } from './fixtures'
 import type { Page } from '@playwright/test'
 import { safeRemoteErrorText } from '../../src/lib/safeRemoteErrorText'
@@ -27,6 +28,22 @@ const viewerGroup = {
   role: 'viewer' as const,
   is_system: true,
   created_at: new Date().toISOString(),
+}
+
+const PRO_CONFIG_SAFETY_FEATURES = {
+  'config_safety.approvals': true,
+  'config_safety.break_glass': true,
+  'config_safety.canary_rollout': true,
+  'config_safety.scoped_push': true,
+  'config_safety.gitops_export': true,
+  'config_safety.policy_preview': true,
+}
+
+async function mockProConfigSafetyFeatures(
+  page: Page,
+  overrides: Record<string, boolean> = {},
+) {
+  await mockFeatures(page, { ...PRO_CONFIG_SAFETY_FEATURES, ...overrides })
 }
 
 function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
@@ -410,6 +427,7 @@ test('validate exposes errors and blocks push', async ({ loggedInPage: page }) =
 })
 
 test('valid config shows plan counters before approval request', async ({ loggedInPage: page }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -471,6 +489,7 @@ function mockApprovalList(page: Page, approvals: unknown[] = []) {
 }
 
 async function prepareApprovedDraft(page: Page) {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -664,6 +683,7 @@ test('viewer cannot request approval, approve, or push config', async ({ loggedI
 test('canary wizard validates a percentage target group before starting canary', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -695,6 +715,7 @@ test('canary wizard validates a percentage target group before starting canary',
 test('canary wizard selects one eligible instance and explains disabled options', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -790,6 +811,7 @@ test('canary wizard selects one eligible instance and explains disabled options'
 test('canary wizard treats healthy remote-config capable instances without prior status as eligible', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -841,6 +863,7 @@ test('canary wizard treats healthy remote-config capable instances without prior
 test('canary validation expires when the draft changes before push', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -870,6 +893,7 @@ test('canary validation expires when the draft changes before push', async ({
 test('canary validation failure blocks submit and explains stop reason', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -904,6 +928,7 @@ test('canary validation failure blocks submit and explains stop reason', async (
 })
 
 test('canary status panel shows stop reasons and action states', async ({ loggedInPage: page }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -952,6 +977,7 @@ test('canary status panel shows stop reasons and action states', async ({ logged
 })
 
 test('canary start stays disabled until a safety plan is ready', async ({ loggedInPage: page }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1074,6 +1100,7 @@ test('plan surfaces high-risk changes reported by backend', async ({ loggedInPag
 test('export plan action exposes an accessible markdown download affordance', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1099,6 +1126,7 @@ test('export plan action exposes an accessible markdown download affordance', as
 test('export plan falls back to client-side JSON when backend export is unavailable', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1490,6 +1518,7 @@ test('remote config errors are grouped by cause with affected instances', async 
 })
 
 test('push failed shows error banner and preserves draft', async ({ loggedInPage: page }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1608,6 +1637,7 @@ test('rollback reasons map config snippets and tenant identifiers to concise saf
 test('push applied closes edit mode, clears draft, shows applied banner', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2123,6 +2153,7 @@ test('selecting a config overwrites in-progress draft silently (no confirm)', as
 test('capable user sees enabled push scope selector and preview buckets', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2168,6 +2199,7 @@ test('saved group blocked preview cannot submit an accidental config push', asyn
   loggedInPage: page,
 }) => {
   let pushRequestCount = 0
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2205,6 +2237,7 @@ test('dynamic all-capable preview stays preview-only and does not push bulk targ
   loggedInPage: page,
 }) => {
   let pushRequestCount = 0
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2242,6 +2275,7 @@ test('dynamic all-capable preview stays preview-only and does not push bulk targ
 test('single collector scope still generates a plan and submits the workload config push', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2333,6 +2367,7 @@ test('French scope UX renders translated labels and blocked preview copy', async
   loggedInPage: page,
 }) => {
   await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2368,6 +2403,7 @@ test('French scope UX renders translated labels and blocked preview copy', async
 test('saved scope selector reports empty and failed group states', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2406,6 +2442,7 @@ test('French saved scope selector reports localized empty and failed group state
   loggedInPage: page,
 }) => {
   await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2444,6 +2481,7 @@ test('French saved scope selector reports localized empty and failed group state
 test('saved scope preview failure shows inline error and clears preview panel', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2473,6 +2511,7 @@ test('saved scope preview failure shows inline error and clears preview panel', 
 test('dynamic push selector posts labels version and capability for safe preview', async ({
   loggedInPage: page,
 }) => {
+  await mockProConfigSafetyFeatures(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
