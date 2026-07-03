@@ -165,14 +165,14 @@ func (d *DB) RecordGitOpsValidationStatus(status models.GitOpsValidationStatus) 
 	return err
 }
 
-// GetLatestGitOpsValidationStatus returns the newest stored provider validation signal for a path/commit.
-func (d *DB) GetLatestGitOpsValidationStatus(provider, sourcePath, commitSHA string) (*models.GitOpsValidationStatus, error) {
+// GetLatestGitOpsValidationStatus returns the newest stored provider validation signal for a path/ref/commit.
+func (d *DB) GetLatestGitOpsValidationStatus(provider, sourcePath, sourceRef, commitSHA string) (*models.GitOpsValidationStatus, error) {
 	row := d.QueryRow(`
 		SELECT provider, event, action, status, source_path, source_ref, commit_sha, observed_at
 		FROM gitops_validation_statuses
-		WHERE provider = ? AND source_path = ? AND commit_sha = ?
+		WHERE provider = ? AND source_path = ? AND source_ref = ? AND commit_sha = ?
 		ORDER BY observed_at DESC, id DESC
-		LIMIT 1`, provider, sourcePath, commitSHA)
+		LIMIT 1`, provider, sourcePath, sourceRef, commitSHA)
 	var status models.GitOpsValidationStatus
 	if err := row.Scan(&status.Provider, &status.Event, &status.Action, &status.Status, &status.SourcePath, &status.SourceRef, &status.CommitSHA, &status.ObservedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
