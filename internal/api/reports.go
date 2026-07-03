@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -150,8 +151,17 @@ func (a *API) handleConfigSafetyReport(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		format = "json"
 	}
-	report, err := a.buildConfigSafetyEvidenceReport(r.URL.Query().Get("recommended_version"), time.Now().UTC(), unsignedDigestEvidenceSigner{})
+	scope, err := configSafetyReportScope(r.URL.Query())
 	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	report, err := a.buildConfigSafetyEvidenceReport(r.URL.Query().Get("recommended_version"), scope, time.Now().UTC(), unsignedDigestEvidenceSigner{})
+	if err != nil {
+		if errors.Is(err, reports.ErrInvalidRequest) {
+			respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "failed to build config safety report")
 		return
 	}
@@ -191,8 +201,42 @@ func reportExtension(format string) string {
 	}
 }
 
-func (a *API) buildConfigSafetyEvidenceReport(recommended string, now time.Time, signer evidenceReportSigner) (models.EvidenceReport, error) {
-	workloads, err := a.db.ListWorkloads(false)
+func configSafetyReportScope(q url.Values) (models.ReportScope, error) {
+	scope := models.ReportScope{GroupID: strings.TrimSpace(q.Get("group_id"))}
+	for _, raw := range append(q["workload_id"], q["workload_ids"]...) {
+		for _, id := range strings.Split(raw, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				scope.WorkloadIDs = append(scope.WorkloadIDs, id)
+			}
+		}
+	}
+	for key, values := range q {
+		name, ok := strings.CutPrefix(key, "selector.")
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		if name == "" || len(values) == 0 {
+			continue
+		}
+		value := strings.TrimSpace(values[len(values)-1])
+		if value == "" {
+			continue
+		}
+		if scope.Selector == nil {
+			scope.Selector = map[string]string{}
+		}
+		scope.Selector[name] = value
+	}
+	normalized, err := reports.NormalizeRequest(models.ReportExportRequest{ReportType: models.ReportTypeEvidencePack, Scope: scope})
+	if err != nil {
+		return models.ReportScope{}, err
+	}
+	return normalized.Scope, nil
+}
+
+func (a *API) buildConfigSafetyEvidenceReport(recommended string, scope models.ReportScope, now time.Time, signer evidenceReportSigner) (models.EvidenceReport, error) {
+	workloads, err := a.configSafetyReportWorkloads(scope)
 	if err != nil {
 		return models.EvidenceReport{}, err
 	}
@@ -265,6 +309,49 @@ func (a *API) buildConfigSafetyEvidenceReport(recommended string, now time.Time,
 	}
 	report.Signature = sig
 	return report, nil
+}
+
+func (a *API) configSafetyReportWorkloads(scope models.ReportScope) ([]models.Workload, error) {
+	workloads, err := a.db.ListWorkloads(false)
+	if err != nil {
+		return nil, err
+	}
+	if len(scope.WorkloadIDs) > 0 {
+		wanted := map[string]bool{}
+		for _, id := range scope.WorkloadIDs {
+			wanted[id] = true
+		}
+		out := make([]models.Workload, 0, len(wanted))
+		for _, wl := range workloads {
+			if wanted[wl.ID] {
+				out = append(out, wl)
+				delete(wanted, wl.ID)
+			}
+		}
+		if len(wanted) > 0 {
+			return nil, fmt.Errorf("%w: workload not found", reports.ErrInvalidRequest)
+		}
+		return out, nil
+	}
+	out := []models.Workload{}
+	for _, wl := range workloads {
+		if configSafetyReportMatchesScope(wl, scope) {
+			out = append(out, wl)
+		}
+	}
+	return out, nil
+}
+
+func configSafetyReportMatchesScope(wl models.Workload, scope models.ReportScope) bool {
+	if scope.GroupID != "" && wl.Labels["group"] != scope.GroupID {
+		return false
+	}
+	for k, v := range scope.Selector {
+		if wl.Labels[k] != v && wl.FingerprintKeys[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 func sanitizedConfigHistory(history []models.WorkloadConfig) []models.WorkloadConfig {
@@ -365,19 +452,19 @@ func renderEvidenceReportCSV(report models.EvidenceReport) []byte {
 	w := csv.NewWriter(buf)
 	_ = w.Write([]string{"section", "workload_id", "display_name", "config_hash", "status", "detail", "occurred_at"})
 	for _, c := range report.ConfigChanges {
-		_ = w.Write([]string{"config_change", c.WorkloadID, c.DisplayName, c.ConfigHash, c.Status, c.DiffSummary, c.AppliedAt.UTC().Format(time.RFC3339)})
+		_ = w.Write(reports.NeutralizeCSVRecord([]string{"config_change", c.WorkloadID, c.DisplayName, c.ConfigHash, c.Status, c.DiffSummary, c.AppliedAt.UTC().Format(time.RFC3339)}))
 	}
 	for _, f := range report.ValidationFailures {
-		_ = w.Write([]string{"validation_failure", f.WorkloadID, f.DisplayName, f.ConfigHash, f.Status, f.Error, f.OccurredAt.UTC().Format(time.RFC3339)})
+		_ = w.Write(reports.NeutralizeCSVRecord([]string{"validation_failure", f.WorkloadID, f.DisplayName, f.ConfigHash, f.Status, f.Error, f.OccurredAt.UTC().Format(time.RFC3339)}))
 	}
 	for _, r := range report.Rollbacks {
-		_ = w.Write([]string{"rollback", r.WorkloadID, r.DisplayName, r.ConfigHash, r.Status, r.RollbackOfPushID, r.OccurredAt.UTC().Format(time.RFC3339)})
+		_ = w.Write(reports.NeutralizeCSVRecord([]string{"rollback", r.WorkloadID, r.DisplayName, r.ConfigHash, r.Status, r.RollbackOfPushID, r.OccurredAt.UTC().Format(time.RFC3339)}))
 	}
 	for _, d := range report.Drift.Items {
-		_ = w.Write([]string{"drift", d.WorkloadID, d.Collector, d.ExpectedConfigHash, d.DriftStatus, strings.Join(d.DriftReasons, ";"), report.GeneratedAt.UTC().Format(time.RFC3339)})
+		_ = w.Write(reports.NeutralizeCSVRecord([]string{"drift", d.WorkloadID, d.Collector, d.ExpectedConfigHash, d.DriftStatus, strings.Join(d.DriftReasons, ";"), report.GeneratedAt.UTC().Format(time.RFC3339)}))
 	}
 	for _, o := range report.OutdatedCollectors {
-		_ = w.Write([]string{"outdated_collector", o.WorkloadID, o.DisplayName, "", "below_recommended", o.Version + " < " + o.RecommendedVersion, report.GeneratedAt.UTC().Format(time.RFC3339)})
+		_ = w.Write(reports.NeutralizeCSVRecord([]string{"outdated_collector", o.WorkloadID, o.DisplayName, "", "below_recommended", o.Version + " < " + o.RecommendedVersion, report.GeneratedAt.UTC().Format(time.RFC3339)}))
 	}
 	w.Flush()
 	return buf.Bytes()
