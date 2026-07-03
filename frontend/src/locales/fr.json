@@ -513,6 +513,24 @@
           "block": "Bloquants",
           "warn": "Avertissements",
           "pass": "Passés"
+        },
+        "edition_label": "Édition et portée de la politique",
+        "packaging": {
+          "community": {
+            "core": "Règle Community intégrée",
+            "configurable": "Politique serveur Community",
+            "tenant_hook": "Hook de politique Community"
+          },
+          "pro": {
+            "core": "Règle serveur Pro",
+            "configurable": "Politique Pro configurable",
+            "tenant_hook": "Hook de politique Pro"
+          },
+          "enterprise": {
+            "core": "Règle serveur Enterprise",
+            "configurable": "Politique Enterprise configurable",
+            "tenant_hook": "Hook de politique tenant Enterprise"
+          }
         }
       },
       "apply": {

@@ -513,6 +513,24 @@
           "block": "Block",
           "warn": "Warn",
           "pass": "Pass"
+        },
+        "edition_label": "Policy edition and scope",
+        "packaging": {
+          "community": {
+            "core": "Community built-in rule",
+            "configurable": "Community server policy",
+            "tenant_hook": "Community policy hook"
+          },
+          "pro": {
+            "core": "Pro server rule",
+            "configurable": "Pro configurable policy",
+            "tenant_hook": "Pro policy hook"
+          },
+          "enterprise": {
+            "core": "Enterprise server rule",
+            "configurable": "Enterprise configurable policy",
+            "tenant_hook": "Enterprise tenant policy hook"
+          }
         }
       },
       "apply": {
