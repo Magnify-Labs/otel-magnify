@@ -436,6 +436,78 @@ func TestGetWorkloadTopology_SummarizesMixedInstanceState(t *testing.T) {
 	}
 }
 
+func TestGetWorkloadTopology_PreservesDistinctInstanceRecords(t *testing.T) {
+	_, router, fake := newTestAPI(t)
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	fake.instances["w-topology-records"] = []opamp.Instance{
+		{
+			InstanceUID: "uid-stable", PodName: "collector-0", Version: "0.98.0", Healthy: true, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-active", LastMessageAt: now,
+			RemoteConfigStatus: &models.RemoteConfigStatus{Status: models.PushStatusApplied, ConfigHash: "hash-active", UpdatedAt: now},
+		},
+		{
+			InstanceUID: "uid-canary", PodName: "collector-1", Version: "0.99.0", Healthy: false, AcceptsRemoteConfig: true,
+			EffectiveConfigHash: "hash-canary", LastMessageAt: now.Add(time.Minute),
+			RemoteConfigStatus: &models.RemoteConfigStatus{Status: models.PushStatusFailed, ConfigHash: "hash-canary", ErrorMessage: "validation failed", UpdatedAt: now.Add(time.Minute)},
+		},
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/w-topology-records/topology")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Instances []opamp.Instance `json:"instances"`
+		Summary   struct {
+			ConnectedCount           int            `json:"connected_count"`
+			HealthyCount             int            `json:"healthy_count"`
+			UnhealthyCount           int            `json:"unhealthy_count"`
+			VersionDiversity         []string       `json:"version_diversity"`
+			ConfigHashDiversity      []string       `json:"config_hash_diversity"`
+			RemoteConfigStatusCounts map[string]int `json:"remote_config_status_counts"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode topology: %v", err)
+	}
+	byUID := map[string]opamp.Instance{}
+	for _, inst := range body.Instances {
+		byUID[inst.InstanceUID] = inst
+	}
+	if len(byUID) != 2 {
+		t.Fatalf("instances len = %d, want 2 distinct records: %+v", len(byUID), byUID)
+	}
+	stable := byUID["uid-stable"]
+	if stable.PodName != "collector-0" || stable.Version != "0.98.0" || stable.EffectiveConfigHash != "hash-active" || !stable.Healthy {
+		t.Fatalf("stable instance collapsed or corrupted: %+v", stable)
+	}
+	if stable.RemoteConfigStatus == nil || stable.RemoteConfigStatus.Status != models.PushStatusApplied || stable.RemoteConfigStatus.ConfigHash != "hash-active" {
+		t.Fatalf("stable remote_config_status = %+v", stable.RemoteConfigStatus)
+	}
+	canary := byUID["uid-canary"]
+	if canary.PodName != "collector-1" || canary.Version != "0.99.0" || canary.EffectiveConfigHash != "hash-canary" || canary.Healthy {
+		t.Fatalf("canary instance collapsed or corrupted: %+v", canary)
+	}
+	if canary.RemoteConfigStatus == nil || canary.RemoteConfigStatus.Status != models.PushStatusFailed || canary.RemoteConfigStatus.ConfigHash != "hash-canary" {
+		t.Fatalf("canary remote_config_status = %+v", canary.RemoteConfigStatus)
+	}
+	if body.Summary.ConnectedCount != 2 || body.Summary.HealthyCount != 1 || body.Summary.UnhealthyCount != 1 {
+		t.Fatalf("summary counts = %+v, want connected=2 healthy=1 unhealthy=1", body.Summary)
+	}
+	if got, want := body.Summary.VersionDiversity, []string{"0.98.0", "0.99.0"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("version_diversity = %v, want %v", got, want)
+	}
+	if got, want := body.Summary.ConfigHashDiversity, []string{"hash-active", "hash-canary"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("config_hash_diversity = %v, want %v", got, want)
+	}
+	if body.Summary.RemoteConfigStatusCounts[models.PushStatusApplied] != 1 || body.Summary.RemoteConfigStatusCounts[models.PushStatusFailed] != 1 {
+		t.Fatalf("remote_config_status_counts = %+v", body.Summary.RemoteConfigStatusCounts)
+	}
+}
+
 func TestGetWorkloadTopology_ContractIncludesSchemaCapabilityCountsAndHeterogeneityFlags(t *testing.T) {
 	_, router, fake := newTestAPI(t)
 	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
