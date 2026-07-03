@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +77,157 @@ func (a *API) handleListWorkloadInstances(w http.ResponseWriter, r *http.Request
 		instances = []opamp.Instance{}
 	}
 	respondJSON(w, 200, instances)
+}
+
+// workloadTopologyResponse is the enriched live topology contract returned by
+// GET /api/workloads/{id}/topology. The instances array preserves the same
+// per-instance shape as /instances; summary adds workload-level heterogeneity
+// counters so frontend consumers do not need to reimplement aggregation rules.
+type workloadTopologyResponse struct {
+	SchemaVersion string                         `json:"schema_version"`
+	WorkloadID    string                         `json:"workload_id"`
+	Instances     []opamp.Instance               `json:"instances"`
+	Summary       models.WorkloadTopologySummary `json:"summary"`
+}
+
+func (a *API) handleGetWorkloadTopology(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	instances := []opamp.Instance{}
+	if a.opamp != nil {
+		instances = a.opamp.Instances(id)
+		if instances == nil {
+			instances = []opamp.Instance{}
+		}
+	}
+	respondJSON(w, http.StatusOK, workloadTopologyResponse{
+		SchemaVersion: "workload-topology.v1",
+		WorkloadID:    id,
+		Instances:     instances,
+		Summary:       summarizeWorkloadTopology(instances),
+	})
+}
+
+func summarizeWorkloadTopology(instances []opamp.Instance) models.WorkloadTopologySummary {
+	heterogeneity := map[string]bool{
+		"mixed_versions":                false,
+		"mixed_effective_config_hashes": false,
+		"unhealthy_instances":           false,
+		"mixed_remote_config_statuses":  false,
+		"applying_remote_config":        false,
+		"failed_remote_config":          false,
+	}
+	summary := models.WorkloadTopologySummary{
+		VersionDiversity:         []string{},
+		ConfigHashDiversity:      []string{},
+		RemoteConfigStatusCounts: initialRemoteConfigStatusCounts(),
+		Heterogeneity:            heterogeneity,
+		HeterogeneityReasons:     []string{},
+	}
+	if len(instances) == 0 {
+		return summary
+	}
+
+	versions := map[string]struct{}{}
+	configHashes := map[string]int{}
+	for _, inst := range instances {
+		summary.ConnectedCount++
+		if inst.Healthy {
+			summary.HealthyCount++
+		} else {
+			summary.UnhealthyCount++
+		}
+		if inst.Version != "" {
+			versions[inst.Version] = struct{}{}
+		}
+		if inst.EffectiveConfigHash != "" {
+			configHashes[inst.EffectiveConfigHash]++
+		}
+		if inst.AcceptsRemoteConfig {
+			summary.RemoteConfigStatusCounts["capable"]++
+		}
+		if inst.RemoteConfigStatus != nil && inst.RemoteConfigStatus.Status != "" {
+			summary.RemoteConfigStatusCounts[inst.RemoteConfigStatus.Status]++
+		} else {
+			summary.RemoteConfigStatusCounts[models.InstanceStatusNoStatus]++
+		}
+	}
+
+	summary.VersionDiversity = sortedKeys(versions)
+	summary.ConfigHashDiversity = sortedCountKeys(configHashes)
+	if len(configHashes) > 1 {
+		maxSameHash := 0
+		for _, count := range configHashes {
+			if count > maxSameHash {
+				maxSameHash = count
+			}
+		}
+		summary.DriftedCount = len(instances) - maxSameHash
+	}
+	if len(summary.VersionDiversity) > 1 {
+		heterogeneity["mixed_versions"] = true
+		summary.HeterogeneityReasons = append(summary.HeterogeneityReasons, "mixed_versions")
+	}
+	if len(summary.ConfigHashDiversity) > 1 {
+		heterogeneity["mixed_effective_config_hashes"] = true
+		summary.HeterogeneityReasons = append(summary.HeterogeneityReasons, "mixed_effective_config_hashes")
+	}
+	if summary.UnhealthyCount > 0 {
+		heterogeneity["unhealthy_instances"] = true
+		summary.HeterogeneityReasons = append(summary.HeterogeneityReasons, "unhealthy_instances")
+	}
+	if nonZeroRemoteConfigStatusKinds(summary.RemoteConfigStatusCounts) > 1 {
+		heterogeneity["mixed_remote_config_statuses"] = true
+		summary.HeterogeneityReasons = append(summary.HeterogeneityReasons, "mixed_remote_config_statuses")
+	}
+	if summary.RemoteConfigStatusCounts[models.PushStatusApplying] > 0 {
+		heterogeneity["applying_remote_config"] = true
+		summary.HeterogeneityReasons = append(summary.HeterogeneityReasons, "applying_remote_config")
+	}
+	if summary.RemoteConfigStatusCounts[models.PushStatusFailed] > 0 {
+		heterogeneity["failed_remote_config"] = true
+		summary.HeterogeneityReasons = append(summary.HeterogeneityReasons, "failed_remote_config")
+	}
+	return summary
+}
+
+func initialRemoteConfigStatusCounts() map[string]int {
+	return map[string]int{
+		"capable":                     0,
+		models.InstanceStatusNoStatus: 0,
+		models.PushStatusSent:         0,
+		models.PushStatusApplying:     0,
+		models.PushStatusApplied:      0,
+		models.PushStatusFailed:       0,
+	}
+}
+
+func nonZeroRemoteConfigStatusKinds(counts map[string]int) int {
+	keys := []string{models.InstanceStatusNoStatus, models.PushStatusSent, models.PushStatusApplying, models.PushStatusApplied, models.PushStatusFailed}
+	n := 0
+	for _, key := range keys {
+		if counts[key] > 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedCountKeys(values map[string]int) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func initialPushInstanceStatuses(hash string, at time.Time, instances []opamp.Instance) []models.WorkloadConfigInstanceStatus {

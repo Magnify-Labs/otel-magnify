@@ -121,6 +121,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.Get("/api/workloads/version-intelligence", api.handleFleetVersionIntelligence)
 		r.Get("/api/workloads/{id}", api.handleGetWorkload)
 		r.Get("/api/workloads/{id}/instances", api.handleListWorkloadInstances)
+		r.Get("/api/workloads/{id}/topology", api.handleGetWorkloadTopology)
 		r.Get("/api/workloads/{id}/events", api.handleListWorkloadEvents)
 		r.Get("/api/workloads/{id}/events/stats", api.handleWorkloadEventsStats)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config", api.handlePushWorkloadConfig)

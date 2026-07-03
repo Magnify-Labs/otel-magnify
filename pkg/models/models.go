@@ -311,6 +311,22 @@ type ConfigDriftSummary struct {
 	HeterogeneousGroups         int `json:"heterogeneous_groups"`
 }
 
+// WorkloadTopologySummary is the workload-level aggregate for live instance
+// topology. It is returned alongside the /api/workloads/{id}/topology instance
+// array so clients can render mixed versions, config drift, health, and remote
+// config application state without inferring contracts from individual pods.
+type WorkloadTopologySummary struct {
+	ConnectedCount           int             `json:"connected_count"`
+	HealthyCount             int             `json:"healthy_count"`
+	UnhealthyCount           int             `json:"unhealthy_count"`
+	DriftedCount             int             `json:"drifted_count"`
+	VersionDiversity         []string        `json:"version_diversity"`
+	ConfigHashDiversity      []string        `json:"config_hash_diversity"`
+	RemoteConfigStatusCounts map[string]int  `json:"remote_config_status_counts"`
+	Heterogeneity            map[string]bool `json:"heterogeneity"`
+	HeterogeneityReasons     []string        `json:"heterogeneity_reasons"`
+}
+
 // ConfigDriftItem is one collector row in the config safety drift dashboard.
 type ConfigDriftItem struct {
 	WorkloadID                  string                       `json:"workload_id"`
