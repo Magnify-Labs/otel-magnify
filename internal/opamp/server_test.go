@@ -157,6 +157,24 @@ func TestPushConfig_TargetInstanceSendsOnlyToThatConnection(t *testing.T) {
 	}
 }
 
+func TestPushConfig_TargetInstanceRejectsCrossWorkloadBinding(t *testing.T) {
+	srv := New(nil, nil, Options{})
+	srv.registry.BindInstance("uid-a", "w1", Instance{Healthy: true})
+	srv.registry.BindInstance("uid-other", "w2", Instance{Healthy: true})
+	connOther := &recordingConn{}
+	srv.mu.Lock()
+	srv.conns["uid-other"] = connOther
+	srv.mu.Unlock()
+
+	if err := srv.PushConfig(context.Background(), "w1", []byte("receivers: {}"), "uid-other"); err == nil {
+		t.Fatal("PushConfig accepted a target instance bound to another workload")
+	}
+
+	if got := connOther.sentCount(); got != 0 {
+		t.Fatalf("cross-workload target received %d messages, want 0", got)
+	}
+}
+
 // TestOnMessage_UnknownInstance_RequestsFullState guards the resync path:
 // when an agent sends a heartbeat for a UID we have no record of (typical
 // after a server restart with ephemeral DB), we must set ReportFullState so

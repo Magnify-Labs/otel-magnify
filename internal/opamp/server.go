@@ -162,6 +162,13 @@ func (s *Server) PushConfig(ctx context.Context, workloadID string, yamlContent 
 	}
 
 	if targetInstanceUID != "" {
+		boundWorkloadID, ok := s.registry.LookupWorkload(targetInstanceUID)
+		if !ok {
+			return fmt.Errorf("instance %s not connected", targetInstanceUID)
+		}
+		if boundWorkloadID != workloadID {
+			return fmt.Errorf("instance %s belongs to workload %s, not %s", targetInstanceUID, boundWorkloadID, workloadID)
+		}
 		return s.sendToInstance(ctx, targetInstanceUID, makeMsg(targetInstanceUID))
 	}
 
