@@ -85,7 +85,7 @@ var (
 	gitOpsWebhookSecretOverrides = map[string]string{}
 	gitOpsHTTPClient             = &http.Client{Timeout: 10 * time.Second}
 	sensitiveCommentValueRegexp  = regexp.MustCompile(`(?i)(secret[_-]?token|access[_-]?token|private[_-]?token|authorization|bearer|password|api[_-]?key|client[_-]?secret)([=: ]+)([^\s,;&]+)`)
-	credentialURLUserinfoRegexp  = regexp.MustCompile(`https?://[^/@\s]+@`)
+	credentialURLUserinfoRegexp  = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/@\s]+@`)
 	gitOpsSourcePathMarkerRegexp = regexp.MustCompile(`(?i)otel-magnify:\s*path=([^\s<]+)`)
 )
 
@@ -416,7 +416,7 @@ func gitOpsValidationCommentBodyWithMarker(body string) string {
 }
 
 func redactGitOpsText(s string) string {
-	s = credentialURLUserinfoRegexp.ReplaceAllString(s, "https://")
+	s = credentialURLUserinfoRegexp.ReplaceAllString(s, "${1}")
 	return sensitiveCommentValueRegexp.ReplaceAllString(s, "[redacted]")
 }
 

@@ -89,7 +89,7 @@ export default function ConfigSafetyStatusPanel({
               {t('dashboard.config_safety.drift_cta')}
             </Link>
           )}
-          <ConfigEvidencePanel />
+          <ConfigEvidencePanel workloadIds={supervised.map((workload) => workload.id)} />
         </>
       )}
     </section>

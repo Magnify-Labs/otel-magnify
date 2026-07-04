@@ -399,34 +399,41 @@ function fallbackEvidenceReportFilename(format: EvidenceReportDownloadFormat): s
   return `config-safety-evidence-${stamp}.${extension}`
 }
 
+type ConfigSafetyReportParams = {
+  recommendedVersion?: string
+  workloadIds: string[]
+}
+
+function configSafetyReportQueryParams(
+  format: EvidenceReportExportFormat | EvidenceReportDownloadFormat,
+  params: ConfigSafetyReportParams,
+) {
+  return {
+    format,
+    workload_ids: params.workloadIds.join(','),
+    ...(params.recommendedVersion ? { recommended_version: params.recommendedVersion } : {}),
+  }
+}
+
 export const configSafetyAPI = {
   drift: () => api.get<ConfigDriftDashboard>('/config-safety/drift').then((r) => r.data),
-  report: (recommendedVersion?: string) =>
+  report: (params: ConfigSafetyReportParams) =>
     api
       .get<EvidenceReport>('/reports/config-safety', {
-        params: {
-          format: 'json' as EvidenceReportExportFormat,
-          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
-        },
+        params: configSafetyReportQueryParams('json' as EvidenceReportExportFormat, params),
       })
       .then((r) => r.data),
-  exportReport: (format: EvidenceReportDownloadFormat, recommendedVersion?: string) =>
+  exportReport: (format: EvidenceReportDownloadFormat, params: ConfigSafetyReportParams) =>
     api
       .get<Blob>('/reports/config-safety', {
-        params: {
-          format,
-          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
-        },
+        params: configSafetyReportQueryParams(format, params),
         responseType: 'blob',
       })
       .then((r) => r.data),
-  exportReportDownload: (format: EvidenceReportDownloadFormat, recommendedVersion?: string) =>
+  exportReportDownload: (format: EvidenceReportDownloadFormat, params: ConfigSafetyReportParams) =>
     api
       .get<Blob>('/reports/config-safety', {
-        params: {
-          format,
-          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
-        },
+        params: configSafetyReportQueryParams(format, params),
         responseType: 'blob',
       })
       .then((r): EvidenceReportDownload => {

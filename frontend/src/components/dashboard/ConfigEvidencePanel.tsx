@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { configSafetyAPI, getAPIErrorDetails } from '../../api/client'
+import { useFeature } from '../../hooks/useFeature'
 import { hasPerm } from '../../lib/perm'
 import { useStore } from '../../store'
 import type {
@@ -18,23 +19,25 @@ import type {
 
 const EXPORT_FORMATS: EvidenceReportDownloadFormat[] = ['markdown', 'csv', 'pdf']
 
-export default function ConfigEvidencePanel() {
+export default function ConfigEvidencePanel({ workloadIds }: { workloadIds: string[] }) {
   const { t } = useTranslation()
   const me = useStore((s) => s.me)
-  const canExport = hasPerm(me?.groups, 'workload:push_config')
+  const { enabled: evidencePackEnabled, isLoading: evidencePackLoading } =
+    useFeature('reports.evidence_pack')
+  const canExport = hasPerm(me?.groups, 'reports:export')
   const [exportStatus, setExportStatus] = useState<string | null>(null)
 
   const reportQuery = useQuery({
-    queryKey: ['config-safety-evidence-report'],
-    queryFn: () => configSafetyAPI.report(),
-    enabled: canExport,
+    queryKey: ['config-safety-evidence-report', workloadIds],
+    queryFn: () => configSafetyAPI.report({ workloadIds }),
+    enabled: evidencePackEnabled && canExport && workloadIds.length > 0,
     staleTime: 60_000,
     retry: false,
   })
 
   const exportMutation = useMutation({
     mutationFn: (format: EvidenceReportDownloadFormat) =>
-      configSafetyAPI.exportReportDownload(format),
+      configSafetyAPI.exportReportDownload(format, { workloadIds }),
     onMutate: () => setExportStatus(null),
     onSuccess: (download) => {
       downloadEvidenceReport(download)
@@ -47,7 +50,8 @@ export default function ConfigEvidencePanel() {
     },
   })
 
-  if (!canExport) return null
+  if (evidencePackLoading || !evidencePackEnabled || !canExport || workloadIds.length === 0)
+    return null
 
   const report = reportQuery.data
   const empty = report ? isReportEmpty(report) : false
