@@ -207,13 +207,22 @@ service:
 			},
 			FingerprintKeys: map[string]string{"service.name": "checkout-api", "cluster": "prod-eu-1"},
 		},
-		FleetPeers: []BlastRadiusWorkload{{
-			ID:          "wl-payments",
-			DisplayName: "payments collector",
-			Type:        "collector",
-			Status:      "connected",
-			Labels:      map[string]string{"service": "payments-api", "cluster": "prod-eu-1", "tier": "critical"},
-		}},
+		FleetPeers: []BlastRadiusWorkload{
+			{
+				ID:          "wl-payments",
+				DisplayName: "payments collector",
+				Type:        "collector",
+				Status:      "connected",
+				Labels:      map[string]string{"service": "payments-api", "cluster": "prod-eu-1", "tier": "critical"},
+			},
+			{
+				ID:          "wl-fraud",
+				DisplayName: "fraud collector",
+				Type:        "collector",
+				Status:      "connected",
+				Labels:      map[string]string{"service": "fraud-api", "cluster": "staging-us-1", "tier": "critical"},
+			},
+		},
 	})
 
 	if got.BlastRadius.SchemaVersion != BlastRadiusSchemaVersion {
@@ -227,6 +236,16 @@ service:
 	assertStringSet(t, got.BlastRadius.ImpactedClusters, []string{"checkout", "prod-eu-1", "production"})
 	if len(got.BlastRadius.CriticalCollectors) != 2 {
 		t.Fatalf("critical collectors = %#v, want workload and peer", got.BlastRadius.CriticalCollectors)
+	}
+	for _, svc := range got.BlastRadius.ImpactedServices {
+		if svc.ServiceName == "fraud-api" || svc.WorkloadID == "wl-fraud" {
+			t.Fatalf("unrelated peer leaked into impacted services: %#v", got.BlastRadius.ImpactedServices)
+		}
+	}
+	for _, collector := range got.BlastRadius.CriticalCollectors {
+		if collector.WorkloadID == "wl-fraud" {
+			t.Fatalf("unrelated peer leaked into critical collectors: %#v", got.BlastRadius.CriticalCollectors)
+		}
 	}
 	assertNoSecretLeak(t, got, "old-secret", "new-secret", "should-not-leak")
 }

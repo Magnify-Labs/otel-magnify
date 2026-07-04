@@ -682,13 +682,12 @@ func buildBlastRadius(diff ConfigDiff, ctx BlastRadiusContext) BlastRadius {
 	out.AffectedSignals = sortedSet(signals)
 	out.TouchedExporters = sortedSet(exporters)
 
-	workloads := []BlastRadiusWorkload{}
+	targetWorkloads := []BlastRadiusWorkload{}
 	if ctx.Workload.ID != "" || ctx.Workload.DisplayName != "" || len(ctx.Workload.Labels) > 0 || len(ctx.Workload.FingerprintKeys) > 0 {
-		workloads = append(workloads, ctx.Workload)
+		targetWorkloads = append(targetWorkloads, ctx.Workload)
 	}
-	workloads = append(workloads, ctx.FleetPeers...)
 	clusterSet := map[string]bool{}
-	for _, wl := range workloads {
+	for _, wl := range targetWorkloads {
 		for _, key := range clusterKeys() {
 			if v := workloadValue(wl, key); v != "" {
 				clusterSet[v] = true
@@ -697,11 +696,15 @@ func buildBlastRadius(diff ConfigDiff, ctx BlastRadiusContext) BlastRadius {
 	}
 	out.ImpactedClusters = sortedSet(clusterSet)
 
-	serviceSeen := map[string]bool{}
-	for _, wl := range workloads {
-		if !workloadInClusters(wl, clusterSet) {
-			continue
+	scopedWorkloads := append([]BlastRadiusWorkload{}, targetWorkloads...)
+	for _, wl := range ctx.FleetPeers {
+		if len(clusterSet) > 0 && workloadInClusters(wl, clusterSet) {
+			scopedWorkloads = append(scopedWorkloads, wl)
 		}
+	}
+
+	serviceSeen := map[string]bool{}
+	for _, wl := range scopedWorkloads {
 		svc := firstWorkloadValue(wl, serviceKeys())
 		if svc == "" {
 			continue
@@ -715,8 +718,8 @@ func buildBlastRadius(diff ConfigDiff, ctx BlastRadiusContext) BlastRadius {
 	}
 	sort.Slice(out.ImpactedServices, func(i, j int) bool { return out.ImpactedServices[i].ServiceName < out.ImpactedServices[j].ServiceName })
 
-	for _, wl := range workloads {
-		if !workloadInClusters(wl, clusterSet) || !isCollectorWorkload(wl) {
+	for _, wl := range scopedWorkloads {
+		if !isCollectorWorkload(wl) {
 			continue
 		}
 		reasons := criticalCollectorReasons(wl)
