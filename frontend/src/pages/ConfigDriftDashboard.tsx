@@ -170,6 +170,11 @@ function ReportExportButton({
 function SignatureMetadata({ report }: { report: EvidenceReport }) {
   const { t } = useTranslation()
   const signature = report.signature
+
+  if (!signature) {
+    return null
+  }
+
   const isUnsignedDigest = signature.algorithm.includes('unsigned')
   const statusKey = isUnsignedDigest ? 'unsigned_digest' : 'signed'
 
