@@ -147,7 +147,8 @@ const evidenceReport = {
   signature: {
     algorithm: 'sha256-unsigned-digest-v1',
     payload_digest_sha256: 'abcdef1234567890',
-    verification_hint: 'Community unsigned digest. Enterprise builds may attach a detached signature.',
+    verification_hint:
+      'Community unsigned digest. Enterprise builds may attach a detached signature.',
   },
 }
 
@@ -225,11 +226,7 @@ test.describe('Config drift dashboard', () => {
       await route.fulfill({
         status: 200,
         contentType:
-          format === 'pdf'
-            ? 'application/pdf'
-            : format === 'csv'
-              ? 'text/csv'
-              : 'text/markdown',
+          format === 'pdf' ? 'application/pdf' : format === 'csv' ? 'text/csv' : 'text/markdown',
         body: format === 'pdf' ? '%PDF-1.4' : 'redacted report export',
       })
     })
@@ -240,14 +237,19 @@ test.describe('Config drift dashboard', () => {
     await expect(page.getByText('Report ID rpt-config-safety-1234567890')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Config changes' })).toBeVisible()
     await expect(
-      page.getByLabel('Evidence report summary').getByRole('article').filter({ hasText: 'Config changes' }),
+      page
+        .getByLabel('Evidence report summary')
+        .getByRole('article')
+        .filter({ hasText: 'Config changes' }),
     ).toContainText('2')
     await expect(page.getByText('processor batch is unavailable')).toBeVisible()
     await expect(page.getByText('collector-prod').first()).toBeVisible()
     await expect(page.getByText('cfg-redacted…')).toBeVisible()
     await expect(page.getByText('Unsigned digest ready')).toBeVisible()
     await expect(page.getByText('sha256-unsigned-digest-v1')).toBeVisible()
-    await expect(page.getByText('Community/Pro exports are not shown as enterprise signed.')).toBeVisible()
+    await expect(
+      page.getByText('Community/Pro exports are not shown as enterprise signed.'),
+    ).toBeVisible()
 
     await page.getByRole('button', { name: 'Download Markdown' }).click()
     await page.getByRole('button', { name: 'Download CSV' }).click()

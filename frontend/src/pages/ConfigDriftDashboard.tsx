@@ -116,7 +116,10 @@ function DriftBadge({ item }: { item: ConfigDriftItem }) {
   )
 }
 
-function reportFilename(report: EvidenceReport | undefined, format: Exclude<EvidenceReportExportFormat, 'json'>) {
+function reportFilename(
+  report: EvidenceReport | undefined,
+  format: Exclude<EvidenceReportExportFormat, 'json'>,
+) {
   const prefix = report?.report_id ? report.report_id.slice(0, 12) : 'config-safety'
   const extension = format === 'markdown' ? 'md' : format
   return `config-safety-evidence-${prefix}.${extension}`
@@ -171,7 +174,10 @@ function SignatureMetadata({ report }: { report: EvidenceReport }) {
   const statusKey = isUnsignedDigest ? 'unsigned_digest' : 'signed'
 
   return (
-    <section className="config-report-signature" aria-label={t('config_drift.report.signature_aria')}>
+    <section
+      className="config-report-signature"
+      aria-label={t('config_drift.report.signature_aria')}
+    >
       <div>
         <span className="config-drift-muted">{t('config_drift.report.signature_status')}</span>
         <strong>{t(`config_drift.report.signature.${statusKey}`)}</strong>
@@ -204,7 +210,10 @@ function EvidenceReportPanel({ report }: { report: EvidenceReport }) {
   const auditTrail = report.audit_trail.slice(0, 3)
 
   return (
-    <section className="panel config-drift-panel config-report-panel" aria-labelledby="config-report-title">
+    <section
+      className="panel config-drift-panel config-report-panel"
+      aria-labelledby="config-report-title"
+    >
       <header className="panel-head config-report-head">
         <div>
           <h2 className="panel-title" id="config-report-title">
@@ -214,14 +223,20 @@ function EvidenceReportPanel({ report }: { report: EvidenceReport }) {
             {t('config_drift.report.subtitle', { id: report.report_id })}
           </p>
         </div>
-        <div className="config-report-export-actions" aria-label={t('config_drift.report.export_aria')}>
+        <div
+          className="config-report-export-actions"
+          aria-label={t('config_drift.report.export_aria')}
+        >
           {reportExportFormats.map((format) => (
             <ReportExportButton format={format} key={format} report={report} />
           ))}
         </div>
       </header>
 
-      <section className="config-report-summary-grid" aria-label={t('config_drift.report.summary_aria')}>
+      <section
+        className="config-report-summary-grid"
+        aria-label={t('config_drift.report.summary_aria')}
+      >
         {reportSummaryKeys.map(({ key, labelKey }) => (
           <article className="stat-card config-drift-summary-card" key={key}>
             <span>{t(`config_drift.report.summary.${labelKey}`)}</span>
