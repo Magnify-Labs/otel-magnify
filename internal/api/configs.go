@@ -26,8 +26,33 @@ type createConfigRequest struct {
 }
 
 type configDiffRequest struct {
-	BaseYAML   string `json:"base_yaml"`
-	TargetYAML string `json:"target_yaml"`
+	BaseYAML   string                   `json:"base_yaml"`
+	TargetYAML string                   `json:"target_yaml"`
+	Context    configDiffContextRequest `json:"context,omitempty"`
+}
+
+type configDiffContextRequest struct {
+	WorkloadID      string                      `json:"workload_id,omitempty"`
+	DisplayName     string                      `json:"display_name,omitempty"`
+	WorkloadType    string                      `json:"workload_type,omitempty"`
+	Type            string                      `json:"type,omitempty"`
+	Status          string                      `json:"status,omitempty"`
+	Labels          map[string]string           `json:"labels,omitempty"`
+	FingerprintKeys map[string]string           `json:"fingerprint_keys,omitempty"`
+	FleetPeers      []configDiffWorkloadRequest `json:"fleet_peers,omitempty"`
+	BaseLabel       string                      `json:"base_label,omitempty"`
+	TargetLabel     string                      `json:"target_label,omitempty"`
+	IncludeRawPaths bool                        `json:"include_raw_paths,omitempty"`
+}
+
+type configDiffWorkloadRequest struct {
+	ID              string            `json:"id,omitempty"`
+	DisplayName     string            `json:"display_name,omitempty"`
+	WorkloadType    string            `json:"workload_type,omitempty"`
+	Type            string            `json:"type,omitempty"`
+	Status          string            `json:"status,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	FingerprintKeys map[string]string `json:"fingerprint_keys,omitempty"`
 }
 
 type configPolicyPreviewRequest struct {
@@ -88,7 +113,55 @@ func (a *API) handleDiffConfigs(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 400, "base_yaml and target_yaml are required")
 		return
 	}
-	respondJSON(w, 200, oteldiff.Compare([]byte(req.BaseYAML), []byte(req.TargetYAML)))
+	respondJSON(w, 200, oteldiff.CompareWithContext([]byte(req.BaseYAML), []byte(req.TargetYAML), a.configDiffBlastRadiusContext(req.Context)))
+}
+
+func (a *API) configDiffBlastRadiusContext(req configDiffContextRequest) oteldiff.BlastRadiusContext {
+	ctx := oteldiff.BlastRadiusContext{Workload: blastRadiusWorkloadFromDiffContext(req)}
+	for _, peer := range req.FleetPeers {
+		ctx.FleetPeers = append(ctx.FleetPeers, blastRadiusWorkloadFromDiffPeer(peer))
+	}
+	if req.WorkloadID == "" || a.db == nil {
+		return ctx
+	}
+	if wl, err := a.db.GetWorkload(req.WorkloadID); err == nil {
+		ctx.Workload = blastRadiusWorkloadFromModel(wl)
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return ctx
+	}
+	peers, err := a.db.ListWorkloads(false)
+	if err != nil {
+		return ctx
+	}
+	ctx.FleetPeers = ctx.FleetPeers[:0]
+	for _, peer := range peers {
+		if peer.ID == req.WorkloadID {
+			continue
+		}
+		ctx.FleetPeers = append(ctx.FleetPeers, blastRadiusWorkloadFromModel(peer))
+	}
+	return ctx
+}
+
+func blastRadiusWorkloadFromDiffContext(req configDiffContextRequest) oteldiff.BlastRadiusWorkload {
+	return oteldiff.BlastRadiusWorkload{ID: req.WorkloadID, DisplayName: req.DisplayName, Type: firstNonEmpty(req.WorkloadType, req.Type), Status: req.Status, Labels: req.Labels, FingerprintKeys: req.FingerprintKeys}
+}
+
+func blastRadiusWorkloadFromDiffPeer(req configDiffWorkloadRequest) oteldiff.BlastRadiusWorkload {
+	return oteldiff.BlastRadiusWorkload{ID: req.ID, DisplayName: req.DisplayName, Type: firstNonEmpty(req.WorkloadType, req.Type), Status: req.Status, Labels: req.Labels, FingerprintKeys: req.FingerprintKeys}
+}
+
+func blastRadiusWorkloadFromModel(wl models.Workload) oteldiff.BlastRadiusWorkload {
+	return oteldiff.BlastRadiusWorkload{ID: wl.ID, DisplayName: wl.DisplayName, Type: wl.Type, Status: wl.Status, Labels: map[string]string(wl.Labels), FingerprintKeys: map[string]string(wl.FingerprintKeys)}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (a *API) handlePreviewConfigPolicy(w http.ResponseWriter, r *http.Request) {

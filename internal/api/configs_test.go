@@ -214,6 +214,97 @@ func TestDiffConfigs_ReturnsRedactedOTelDiff(t *testing.T) {
 	}
 }
 
+func TestDiffConfigs_EnrichesBlastRadiusFromWorkloadContext(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	if err := db.UpsertWorkload(models.Workload{
+		ID:          "wl-checkout",
+		DisplayName: "checkout collector",
+		Type:        "collector",
+		Status:      "degraded",
+		LastSeenAt:  now,
+		Labels: models.Labels{
+			"service.name":     "checkout-api",
+			"k8s.cluster.name": "prod-eu-1",
+			"critical":         "true",
+			"authorization":    "Bearer should-not-leak",
+		},
+		FingerprintKeys:     models.FingerprintKeys{"cluster": "prod-eu-1"},
+		AcceptsRemoteConfig: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertWorkload(models.Workload{
+		ID:                  "wl-billing",
+		DisplayName:         "billing sdk",
+		Type:                "sdk",
+		Status:              "connected",
+		LastSeenAt:          now,
+		Labels:              models.Labels{"service": "billing-api", "cluster": "prod-eu-1"},
+		FingerprintKeys:     models.FingerprintKeys{},
+		AcceptsRemoteConfig: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"base_yaml":"receivers:\n  otlp: {}\nexporters:\n  otlp:\n    endpoint: https://old.example:4317?token=old-secret\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      exporters: [otlp]\n","target_yaml":"receivers:\n  otlp: {}\nexporters:\n  otlp/archive:\n    endpoint: https://archive.example:4317?token=new-secret\nservice:\n  pipelines:\n    metrics:\n      receivers: [otlp]\n      exporters: [otlp/archive]\n","context":{"workload_id":"wl-checkout"}}`
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/diff", body, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("diff status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("old-secret")) || bytes.Contains(rec.Body.Bytes(), []byte("new-secret")) || bytes.Contains(rec.Body.Bytes(), []byte("should-not-leak")) {
+		t.Fatalf("diff response leaked secret: %s", rec.Body.String())
+	}
+	var resp struct {
+		BlastRadius struct {
+			SchemaVersion    string   `json:"schema_version"`
+			AffectedSignals  []string `json:"affected_signals"`
+			TouchedExporters []string `json:"touched_exporters"`
+			ImpactedClusters []string `json:"impacted_clusters"`
+			ImpactedServices []struct {
+				ServiceName string `json:"service_name"`
+			} `json:"impacted_services"`
+			CriticalCollectors []struct {
+				WorkloadID string `json:"workload_id"`
+			} `json:"critical_collectors"`
+		} `json:"blast_radius"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.BlastRadius.SchemaVersion != "otel-config-blast-radius.v1" {
+		t.Fatalf("blast radius schema = %q", resp.BlastRadius.SchemaVersion)
+	}
+	assertStringSet(t, resp.BlastRadius.AffectedSignals, []string{"metrics", "traces"})
+	assertStringSet(t, resp.BlastRadius.TouchedExporters, []string{"otlp", "otlp/archive"})
+	assertStringSet(t, resp.BlastRadius.ImpactedClusters, []string{"prod-eu-1"})
+	if len(resp.BlastRadius.ImpactedServices) != 2 {
+		t.Fatalf("impacted services = %#v", resp.BlastRadius.ImpactedServices)
+	}
+	if len(resp.BlastRadius.CriticalCollectors) != 1 || resp.BlastRadius.CriticalCollectors[0].WorkloadID != "wl-checkout" {
+		t.Fatalf("critical collectors = %#v", resp.BlastRadius.CriticalCollectors)
+	}
+}
+
+func assertStringSet(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("strings = %#v, want %#v", got, want)
+	}
+	seen := map[string]bool{}
+	for _, v := range got {
+		seen[v] = true
+	}
+	for _, v := range want {
+		if !seen[v] {
+			t.Fatalf("strings = %#v, missing %q", got, v)
+		}
+	}
+}
+
 func TestDiffConfigs_RejectsInvalidRequest(t *testing.T) {
 	_, router, _ := newTestAPI(t)
 	req := authedJSONRequest(t, http.MethodPost, "/api/configs/diff", `{"base_yaml":"receivers: {}"}`, nil)

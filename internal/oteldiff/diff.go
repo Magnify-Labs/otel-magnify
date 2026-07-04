@@ -21,6 +21,7 @@ import (
 )
 
 const SchemaVersion = "otel-config-diff.v1"
+const BlastRadiusSchemaVersion = "otel-config-blast-radius.v1"
 const MaskedValue = "••••masked••••"
 
 type Risk string
@@ -46,6 +47,7 @@ type ConfigDiff struct {
 	Valid         bool                   `json:"valid"`
 	Summary       Summary                `json:"summary"`
 	RiskScore     models.ConfigRiskScore `json:"risk_score"`
+	BlastRadius   BlastRadius            `json:"blast_radius"`
 	Components    []ComponentDiff        `json:"components"`
 	Pipelines     []PipelineDiff         `json:"pipelines"`
 	Endpoints     []EndpointDiff         `json:"endpoints"`
@@ -74,6 +76,44 @@ type Counts struct {
 	HighRisk           int `json:"high_risk"`
 	MediumRisk         int `json:"medium_risk"`
 	LowRisk            int `json:"low_risk"`
+}
+
+type BlastRadius struct {
+	SchemaVersion      string                 `json:"schema_version"`
+	AffectedSignals    []string               `json:"affected_signals"`
+	TouchedExporters   []string               `json:"touched_exporters"`
+	ImpactedServices   []BlastRadiusService   `json:"impacted_services"`
+	ImpactedClusters   []string               `json:"impacted_clusters"`
+	CriticalCollectors []BlastRadiusCollector `json:"critical_collectors"`
+}
+
+type BlastRadiusService struct {
+	ServiceName string `json:"service_name"`
+	WorkloadID  string `json:"workload_id,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Status      string `json:"status,omitempty"`
+}
+
+type BlastRadiusCollector struct {
+	WorkloadID  string   `json:"workload_id"`
+	DisplayName string   `json:"display_name,omitempty"`
+	Status      string   `json:"status,omitempty"`
+	Reasons     []string `json:"reasons"`
+}
+
+type BlastRadiusContext struct {
+	Workload   BlastRadiusWorkload   `json:"workload,omitempty"`
+	FleetPeers []BlastRadiusWorkload `json:"fleet_peers,omitempty"`
+}
+
+type BlastRadiusWorkload struct {
+	ID              string            `json:"id,omitempty"`
+	DisplayName     string            `json:"display_name,omitempty"`
+	Type            string            `json:"type,omitempty"`
+	Status          string            `json:"status,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	FingerprintKeys map[string]string `json:"fingerprint_keys,omitempty"`
 }
 
 type ComponentRef struct {
@@ -217,6 +257,10 @@ type engine struct {
 var componentCategories = []string{"receivers", "processors", "exporters", "connectors", "extensions"}
 
 func Compare(baseYAML, targetYAML []byte) ConfigDiff {
+	return CompareWithContext(baseYAML, targetYAML, BlastRadiusContext{})
+}
+
+func CompareWithContext(baseYAML, targetYAML []byte, ctx BlastRadiusContext) ConfigDiff {
 	d := emptyDiff(baseYAML, targetYAML)
 	base, baseDiags := parseConfig("base", baseYAML)
 	target, targetDiags := parseConfig("target", targetYAML)
@@ -238,6 +282,7 @@ func Compare(baseYAML, targetYAML []byte) ConfigDiff {
 	e.compareEndpoints()
 	e.compareSecurity()
 	e.finish()
+	e.diff.BlastRadius = buildBlastRadius(e.diff, ctx)
 	return e.diff
 }
 
@@ -247,9 +292,14 @@ func emptyDiff(baseYAML, targetYAML []byte) ConfigDiff {
 		Valid:         false,
 		Summary:       Summary{OverallRisk: RiskNone, Counts: Counts{}, Headline: "No OTel semantic changes detected"},
 		RiskScore:     models.ConfigRiskScore{Severity: string(RiskNone), Reasons: []string{}},
+		BlastRadius:   emptyBlastRadius(),
 		Components:    []ComponentDiff{}, Pipelines: []PipelineDiff{}, Endpoints: []EndpointDiff{}, Security: []SecurityDiff{}, RiskItems: []RiskItem{}, Diagnostics: []Diagnostic{},
 		Normalized: Normalized{BaseHash: hashYAML(baseYAML), TargetHash: hashYAML(targetYAML)},
 	}
+}
+
+func emptyBlastRadius() BlastRadius {
+	return BlastRadius{SchemaVersion: BlastRadiusSchemaVersion, AffectedSignals: []string{}, TouchedExporters: []string{}, ImpactedServices: []BlastRadiusService{}, ImpactedClusters: []string{}, CriticalCollectors: []BlastRadiusCollector{}}
 }
 
 func hashYAML(b []byte) string { h := sha256.Sum256(b); return "sha256:" + hex.EncodeToString(h[:]) }
@@ -591,6 +641,176 @@ func (e *engine) addRisk(id string, risk Risk, cat, rule, title, desc string, pa
 	}
 	e.seenRisk[id] = true
 	e.diff.RiskItems = append(e.diff.RiskItems, RiskItem{ID: id, Risk: risk, Category: cat, Rule: rule, Title: title, Description: desc, AffectedPaths: dedupeSorted(paths), AffectedPipelines: dedupeSorted(pipelines)})
+}
+
+func buildBlastRadius(diff ConfigDiff, ctx BlastRadiusContext) BlastRadius {
+	out := emptyBlastRadius()
+	signals := map[string]bool{}
+	exporters := map[string]bool{}
+	for _, p := range diff.Pipelines {
+		if p.Signal != "" && p.Signal != "unknown" {
+			signals[p.Signal] = true
+		}
+		for _, ch := range p.ComponentRefChanges {
+			if ch.Section == "exporters" && ch.ComponentID != "" {
+				exporters[ch.ComponentID] = true
+			}
+		}
+	}
+	for _, c := range diff.Components {
+		for _, p := range c.ImpactedPipelines {
+			if sig := signalOf(p); sig != "unknown" {
+				signals[sig] = true
+			}
+		}
+		if c.Component.Category == "exporters" {
+			exporters[c.Component.ID] = true
+		}
+	}
+	for _, ep := range diff.Endpoints {
+		if ep.Component.Category == "exporters" {
+			exporters[ep.Component.ID] = true
+		}
+	}
+	for _, item := range diff.RiskItems {
+		for _, p := range item.AffectedPipelines {
+			if sig := signalOf(p); sig != "unknown" {
+				signals[sig] = true
+			}
+		}
+	}
+	out.AffectedSignals = sortedSet(signals)
+	out.TouchedExporters = sortedSet(exporters)
+
+	targetWorkloads := []BlastRadiusWorkload{}
+	if ctx.Workload.ID != "" || ctx.Workload.DisplayName != "" || len(ctx.Workload.Labels) > 0 || len(ctx.Workload.FingerprintKeys) > 0 {
+		targetWorkloads = append(targetWorkloads, ctx.Workload)
+	}
+	clusterSet := map[string]bool{}
+	for _, wl := range targetWorkloads {
+		for _, key := range clusterKeys() {
+			if v := workloadValue(wl, key); v != "" {
+				clusterSet[v] = true
+			}
+		}
+	}
+	out.ImpactedClusters = sortedSet(clusterSet)
+
+	scopedWorkloads := append([]BlastRadiusWorkload{}, targetWorkloads...)
+	for _, wl := range ctx.FleetPeers {
+		if len(clusterSet) > 0 && workloadInClusters(wl, clusterSet) {
+			scopedWorkloads = append(scopedWorkloads, wl)
+		}
+	}
+
+	serviceSeen := map[string]bool{}
+	for _, wl := range scopedWorkloads {
+		svc := firstWorkloadValue(wl, serviceKeys())
+		if svc == "" {
+			continue
+		}
+		key := wl.ID + "\x00" + svc
+		if serviceSeen[key] {
+			continue
+		}
+		serviceSeen[key] = true
+		out.ImpactedServices = append(out.ImpactedServices, BlastRadiusService{ServiceName: svc, WorkloadID: wl.ID, DisplayName: wl.DisplayName, Type: wl.Type, Status: wl.Status})
+	}
+	sort.Slice(out.ImpactedServices, func(i, j int) bool { return out.ImpactedServices[i].ServiceName < out.ImpactedServices[j].ServiceName })
+
+	for _, wl := range scopedWorkloads {
+		if !isCollectorWorkload(wl) {
+			continue
+		}
+		reasons := criticalCollectorReasons(wl)
+		if len(reasons) == 0 {
+			continue
+		}
+		out.CriticalCollectors = append(out.CriticalCollectors, BlastRadiusCollector{WorkloadID: wl.ID, DisplayName: wl.DisplayName, Status: wl.Status, Reasons: reasons})
+	}
+	sort.Slice(out.CriticalCollectors, func(i, j int) bool {
+		return out.CriticalCollectors[i].WorkloadID < out.CriticalCollectors[j].WorkloadID
+	})
+	return out
+}
+
+func sortedSet(values map[string]bool) []string {
+	out := make([]string, 0, len(values))
+	for v := range values {
+		if strings.TrimSpace(v) != "" {
+			out = append(out, v)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func serviceKeys() []string { return []string{"service.name", "service", "app.kubernetes.io/name"} }
+
+func clusterKeys() []string {
+	return []string{"k8s.cluster.name", "cluster", "k8s.namespace.name", "deployment.environment"}
+}
+
+func firstWorkloadValue(wl BlastRadiusWorkload, keys []string) string {
+	for _, key := range keys {
+		if v := workloadValue(wl, key); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func workloadValue(wl BlastRadiusWorkload, key string) string {
+	if v := strings.TrimSpace(wl.Labels[key]); v != "" && !looksSecret(v) && !isSecretKey(key) {
+		return v
+	}
+	if v := strings.TrimSpace(wl.FingerprintKeys[key]); v != "" && !looksSecret(v) && !isSecretKey(key) {
+		return v
+	}
+	return ""
+}
+
+func workloadInClusters(wl BlastRadiusWorkload, clusters map[string]bool) bool {
+	if len(clusters) == 0 {
+		return true
+	}
+	for _, key := range clusterKeys() {
+		if clusters[workloadValue(wl, key)] {
+			return true
+		}
+	}
+	return false
+}
+
+func isCollectorWorkload(wl BlastRadiusWorkload) bool {
+	return strings.EqualFold(wl.Type, "collector") || strings.Contains(strings.ToLower(wl.DisplayName), "collector")
+}
+
+func criticalCollectorReasons(wl BlastRadiusWorkload) []string {
+	reasons := []string{}
+	if isCollectorWorkload(wl) {
+		reasons = append(reasons, "collector_workload")
+	}
+	status := strings.ToLower(strings.TrimSpace(wl.Status))
+	if status == "degraded" || status == "disconnected" {
+		reasons = append(reasons, "status_"+status)
+	}
+	for k, v := range wl.Labels {
+		lk, lv := strings.ToLower(k), strings.ToLower(strings.TrimSpace(v))
+		if (lk == "critical" && lv == "true") || (lk == "tier" && lv == "critical") {
+			reasons = appendRule(reasons, lk+"_"+lv)
+		}
+		if lv == "prod" || lv == "production" {
+			reasons = appendRule(reasons, "production_label")
+		}
+	}
+	for _, key := range clusterKeys() {
+		v := strings.ToLower(workloadValue(wl, key))
+		if v == "prod" || v == "production" || strings.HasPrefix(v, "prod-") {
+			reasons = appendRule(reasons, "production_label")
+		}
+	}
+	return dedupeSorted(reasons)
 }
 
 func componentRef(cat, id string) ComponentRef {
