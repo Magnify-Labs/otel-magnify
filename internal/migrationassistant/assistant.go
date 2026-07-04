@@ -174,7 +174,7 @@ func addLabels(labels map[string]string, state *conversionState) {
 func ensureDefaults(state *conversionState) {
 	state.draft.processors["batch"] = struct{}{}
 	if len(state.draft.exporters) == 0 {
-		state.draft.exporters["otlp"] = exporterEndpoint(state.request)
+		state.draft.exporters["otlp"] = exporterEndpoint(state)
 	}
 	if len(state.draft.pipelines) == 0 {
 		state.draft.receivers["otlp"] = nil
@@ -205,9 +205,9 @@ func defaultExporterName(state *conversionState) string {
 	return "otlp"
 }
 
-func exporterEndpoint(req models.ConfigMigrationPreviewRequest) string {
-	if strings.TrimSpace(req.Context.OTLPEndpoint) != "" {
-		return strings.TrimSpace(req.Context.OTLPEndpoint)
+func exporterEndpoint(state *conversionState) string {
+	if strings.TrimSpace(state.request.Context.OTLPEndpoint) != "" {
+		return sanitizeEndpoint(state.request.Context.OTLPEndpoint, "context.otlp_endpoint", state)
 	}
 	return "${OTLP_EXPORT_ENDPOINT}"
 }
