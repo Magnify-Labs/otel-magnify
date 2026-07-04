@@ -153,6 +153,129 @@ func TestCompareRedactsChangedAuthorizationHeaderValues(t *testing.T) {
 	}
 }
 
+func TestCompareWithContextPopulatesBlastRadius(t *testing.T) {
+	base := []byte(`receivers:
+  otlp: {}
+processors:
+  batch: {}
+exporters:
+  otlp/prod:
+    endpoint: https://old.example:4317?token=old-secret
+  debug: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/prod]
+    metrics:
+      receivers: [otlp]
+      exporters: [debug]
+`)
+	target := []byte(`receivers:
+  otlp: {}
+processors:
+  batch: {}
+exporters:
+  otlp/prod:
+    endpoint: https://new.example:4317?token=new-secret
+  otlp/archive:
+    endpoint: https://archive.example:4317
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/archive]
+    logs:
+      receivers: [otlp]
+      exporters: [otlp/archive]
+`)
+
+	got := CompareWithContext(base, target, BlastRadiusContext{
+		Workload: BlastRadiusWorkload{
+			ID:          "wl-prod-collector",
+			DisplayName: "prod collector",
+			Type:        "collector",
+			Status:      "degraded",
+			Labels: map[string]string{
+				"service.name":           "checkout-api",
+				"k8s.namespace.name":     "checkout",
+				"k8s.cluster.name":       "prod-eu-1",
+				"deployment.environment": "production",
+				"authorization":          "Bearer should-not-leak",
+			},
+			FingerprintKeys: map[string]string{"service.name": "checkout-api", "cluster": "prod-eu-1"},
+		},
+		FleetPeers: []BlastRadiusWorkload{{
+			ID:          "wl-payments",
+			DisplayName: "payments collector",
+			Type:        "collector",
+			Status:      "connected",
+			Labels:      map[string]string{"service": "payments-api", "cluster": "prod-eu-1", "tier": "critical"},
+		}},
+	})
+
+	if got.BlastRadius.SchemaVersion != BlastRadiusSchemaVersion {
+		t.Fatalf("blast radius schema = %q", got.BlastRadius.SchemaVersion)
+	}
+	assertStringSet(t, got.BlastRadius.AffectedSignals, []string{"logs", "metrics", "traces"})
+	assertStringSet(t, got.BlastRadius.TouchedExporters, []string{"debug", "otlp/archive", "otlp/prod"})
+	if len(got.BlastRadius.ImpactedServices) != 2 {
+		t.Fatalf("impacted services = %#v, want checkout-api and payments-api", got.BlastRadius.ImpactedServices)
+	}
+	assertStringSet(t, got.BlastRadius.ImpactedClusters, []string{"checkout", "prod-eu-1", "production"})
+	if len(got.BlastRadius.CriticalCollectors) != 2 {
+		t.Fatalf("critical collectors = %#v, want workload and peer", got.BlastRadius.CriticalCollectors)
+	}
+	assertNoSecretLeak(t, got, "old-secret", "new-secret", "should-not-leak")
+}
+
+func TestCompareBlastRadiusEmptySafeWithoutContext(t *testing.T) {
+	got := Compare([]byte(`receivers:
+  otlp: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: []
+`), []byte(`receivers:
+  otlp: {}
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: []
+`))
+
+	if got.BlastRadius.SchemaVersion != BlastRadiusSchemaVersion {
+		t.Fatalf("blast radius schema = %q", got.BlastRadius.SchemaVersion)
+	}
+	assertStringSet(t, got.BlastRadius.AffectedSignals, []string{"metrics", "traces"})
+	if got.BlastRadius.TouchedExporters == nil || got.BlastRadius.ImpactedServices == nil || got.BlastRadius.ImpactedClusters == nil || got.BlastRadius.CriticalCollectors == nil {
+		t.Fatalf("blast radius arrays must be non-nil: %#v", got.BlastRadius)
+	}
+	if len(got.BlastRadius.TouchedExporters) != 0 || len(got.BlastRadius.ImpactedServices) != 0 || len(got.BlastRadius.ImpactedClusters) != 0 || len(got.BlastRadius.CriticalCollectors) != 0 {
+		t.Fatalf("unexpected context-derived blast radius without context: %#v", got.BlastRadius)
+	}
+}
+
+func assertStringSet(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("strings = %#v, want %#v", got, want)
+	}
+	seen := map[string]bool{}
+	for _, v := range got {
+		seen[v] = true
+	}
+	for _, v := range want {
+		if !seen[v] {
+			t.Fatalf("strings = %#v, missing %q", got, v)
+		}
+	}
+}
+
 func TestCompareInvalidYAMLReturnsDiagnosticWithoutSecretEcho(t *testing.T) {
 	got := Compare([]byte(`exporters:
   otlp:
