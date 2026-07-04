@@ -21,8 +21,14 @@ import (
 )
 
 type createConfigRequest struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
+	Name       string   `json:"name"`
+	Content    string   `json:"content"`
+	Kind       string   `json:"kind,omitempty"`
+	Status     string   `json:"status,omitempty"`
+	Category   string   `json:"category,omitempty"`
+	Stack      string   `json:"stack,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+	SourceType string   `json:"source_type,omitempty"`
 }
 
 type configDiffRequest struct {
@@ -228,9 +234,12 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 		Content:    req.Content,
 		CreatedAt:  time.Now().UTC(),
 		CreatedBy:  createdBy,
-		Kind:       models.ConfigKindSaved,
-		Status:     models.ConfigStatusReady,
-		SourceType: models.ConfigSourceManual,
+		Kind:       normalizeCreateConfigKind(req.Kind),
+		Status:     normalizeCreateConfigStatus(req.Kind, req.Status),
+		Category:   strings.TrimSpace(req.Category),
+		Stack:      strings.TrimSpace(req.Stack),
+		Tags:       sanitizedCreateConfigTags(req.Tags),
+		SourceType: normalizeCreateConfigSourceType(req.SourceType),
 	}
 
 	if err := a.db.CreateConfig(cfg); err != nil {
@@ -242,6 +251,48 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, 201, cfg)
+}
+
+func normalizeCreateConfigKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case models.ConfigKindDraft:
+		return models.ConfigKindDraft
+	default:
+		return models.ConfigKindSaved
+	}
+}
+
+func normalizeCreateConfigStatus(kind string, _ string) string {
+	if normalizeCreateConfigKind(kind) == models.ConfigKindDraft {
+		return models.ConfigStatusDraft
+	}
+	return models.ConfigStatusReady
+}
+
+func normalizeCreateConfigSourceType(sourceType string) string {
+	switch strings.TrimSpace(sourceType) {
+	case models.ConfigSourceMigrationAssistant:
+		return models.ConfigSourceMigrationAssistant
+	default:
+		return models.ConfigSourceManual
+	}
+}
+
+func sanitizedCreateConfigTags(tags []string) []string {
+	result := make([]string, 0, len(tags))
+	seen := map[string]struct{}{}
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		result = append(result, tag)
+	}
+	return result
 }
 
 func (a *API) handleImportConfigFromGit(w http.ResponseWriter, r *http.Request) {

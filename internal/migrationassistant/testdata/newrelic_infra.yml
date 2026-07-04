@@ -1,0 +1,9 @@
+license_key: nr-red-fixture-license
+display_name: checkout-host
+custom_attributes:
+  deployment.environment: prod
+  team: payments
+  password: nr-red-fixture-password
+log_file: /var/log/newrelic-infra/newrelic-infra.log
+metrics_system_sample_rate: 15
+enable_process_metrics: true

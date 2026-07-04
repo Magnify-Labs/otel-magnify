@@ -59,6 +59,41 @@ func TestCreateAndListConfigs(t *testing.T) {
 	}
 }
 
+func TestCreateConfig_PersistsMigrationAssistantDraftMetadata(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+
+	body := `{
+		"name":"Migrated Datadog Agent draft",
+		"content":"receivers:\n  filelog/datadog_app_0: {}",
+		"kind":"draft",
+		"status":"draft",
+		"category":"migration",
+		"stack":"datadog",
+		"tags":["migration","datadog_agent","migration"],
+		"source_type":"migration_assistant"
+	}`
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs", body, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var cfg models.Config
+	if err := json.NewDecoder(rec.Body).Decode(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Kind != models.ConfigKindDraft || cfg.Status != models.ConfigStatusDraft || cfg.SourceType != models.ConfigSourceMigrationAssistant {
+		t.Fatalf("migration draft metadata = kind %q status %q source %q", cfg.Kind, cfg.Status, cfg.SourceType)
+	}
+	if cfg.Category != "migration" || cfg.Stack != "datadog" {
+		t.Fatalf("migration draft display metadata = category %q stack %q", cfg.Category, cfg.Stack)
+	}
+	if got, want := strings.Join(cfg.Tags, ","), "migration,datadog_agent"; got != want {
+		t.Fatalf("tags = %q, want %q", got, want)
+	}
+}
+
 func TestListConfigs_IncludesRequiredBuiltInTemplatesWithSafePlaceholders(t *testing.T) {
 	_, router, _ := newTestAPI(t)
 
