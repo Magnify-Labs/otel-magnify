@@ -13,6 +13,7 @@ import type {
   OTelConfigDiffResponse,
   OTelDiffRisk,
   OTelEndpointDiff,
+  OTelHumanSummaryItem,
   OTelPipelineDiff,
   OTelRiskItem,
   OTelSecurityDiff,
@@ -123,6 +124,7 @@ function OtelImpactSummary({
         <RiskBadge risk={diff.summary.overall_risk} />
       </div>
       <p className="otel-impact-headline">{safeText(diff.summary.headline)}</p>
+      <HumanSummarySection items={diff.human_summary ?? []} />
       <div
         className="otel-impact-counts"
         aria-label={t('workloads.config.versioning.otel.counts_label')}
@@ -208,6 +210,31 @@ function OtelImpactSummary({
           ))}
         </OtelSection>
       )}
+    </section>
+  )
+}
+
+function HumanSummarySection({ items }: { items: OTelHumanSummaryItem[] }) {
+  const { t } = useTranslation()
+  const safeItems = items
+    .map((item, index) => ({ ...item, text: safeText(item.text), index }))
+    .filter((item) => item.text.length > 0)
+
+  if (safeItems.length === 0) return null
+
+  const title = t('workloads.config.versioning.otel.what_changed')
+
+  return (
+    <section className="otel-human-summary" aria-label={title} role="region">
+      <h3>{title}</h3>
+      <ul className="otel-human-summary-list">
+        {safeItems.map((item) => (
+          <li key={`${item.category}:${item.kind}:${item.text}:${item.index}`}>
+            <RiskBadge risk={item.risk} />
+            <span>{item.text}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

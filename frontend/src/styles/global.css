@@ -2605,6 +2605,33 @@ code {
   margin-top: 0.85rem;
 }
 
+.otel-human-summary {
+  margin-top: 0.9rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(224, 177, 90, 0.28);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(224, 177, 90, 0.1), rgba(255, 255, 255, 0.02));
+}
+
+.otel-human-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.otel-human-summary-list li {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .otel-impact-section {
   margin-top: 1rem;
   padding-top: 0.85rem;

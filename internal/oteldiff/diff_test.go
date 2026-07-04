@@ -36,6 +36,15 @@ func hasSecurityRule(items []SecurityDiff, rule string) bool {
 	return false
 }
 
+func hasHumanSummaryText(items []HumanSummaryItem, text string) bool {
+	for _, item := range items {
+		if item.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
 func assertNoSecretLeak(t *testing.T, diff ConfigDiff, secrets ...string) {
 	t.Helper()
 	b, err := json.Marshal(diff)
@@ -46,6 +55,20 @@ func assertNoSecretLeak(t *testing.T, diff ConfigDiff, secrets ...string) {
 	for _, secret := range secrets {
 		if strings.Contains(body, strings.ToLower(secret)) {
 			t.Fatalf("diff response leaked secret %q in JSON: %s", secret, string(b))
+		}
+	}
+}
+
+func assertNoHumanSummarySecretLeak(t *testing.T, diff ConfigDiff, secrets ...string) {
+	t.Helper()
+	b, err := json.Marshal(diff.HumanSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.ToLower(string(b))
+	for _, secret := range secrets {
+		if strings.Contains(body, strings.ToLower(secret)) {
+			t.Fatalf("human_summary leaked secret %q in JSON: %s", secret, string(b))
 		}
 	}
 }
@@ -97,6 +120,130 @@ func TestCompareDetectsStrongSamplingChange(t *testing.T) {
 	}
 	if !hasRule(got.RiskItems, "sampling_rate_strongly_changed") {
 		t.Fatalf("missing sampling risk item: %#v", got.RiskItems)
+	}
+}
+
+func TestCompareBuildsHumanSummaryForOTelChanges(t *testing.T) {
+	base := []byte(`receivers:
+  otlp:
+    protocols:
+      grpc: {}
+processors:
+  batch:
+    timeout: 5s
+exporters:
+  debug: {}
+  otlp:
+    endpoint: https://tempo.example.com:4317
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+`)
+	target := []byte(`receivers:
+  otlp:
+    protocols:
+      grpc: {}
+processors:
+  batch:
+    timeout: 10s
+exporters:
+  loki:
+    endpoint: https://loki.example.com/loki/api/v1/push?tenant=prod
+    headers:
+      Authorization: not-for-summary
+  otlp:
+    endpoint: https://tempo.example.com:4317
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [loki]
+`)
+
+	got := Compare(base, target)
+
+	if !got.Valid {
+		t.Fatalf("expected valid diff, diagnostics=%v", got.Diagnostics)
+	}
+	wantTexts := []string{
+		"Adds Loki exporter",
+		"Routes logs to Loki",
+		"Keeps traces unchanged",
+		"Removes debug exporter",
+		"Changes batch timeout",
+	}
+	for _, text := range wantTexts {
+		if !hasHumanSummaryText(got.HumanSummary, text) {
+			t.Fatalf("missing human summary %q in %#v", text, got.HumanSummary)
+		}
+	}
+	if len(got.HumanSummary) != len(wantTexts) {
+		t.Fatalf("human summary length = %d, want %d: %#v", len(got.HumanSummary), len(wantTexts), got.HumanSummary)
+	}
+	assertNoSecretLeak(t, got, "not-for-summary")
+}
+
+func TestCompareHumanSummaryRedactsSecretLikeComponentRefs(t *testing.T) {
+	base := []byte(`receivers:
+  otlp:
+    protocols:
+      grpc: {}
+processors:
+  batch:
+    timeout: 5s
+exporters:
+  debug: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+`)
+	target := []byte(`receivers:
+  otlp:
+    protocols:
+      grpc: {}
+processors:
+  batch:
+    timeout: 5s
+exporters:
+  debug: {}
+  debug/super-secret-token:
+    endpoint: https://tempo.example.com:4317
+    headers:
+      Authorization: SECRET_LITERAL
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug, debug/super-secret-token]
+`)
+
+	got := Compare(base, target)
+
+	if !got.Valid {
+		t.Fatalf("expected valid diff, diagnostics=%v", got.Diagnostics)
+	}
+	assertNoHumanSummarySecretLeak(t, got, "super-secret-token", "SECRET_LITERAL", "Authorization")
+	if !hasHumanSummaryText(got.HumanSummary, "Adds "+MaskedValue+" exporter") {
+		t.Fatalf("missing redacted component addition summary in %#v", got.HumanSummary)
+	}
+	if !hasHumanSummaryText(got.HumanSummary, "Routes traces to "+MaskedValue) {
+		t.Fatalf("missing redacted routing summary in %#v", got.HumanSummary)
 	}
 }
 

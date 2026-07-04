@@ -1198,6 +1198,7 @@ export interface OTelConfigDiffResponse {
   valid: boolean
   summary: OTelDiffSummary
   risk_score?: ConfigRiskScore
+  human_summary?: OTelHumanSummaryItem[]
   components: OTelComponentDiff[]
   pipelines: OTelPipelineDiff[]
   endpoints: OTelEndpointDiff[]
@@ -1231,6 +1232,17 @@ export interface OTelDiffSummary {
     medium_risk: number
     low_risk: number
   }
+}
+
+export interface OTelHumanSummaryItem {
+  category: 'component' | 'pipeline' | 'field' | 'unchanged'
+  kind: OTelDiffChangeKind | 'unchanged'
+  risk: OTelDiffRisk
+  text: string
+  component_id?: string
+  pipeline_key?: string
+  signal?: OTelSignal
+  path?: string
 }
 
 export interface OTelComponentRef {

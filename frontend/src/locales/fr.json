@@ -285,6 +285,7 @@
           "loading": "Calcul du résumé d’impact OTel…",
           "unavailable": "Résumé d’impact OTel indisponible. Corrigez le YAML ou rechargez la config active pour le calculer.",
           "counts_label": "Nombre d’éléments par risque",
+          "what_changed": "Ce qui change ?",
           "dangerous": "Suppressions dangereuses",
           "components": "Résumé des composants",
           "pipelines": "Pipelines impactées",
