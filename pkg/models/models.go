@@ -511,10 +511,88 @@ type FleetVersionIntelligence struct {
 	SchemaVersion               string                             `json:"schema_version"`
 	RecommendedVersion          string                             `json:"recommended_version"`
 	VersionMatrix               []FleetVersionMatrixEntry          `json:"version_matrix"`
+	CompatibilitySummary        FleetCompatibilitySummary          `json:"compatibility_summary"`
+	CompatibilityMatrix         []FleetCompatibilityMatrixEntry    `json:"compatibility_matrix"`
 	CollectorsBelowRecommended  []FleetCollectorVersionFinding     `json:"collectors_below_recommended"`
 	UnsupportedConfigComponents []FleetUnsupportedComponentFinding `json:"unsupported_config_components"`
 	InvalidVersions             []FleetInvalidVersionFinding       `json:"invalid_versions"`
 	Recommendations             []FleetVersionRecommendation       `json:"recommendations"`
+}
+
+// FleetCompatibilitySummary is a roll-up suitable for operator copy such as
+// "this config cannot run on N collectors" without returning raw config YAML.
+type FleetCompatibilitySummary struct {
+	TotalCollectors       int                                  `json:"total_collectors"`
+	RunnableCount         int                                  `json:"runnable_count"`
+	NotRunnableCount      int                                  `json:"not_runnable_count"`
+	NotRunnableCollectors []FleetCompatibilityCollectorSummary `json:"not_runnable_collectors"`
+}
+
+// FleetCompatibilityCollectorSummary identifies a non-runnable collector and
+// the blocking reason codes/messages surfaced in the compatibility matrix.
+type FleetCompatibilityCollectorSummary struct {
+	WorkloadID      string                     `json:"workload_id"`
+	DisplayName     string                     `json:"display_name"`
+	BlockingReasons []FleetCompatibilityReason `json:"blocking_reasons"`
+}
+
+// FleetCompatibilityMatrixEntry captures the local compatibility decision for
+// one collector/workload candidate using metadata only (hashes, names, status).
+type FleetCompatibilityMatrixEntry struct {
+	WorkloadID          string                         `json:"workload_id"`
+	DisplayName         string                         `json:"display_name"`
+	Group               string                         `json:"group"`
+	Status              string                         `json:"status"`
+	Version             FleetCompatibilityVersion      `json:"version"`
+	AvailableComponents FleetCompatibilityAvailable    `json:"available_components"`
+	RequiredComponents  []FleetCompatibilityComponent  `json:"required_components"`
+	Config              FleetCompatibilityConfig       `json:"config"`
+	KnownIssues         []FleetCompatibilityKnownIssue `json:"known_issues"`
+	OpAMP               FleetCompatibilityOpAMP        `json:"opamp"`
+	Runnable            bool                           `json:"runnable"`
+	BlockingReasons     []FleetCompatibilityReason     `json:"blocking_reasons"`
+}
+
+type FleetCompatibilityVersion struct {
+	Reported   string `json:"reported"`
+	Status     string `json:"status"`
+	Comparable bool   `json:"comparable"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+type FleetCompatibilityAvailable struct {
+	Hash           string              `json:"hash,omitempty"`
+	Categories     []string            `json:"categories"`
+	ComponentTypes map[string][]string `json:"component_types"`
+}
+
+type FleetCompatibilityComponent struct {
+	Category      string `json:"category"`
+	ComponentType string `json:"component_type"`
+	Path          string `json:"path"`
+}
+
+type FleetCompatibilityConfig struct {
+	Hash   string `json:"hash,omitempty"`
+	Source string `json:"source"`
+}
+
+type FleetCompatibilityKnownIssue struct {
+	Code            string `json:"code"`
+	Severity        string `json:"severity"`
+	AffectedVersion string `json:"affected_version"`
+	Message         string `json:"message"`
+}
+
+type FleetCompatibilityOpAMP struct {
+	AcceptsRemoteConfig bool   `json:"accepts_remote_config"`
+	RemoteConfigStatus  string `json:"remote_config_status,omitempty"`
+	ConfigHash          string `json:"config_hash,omitempty"`
+}
+
+type FleetCompatibilityReason struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // FleetVersionMatrixEntry groups workloads by group, type, status, and
