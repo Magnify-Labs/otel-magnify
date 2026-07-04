@@ -44,6 +44,9 @@ import type {
   EvidenceReportExportFormat,
   FleetVersionIntelligence,
   WorkloadTopology,
+  CreateConfigRequest,
+  ConfigMigrationPreviewRequest,
+  ConfigMigrationPreviewResponse,
   GitImportConfigRequest,
   GitImportConfigResponse,
   GitOpsExportRequest,
@@ -289,8 +292,22 @@ export const workloadsAPI = {
 export const configsAPI = {
   list: () => api.get<Config[]>('/configs').then((r) => r.data ?? []),
   get: (id: string) => api.get<Config>(`/configs/${id}`).then((r) => r.data),
-  create: (name: string, content: string) =>
-    api.post<Config>('/configs', { name, content }).then((r) => r.data),
+  create: (name: string, content: string, options: CreateConfigRequest = {}) =>
+    api.post<Config>('/configs', { name, content, ...options }).then((r) => r.data),
+  previewConfigMigration: (request: ConfigMigrationPreviewRequest) =>
+    api
+      .post<ConfigMigrationPreviewResponse>('/configs/migration-assistant/preview', request)
+      .then((r) => ({
+        ...r.data,
+        warnings: r.data.warnings ?? [],
+        unsupported_keys: r.data.unsupported_keys ?? [],
+        evidence: r.data.evidence ?? [],
+        redactions: r.data.redactions ?? [],
+        save_hint: {
+          ...r.data.save_hint,
+          tags: r.data.save_hint?.tags ?? [],
+        },
+      })),
   importFromGit: (request: GitImportConfigRequest) =>
     api.post<GitImportConfigResponse>('/configs/import/git', request).then((r) => r.data),
   exportToGit: (id: string, request: GitOpsExportRequest) =>

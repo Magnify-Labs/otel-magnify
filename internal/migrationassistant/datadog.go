@@ -2,6 +2,7 @@ package migrationassistant
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -59,14 +60,23 @@ func convertDatadog(state *conversionState) error {
 		state.mapped++
 	}
 	if port := asString(root["dogstatsd_port"]); port != "" {
-		state.draft.receivers["statsd"] = nil
-		state.draft.receiverOptions["statsd"] = []string{"endpoint: 0.0.0.0:" + port}
-		state.draft.pipelines["metrics"] = pipeline{receivers: []string{"statsd"}, exporters: []string{defaultExporterName(state)}}
-		state.evidence = append(state.evidence, migrationEvidence("dogstatsd_port", "receivers.statsd.endpoint", "datadog.dogstatsd_port.to_statsd.endpoint", "DogStatsD port maps to the Collector statsd receiver endpoint."))
-		state.mapped++
+		if !validPort(port) {
+			state.unsupported = append(state.unsupported, unsupported("dogstatsd_port", "DogStatsD port must be a numeric TCP/UDP port in the range 1-65535.", "Use a numeric port before mapping this value to a Collector statsd endpoint."))
+		} else {
+			state.draft.receivers["statsd"] = nil
+			state.draft.receiverOptions["statsd"] = []string{"endpoint: 0.0.0.0:" + port}
+			state.draft.pipelines["metrics"] = pipeline{receivers: []string{"statsd"}, exporters: []string{defaultExporterName(state)}}
+			state.evidence = append(state.evidence, migrationEvidence("dogstatsd_port", "receivers.statsd.endpoint", "datadog.dogstatsd_port.to_statsd.endpoint", "DogStatsD port maps to the Collector statsd receiver endpoint."))
+			state.mapped++
+		}
 	}
 	if _, ok := root["site"]; ok {
 		state.warnings = append(state.warnings, warning("datadog_site_not_exporter", "warning", "Datadog site is advisory unless the target exporter is datadog.", "site"))
 	}
 	return nil
+}
+
+func validPort(port string) bool {
+	n, err := strconv.Atoi(port)
+	return err == nil && strconv.Itoa(n) == port && n >= 1 && n <= 65535
 }
