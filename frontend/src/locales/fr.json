@@ -552,6 +552,22 @@
           "ready": "Prêt au push",
           "blocked": "Push bloqué"
         },
+        "risk_score": {
+          "title": "Score de risque avant push",
+          "help": "L’analyse sémantique backend ordonne ces raisons avant toute action d’application ou d’approbation.",
+          "badge": "Risque : {{severity}}",
+          "badge_aria": "Niveau de risque avant push : {{severity}}",
+          "applies_to": "S’applique à {{count}} collecteurs ciblés",
+          "applies_to_one": "S’applique à {{count}} collecteur ciblé",
+          "reasons_aria": "Raisons du risque avant push",
+          "no_reasons": "Le backend n’a renvoyé aucune raison de risque.",
+          "severity": {
+            "none": "Aucun",
+            "low": "Faible",
+            "medium": "Moyen",
+            "high": "Élevé"
+          }
+        },
         "counter": {
           "targets": "Collecteurs ciblés",
           "collectors": "Collecteurs",

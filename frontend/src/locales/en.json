@@ -552,6 +552,22 @@
           "ready": "Ready to push",
           "blocked": "Push blocked"
         },
+        "risk_score": {
+          "title": "Pre-push risk score",
+          "help": "Backend semantic analysis orders these reasons before any apply or approval action.",
+          "badge": "Risk: {{severity}}",
+          "badge_aria": "Pre-push risk level: {{severity}}",
+          "applies_to": "Applies to {{count}} target collectors",
+          "applies_to_one": "Applies to {{count}} target collector",
+          "reasons_aria": "Pre-push risk reasons",
+          "no_reasons": "No risk reasons were returned by the backend.",
+          "severity": {
+            "none": "None",
+            "low": "Low",
+            "medium": "Medium",
+            "high": "High"
+          }
+        },
         "counter": {
           "targets": "Target collectors",
           "collectors": "Collectors",
