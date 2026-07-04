@@ -1177,6 +1177,51 @@
       "remote_config_unsupported": "La config distante n’est pas supportée par ce collector.",
       "push_pending_too_long": "Un push de config est déjà en attente depuis trop longtemps ; vérifiez le statut avant de réessayer."
     },
+    "report": {
+      "title": "Rapport de preuves",
+      "subtitle": "ID rapport {{id}}",
+      "loading": "Chargement du rapport de preuves…",
+      "error": "Impossible de charger le rapport de preuves.",
+      "summary_aria": "Résumé du rapport de preuves",
+      "export_aria": "Exports du rapport de preuves",
+      "exporting": "Export…",
+      "export_error": "Échec de l’export. Réessayez.",
+      "signature_aria": "Métadonnées de signature du rapport de preuves",
+      "signature_status": "Statut signature",
+      "algorithm": "Algorithme",
+      "digest": "Digest payload",
+      "key_id": "ID clé",
+      "community_signature_note": "Les exports Community/Pro ne sont pas présentés comme signés Enterprise.",
+      "download": {
+        "markdown": "Télécharger Markdown",
+        "csv": "Télécharger CSV",
+        "pdf": "Télécharger PDF"
+      },
+      "summary": {
+        "config_changes": "Changements config",
+        "validation_failures": "Validations échouées",
+        "rollbacks": "Rollbacks",
+        "drifted_collectors": "Collecteurs en drift",
+        "outdated_collectors": "Collecteurs obsolètes",
+        "audit_events": "Événements d’audit"
+      },
+      "signature": {
+        "unsigned_digest": "Digest non signé prêt",
+        "signed": "Signature Enterprise présente"
+      },
+      "sections": {
+        "config_changes": "Changements config",
+        "validation_failures": "Validations échouées",
+        "rollbacks": "Rollbacks",
+        "audit_trail": "Piste d’audit"
+      },
+      "empty": {
+        "config_changes": "Aucun changement de config inclus dans ce rapport.",
+        "validation_failures": "Aucune validation échouée incluse dans ce rapport.",
+        "rollbacks": "Aucun rollback inclus dans ce rapport.",
+        "audit_trail": "Aucune entrée de piste d’audit incluse dans ce rapport."
+      }
+    },
     "disabled": {
       "title": "Tableau de drift de flotte non activé",
       "body": "Les insights de drift de flotte ne sont pas activés pour cet espace de travail."
