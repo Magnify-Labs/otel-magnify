@@ -312,6 +312,7 @@
           "loading": "Computing OTel impact summary…",
           "unavailable": "OTel impact summary unavailable. Fix YAML errors or reload the active config to compute it.",
           "counts_label": "Risk item counts",
+          "what_changed": "What changed?",
           "dangerous": "Dangerous removals",
           "components": "Components summary",
           "pipelines": "Impacted pipelines",

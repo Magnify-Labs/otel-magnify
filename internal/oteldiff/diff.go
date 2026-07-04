@@ -48,6 +48,7 @@ type ConfigDiff struct {
 	Summary       Summary                `json:"summary"`
 	RiskScore     models.ConfigRiskScore `json:"risk_score"`
 	BlastRadius   BlastRadius            `json:"blast_radius"`
+	HumanSummary  []HumanSummaryItem     `json:"human_summary"`
 	Components    []ComponentDiff        `json:"components"`
 	Pipelines     []PipelineDiff         `json:"pipelines"`
 	Endpoints     []EndpointDiff         `json:"endpoints"`
@@ -61,6 +62,20 @@ type Summary struct {
 	OverallRisk Risk   `json:"overall_risk"`
 	Counts      Counts `json:"counts"`
 	Headline    string `json:"headline"`
+}
+
+// HumanSummaryItem is a display-ready, redaction-safe summary line derived from
+// the semantic component, pipeline, and field diffs. It intentionally carries
+// labels and paths only, never before/after values.
+type HumanSummaryItem struct {
+	Text        string     `json:"text"`
+	Category    string     `json:"category"`
+	Kind        ChangeKind `json:"kind"`
+	Risk        Risk       `json:"risk"`
+	ComponentID string     `json:"component_id,omitempty"`
+	PipelineKey string     `json:"pipeline_key,omitempty"`
+	Signal      string     `json:"signal,omitempty"`
+	Path        string     `json:"path,omitempty"`
 }
 
 type Counts struct {
@@ -293,6 +308,7 @@ func emptyDiff(baseYAML, targetYAML []byte) ConfigDiff {
 		Summary:       Summary{OverallRisk: RiskNone, Counts: Counts{}, Headline: "No OTel semantic changes detected"},
 		RiskScore:     models.ConfigRiskScore{Severity: string(RiskNone), Reasons: []string{}},
 		BlastRadius:   emptyBlastRadius(),
+		HumanSummary:  []HumanSummaryItem{},
 		Components:    []ComponentDiff{}, Pipelines: []PipelineDiff{}, Endpoints: []EndpointDiff{}, Security: []SecurityDiff{}, RiskItems: []RiskItem{}, Diagnostics: []Diagnostic{},
 		Normalized: Normalized{BaseHash: hashYAML(baseYAML), TargetHash: hashYAML(targetYAML)},
 	}
@@ -507,6 +523,7 @@ func (e *engine) finish() {
 		}
 		return e.diff.RiskItems[i].ID < e.diff.RiskItems[j].ID
 	})
+	e.diff.HumanSummary = e.buildHumanSummary()
 	for _, c := range e.diff.Components {
 		switch c.Kind {
 		case ChangeAdded:
@@ -635,6 +652,76 @@ func (e *engine) countRisk(r Risk) {
 		// No counter for absent risk.
 	}
 }
+func (e *engine) buildHumanSummary() []HumanSummaryItem {
+	items := []HumanSummaryItem{}
+	seen := map[string]bool{}
+	add := func(item HumanSummaryItem) {
+		if item.Text == "" || seen[item.Text] {
+			return
+		}
+		seen[item.Text] = true
+		items = append(items, item)
+	}
+
+	for _, c := range e.diff.Components {
+		componentName := humanComponentName(c.Component.ID)
+		componentKind := singular(c.Component.Category)
+		componentID := humanSafeLabel(c.Component.ID)
+		switch c.Kind {
+		case ChangeAdded:
+			add(HumanSummaryItem{Text: fmt.Sprintf("Adds %s %s", componentName, componentKind), Category: "component", Kind: c.Kind, Risk: c.Risk, ComponentID: componentID})
+		case ChangeRemoved:
+			add(HumanSummaryItem{Text: fmt.Sprintf("Removes %s %s", componentName, componentKind), Category: "component", Kind: c.Kind, Risk: c.Risk, ComponentID: componentID})
+		case ChangeModified:
+			for _, field := range c.ChangedFields {
+				add(HumanSummaryItem{Text: fmt.Sprintf("Changes %s %s", componentName, humanFieldName(field.Path)), Category: "field", Kind: c.Kind, Risk: field.Risk, ComponentID: componentID, Path: humanSafePath(field.Path)})
+			}
+		case ChangeUnchanged:
+			// Unchanged components are not emitted by compareComponents.
+		}
+	}
+
+	for _, p := range e.diff.Pipelines {
+		for _, ch := range p.ComponentRefChanges {
+			if ch.Section != "exporters" {
+				continue
+			}
+			name := humanComponentName(ch.ComponentID)
+			componentID := humanSafeLabel(ch.ComponentID)
+			pipelineKey := humanSafeLabel(p.PipelineKey)
+			switch ch.Kind {
+			case ChangeAdded:
+				add(HumanSummaryItem{Text: fmt.Sprintf("Routes %s to %s", p.Signal, name), Category: "pipeline", Kind: ch.Kind, Risk: ch.Risk, ComponentID: componentID, PipelineKey: pipelineKey, Signal: p.Signal})
+			case ChangeRemoved:
+				// Component removal summaries already cover removed destinations; avoid
+				// repeating the same event as both removal and routing noise.
+			case ChangeModified, ChangeUnchanged:
+				// Pipeline reference diffs are currently additions/removals only.
+			}
+		}
+	}
+
+	if len(e.diff.Pipelines) > 0 {
+		changedPipelines := map[string]bool{}
+		for _, p := range e.diff.Pipelines {
+			changedPipelines[p.PipelineKey] = true
+		}
+		for _, key := range unionPipelineKeys(e.base.pipelines, e.target.pipelines) {
+			if changedPipelines[key] {
+				continue
+			}
+			base, bok := e.base.pipelines[key]
+			target, tok := e.target.pipelines[key]
+			if bok && tok && reflect.DeepEqual(base, target) {
+				signal := signalOf(key)
+				add(HumanSummaryItem{Text: fmt.Sprintf("Keeps %s unchanged", signal), Category: "unchanged", Kind: ChangeUnchanged, Risk: RiskNone, PipelineKey: humanSafeLabel(key), Signal: signal})
+			}
+		}
+	}
+
+	return items
+}
+
 func (e *engine) addRisk(id string, risk Risk, cat, rule, title, desc string, paths, pipelines []string) {
 	if e.seenRisk[id] {
 		return
@@ -825,6 +912,55 @@ func componentTypeName(id string) (string, string) {
 	return id, ""
 }
 func singular(cat string) string { return strings.TrimSuffix(cat, "s") }
+func humanComponentName(id string) string {
+	if humanSafeLabel(id) == MaskedValue {
+		return MaskedValue
+	}
+	typ, name := componentTypeName(id)
+	label := typ
+	if name != "" {
+		label = name
+	}
+	switch strings.ToLower(label) {
+	case "loki":
+		return "Loki"
+	case "otlp":
+		return "OTLP"
+	case "otlphttp":
+		return "OTLP HTTP"
+	case "prometheus":
+		return "Prometheus"
+	default:
+		return humanSafeLabel(label)
+	}
+}
+func humanFieldName(path string) string {
+	parts := strings.Split(path, ".")
+	if len(parts) == 0 {
+		return humanSafeLabel(path)
+	}
+	field := parts[len(parts)-1]
+	if humanSafeLabel(field) == MaskedValue {
+		return "sensitive setting"
+	}
+	return strings.ReplaceAll(field, "_", " ")
+}
+func humanSafeLabel(label string) string {
+	if label == "" {
+		return ""
+	}
+	if isSensitivePath(label) || looksSecret(label) {
+		return MaskedValue
+	}
+	return sanitizeEndpointIfURL(label)
+}
+func humanSafePath(path string) string {
+	parts := strings.Split(path, ".")
+	for i, part := range parts {
+		parts[i] = humanSafeLabel(part)
+	}
+	return strings.Join(parts, ".")
+}
 func signalOf(key string) string {
 	sig := strings.SplitN(key, "/", 2)[0]
 	switch sig {
