@@ -102,6 +102,14 @@ func TestCompareDetectsStrongSamplingChange(t *testing.T) {
 
 func TestCompareRedactsAuthHeadersAndEndpointCredentials(t *testing.T) {
 	got := Compare(loadFixture(t, "base.yaml"), loadFixture(t, "high-target.yaml"))
+	if got.RiskScore.Severity != string(RiskHigh) {
+		t.Fatalf("risk score severity = %q, want high", got.RiskScore.Severity)
+	}
+	for _, want := range []string{"Pipeline logs removed", "OTLP endpoint changed", "Memory limiter removed from pipeline"} {
+		if !containsString(got.RiskScore.Reasons, want) {
+			t.Fatalf("risk score missing reason %q in %#v", want, got.RiskScore.Reasons)
+		}
+	}
 	if !hasSecurityRule(got.Security, "auth_header_modified") {
 		t.Fatalf("missing auth security diff: %#v", got.Security)
 	}
@@ -113,6 +121,25 @@ func TestCompareRedactsAuthHeadersAndEndpointCredentials(t *testing.T) {
 	if !strings.Contains(string(b), "••••masked••••") {
 		t.Fatalf("expected masked sentinel in response: %s", string(b))
 	}
+}
+
+func TestCompareRiskScoreNoneHasEmptyReasons(t *testing.T) {
+	got := Compare(loadFixture(t, "base.yaml"), loadFixture(t, "base.yaml"))
+	if got.RiskScore.Severity != string(RiskNone) {
+		t.Fatalf("risk score severity = %q, want none", got.RiskScore.Severity)
+	}
+	if len(got.RiskScore.Reasons) != 0 {
+		t.Fatalf("risk score reasons = %#v, want empty", got.RiskScore.Reasons)
+	}
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCompareRedactsChangedAuthorizationHeaderValues(t *testing.T) {
