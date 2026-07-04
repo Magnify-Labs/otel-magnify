@@ -177,6 +177,26 @@ logs:
 	}
 }
 
+func TestAssistantPreviewRejectsInjectedDatadogDogstatsdPort(t *testing.T) {
+	assistant := NewAssistant()
+	resp, err := assistant.Preview(models.ConfigMigrationPreviewRequest{
+		Vendor: models.ConfigMigrationVendorDatadogAgent,
+		Source: "dogstatsd_port: \"8125\n    injected: true\"\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(resp.DraftYAML, "injected: true") {
+		t.Fatalf("draft contains injected YAML key: %s", resp.DraftYAML)
+	}
+	if strings.Contains(resp.DraftYAML, "statsd:") || strings.Contains(resp.DraftYAML, "0.0.0.0:8125") {
+		t.Fatalf("draft should not render an invalid dogstatsd_port: %s", resp.DraftYAML)
+	}
+	if !hasUnsupportedPath(resp.UnsupportedKeys, "dogstatsd_port") {
+		t.Fatalf("unsupported dogstatsd_port missing: %+v", resp.UnsupportedKeys)
+	}
+}
+
 func TestAssistantPreviewDoesNotCopySecretCustomAttributes(t *testing.T) {
 	assistant := NewAssistant()
 	resp, err := assistant.Preview(models.ConfigMigrationPreviewRequest{

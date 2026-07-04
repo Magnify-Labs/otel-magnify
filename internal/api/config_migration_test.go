@@ -93,3 +93,14 @@ func TestPreviewConfigMigration_RejectsSourceAboveAssistantLimit(t *testing.T) {
 		t.Fatalf("status = %d, want 413, body = %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestPreviewConfigMigration_RejectsOverLimitRequestBodyBeforeDecode(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	body := `{"vendor":"datadog_agent","source":"dogstatsd_port: 8125","context":{"notes":"` + strings.Repeat("x", (2<<20)) + `"}}`
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/migration-assistant/preview", body, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413, body = %s", rec.Code, rec.Body.String())
+	}
+}

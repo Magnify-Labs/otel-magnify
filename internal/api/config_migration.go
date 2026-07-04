@@ -9,9 +9,16 @@ import (
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
+const configMigrationPreviewMaxBodyBytes = (1 << 20) + (64 << 10)
+
 func (a *API) handlePreviewConfigMigration(w http.ResponseWriter, r *http.Request) {
 	var req models.ConfigMigrationPreviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, configMigrationPreviewMaxBodyBytes)).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			respondError(w, http.StatusRequestEntityTooLarge, "request body exceeds migration preview limit")
+			return
+		}
 		respondError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
