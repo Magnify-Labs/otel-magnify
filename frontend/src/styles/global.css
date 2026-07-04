@@ -2638,6 +2638,33 @@ code {
   border-top: 1px solid var(--border);
 }
 
+.blast-radius-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.blast-radius-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.blast-radius-card {
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.blast-radius-card strong {
+  color: var(--text-hi);
+  font-size: 0.78rem;
+}
+
 .otel-impact-list {
   flex-direction: column;
   margin-top: 0.55rem;

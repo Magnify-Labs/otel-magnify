@@ -72,6 +72,29 @@ const HIGH_OTEL_DIFF = {
       low_risk: 0,
     },
   },
+  blast_radius: {
+    schema_version: 'otel-config-blast-radius.v1',
+    affected_signals: ['traces', 'metrics'],
+    touched_exporters: ['otlp/prod', 'debug'],
+    impacted_services: [
+      {
+        service_name: 'checkout-api',
+        workload_id: WORKLOAD_ID,
+        display_name: 'checkout collector',
+        type: 'collector',
+        status: 'degraded',
+      },
+    ],
+    impacted_clusters: ['prod-eu-1'],
+    critical_collectors: [
+      {
+        workload_id: WORKLOAD_ID,
+        display_name: 'checkout collector',
+        status: 'degraded',
+        reasons: ['critical=true', 'degraded'],
+      },
+    ],
+  },
   human_summary: [
     {
       kind: 'added',
@@ -1084,6 +1107,21 @@ test('compare dialog renders enriched OTel diff without leaking redacted secrets
   await expect(page.getByText('Memory limiter removed')).toBeVisible()
   await expect(page.getByText('Impacted pipelines')).toBeVisible()
   await expect(page.getByText('modified · traces')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Blast radius' })).toBeVisible()
+  await expect(page.getByText('Impacted services')).toBeVisible()
+  await expect(page.getByText('checkout-api · checkout collector · degraded')).toBeVisible()
+  await expect(page.getByText('Impacted clusters')).toBeVisible()
+  await expect(page.getByText('prod-eu-1')).toBeVisible()
+  await expect(page.getByText('Affected signals')).toBeVisible()
+  await expect(
+    page.locator('.blast-radius-card').filter({ hasText: 'Affected signals' }).getByText('traces'),
+  ).toBeVisible()
+  await expect(page.getByText('Touched exporters')).toBeVisible()
+  await expect(page.getByText('otlp/prod')).toBeVisible()
+  await expect(page.getByText('Critical collectors')).toBeVisible()
+  await expect(
+    page.getByText('checkout collector · degraded · critical=true, degraded'),
+  ).toBeVisible()
   await expect(page.getByText('Endpoints changed')).toBeVisible()
   await expect(page.getByText('https://otel-new.example:4317').first()).toBeVisible()
   await expect(page.getByText('Auth and headers touched')).toBeVisible()

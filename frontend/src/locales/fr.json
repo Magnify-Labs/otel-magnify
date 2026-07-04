@@ -327,6 +327,20 @@
           "empty_sampling": "Aucun changement de sampling.",
           "empty_auth": "Aucun changement auth ou header."
         },
+        "blast_radius": {
+          "title": "Blast radius",
+          "helper": "Contexte fleet déduit avant le push.",
+          "impacted_services": "Services impactés",
+          "impacted_clusters": "Clusters impactés",
+          "affected_signals": "Signaux affectés",
+          "touched_exporters": "Exporters touchés",
+          "critical_collectors": "Collecteurs critiques",
+          "empty_services": "Services inconnus.",
+          "empty_clusters": "Clusters inconnus.",
+          "empty_signals": "Signaux inconnus.",
+          "empty_exporters": "Aucun exporter touché.",
+          "empty_collectors": "Aucun collecteur critique."
+        },
         "requires_push_permission": "Nécessite la permission workload:push_config",
         "known_good_only_applied": "Seules les révisions appliquées peuvent être marquées known-good",
         "content_unavailable": "Contenu de config indisponible",

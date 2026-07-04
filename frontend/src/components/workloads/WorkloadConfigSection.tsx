@@ -15,6 +15,7 @@ import ManualCanaryPanel from './ManualCanaryPanel'
 import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
+import { buildSafeOTelDiffContext } from '../../lib/blastRadiusDisplay'
 import { useFeature } from '../../hooks/useFeature'
 import type {
   PushGroup,
@@ -959,7 +960,35 @@ export default function WorkloadConfigSection({ workload }: Props) {
     retry: false,
   })
 
+  const { data: knownWorkloads = [] } = useQuery({
+    queryKey: ['workloads', 'blast-radius-context'],
+    queryFn: () => workloadsAPI.list(),
+    enabled: workload.type === 'collector' && editMode && tab === 'diff',
+    retry: false,
+  })
+
   const activeContent = config?.content ?? ''
+
+  const {
+    data: otelDiff,
+    isLoading: otelDiffLoading,
+    isError: otelDiffUnavailable,
+  } = useQuery({
+    queryKey: ['otel-config-diff', workload.id, activeContent, draftYaml, knownWorkloads],
+    queryFn: () =>
+      configsAPI.diff({
+        base_yaml: activeContent,
+        target_yaml: draftYaml,
+        context: buildSafeOTelDiffContext(workload, knownWorkloads, { include_raw_paths: true }),
+      }),
+    enabled:
+      workload.type === 'collector' &&
+      editMode &&
+      tab === 'diff' &&
+      activeContent.length > 0 &&
+      draftYaml.length > 0,
+    retry: false,
+  })
 
   const {
     data: readOnlyPlan,
@@ -1838,7 +1867,15 @@ export default function WorkloadConfigSection({ workload }: Props) {
           readOnly={!hasPushPermission}
         />
       )}
-      {tab === 'diff' && <ConfigDiffView oldYaml={activeContent} newYaml={draftYaml} />}
+      {tab === 'diff' && (
+        <ConfigDiffView
+          oldYaml={activeContent}
+          newYaml={draftYaml}
+          otelDiff={otelDiff}
+          otelDiffLoading={otelDiffLoading}
+          otelDiffUnavailable={otelDiffUnavailable}
+        />
+      )}
 
       {validation && <ValidationDetails validation={validation} />}
 
