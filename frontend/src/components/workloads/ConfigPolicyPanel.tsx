@@ -104,6 +104,7 @@ function ConfigPolicyCountPill({
 }
 
 function PolicyFindingRow({ finding }: { finding: ConfigPolicyFinding }) {
+  const { t } = useTranslation()
   const risk = finding.decision === 'block' || finding.severity === 'critical' ? 'high' : 'medium'
   const paths =
     finding.paths && finding.paths.length > 0 ? finding.paths : finding.path ? [finding.path] : []
@@ -111,7 +112,15 @@ function PolicyFindingRow({ finding }: { finding: ConfigPolicyFinding }) {
     <article className={`otel-impact-row otel-impact-row-${risk}`}>
       <span className={`otel-risk-badge otel-risk-badge-${risk}`}>{finding.severity}</span>
       <div>
-        <strong>{finding.rule_id}</strong>
+        <div className="otel-impact-row-heading">
+          <strong>{finding.rule_id}</strong>
+          <span className="otel-impact-policy-name">{finding.policy_name}</span>
+        </div>
+        <div className="otel-impact-meta" aria-label={t('workloads.config.policy.edition_label')}>
+          <span>{policyPackagingLabel(finding.packaging, finding.tier, t)}</span>
+          {finding.environment && <span>{finding.environment}</span>}
+          {finding.target_scope && <span>{finding.target_scope}</span>}
+        </div>
         <p>{finding.message}</p>
         {finding.remediation && <p>{finding.remediation}</p>}
         <div className="otel-impact-meta">
@@ -123,4 +132,15 @@ function PolicyFindingRow({ finding }: { finding: ConfigPolicyFinding }) {
       </div>
     </article>
   )
+}
+
+function policyPackagingLabel(
+  packaging: ConfigPolicyFinding['packaging'],
+  tier: ConfigPolicyFinding['tier'],
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const packagingKey = packaging === 'pro' || packaging === 'enterprise' ? packaging : 'community'
+  const tierKey =
+    tier === 'configurable' || tier === 'tenant_hook' || tier === 'core' ? tier : 'core'
+  return t(`workloads.config.policy.packaging.${packagingKey}.${tierKey}`)
 }

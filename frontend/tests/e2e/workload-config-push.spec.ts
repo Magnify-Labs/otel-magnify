@@ -750,6 +750,102 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
             packaging: 'community',
             tier: 'core',
           },
+          {
+            policy_id: 'community',
+            policy_name: 'Community config policy',
+            rule_id: 'community.processors.memory_limiter_missing',
+            rule_code: 'processors.memory_limiter_missing',
+            severity: 'warning',
+            decision: 'warn',
+            target_scope: 'collector',
+            environment: 'production',
+            path: 'service.pipelines.traces.processors',
+            paths: ['processors.memory_limiter', 'service.pipelines.traces.processors'],
+            message: 'Pipeline is missing memory_limiter.',
+            remediation: 'Add memory_limiter before exporting telemetry.',
+            packaging: 'community',
+            tier: 'core',
+          },
+          {
+            policy_id: 'community',
+            policy_name: 'Community config policy',
+            rule_id: 'community.processors.batch_missing',
+            rule_code: 'processors.batch_missing',
+            severity: 'warning',
+            decision: 'warn',
+            target_scope: 'collector',
+            environment: 'production',
+            path: 'service.pipelines.metrics.processors',
+            paths: ['processors.batch', 'service.pipelines.metrics.processors'],
+            message: 'Pipeline is missing batch.',
+            remediation: 'Add the batch processor to improve exporter behavior.',
+            packaging: 'community',
+            tier: 'core',
+          },
+          {
+            policy_id: 'pro-endpoints',
+            policy_name: 'Pro endpoint allowlist',
+            rule_id: 'pro.exporters.endpoint_allowlist',
+            rule_code: 'exporters.endpoint_allowlist',
+            severity: 'critical',
+            decision: 'block',
+            target_scope: 'collector',
+            environment: 'production',
+            path: 'exporters.otlp.endpoint',
+            paths: ['exporters.otlp.endpoint'],
+            message: 'Exporter endpoint is outside the allowlist.',
+            remediation: 'Use an approved endpoint from the policy allowlist.',
+            packaging: 'pro',
+            tier: 'configurable',
+          },
+          {
+            policy_id: 'enterprise-critical-exporters',
+            policy_name: 'Enterprise tenant policy',
+            rule_id: 'enterprise.exporters.critical_removal',
+            rule_code: 'exporters.critical_removal',
+            severity: 'critical',
+            decision: 'block',
+            target_scope: 'tenant',
+            environment: 'production',
+            path: 'exporters.vendor_audit',
+            paths: ['exporters.vendor_audit', 'service.pipelines.logs.exporters'],
+            message: 'Critical exporter would be removed.',
+            remediation: 'Keep the exporter or adjust the tenant policy hook.',
+            packaging: 'enterprise',
+            tier: 'tenant_hook',
+          },
+          {
+            policy_id: 'enterprise-resource-attrs',
+            policy_name: 'Enterprise tenant policy',
+            rule_id: 'enterprise.resource_attributes.required',
+            rule_code: 'resource_attributes.required',
+            severity: 'warning',
+            decision: 'warn',
+            target_scope: 'tenant',
+            environment: 'production',
+            path: 'processors.resource.attributes',
+            paths: ['processors.resource.attributes'],
+            message: 'Required resource attributes are missing.',
+            remediation: 'Add service.name and deployment.environment resource attributes.',
+            packaging: 'enterprise',
+            tier: 'tenant_hook',
+          },
+          {
+            policy_id: 'pro-sampling',
+            policy_name: 'Pro sampling policy',
+            rule_id: 'pro.sampling.unsafe_percentage',
+            rule_code: 'sampling.unsafe_percentage',
+            severity: 'warning',
+            decision: 'warn',
+            target_scope: 'collector',
+            environment: 'production',
+            path: 'processors.probabilistic_sampler.sampling_percentage',
+            paths: ['processors.probabilistic_sampler.sampling_percentage'],
+            message: 'Sampling percentage is outside the configured safe range.',
+            remediation: 'Keep sampling within the configured Pro policy range.',
+            packaging: 'pro',
+            tier: 'configurable',
+          },
         ],
       }),
     }),
@@ -764,10 +860,25 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
 
   const policy = page.locator('.config-policy-panel')
   await expect(policy).toContainText('Policy blocked')
+  await expect(policy).toContainText('Community config policy')
+  await expect(policy).toContainText('Community built-in rule')
   await expect(policy).toContainText('community.production.insecure_tls')
   await expect(policy).toContainText('Production config enables insecure TLS.')
   await expect(policy).toContainText('exporters.otlp.tls.insecure')
   await expect(policy).toContainText('Disable insecure TLS')
+  await expect(policy).toContainText('community.processors.memory_limiter_missing')
+  await expect(policy).toContainText('Pipeline is missing memory_limiter.')
+  await expect(policy).toContainText('community.processors.batch_missing')
+  await expect(policy).toContainText('Pipeline is missing batch.')
+  await expect(policy).toContainText('Pro endpoint allowlist')
+  await expect(policy).toContainText('Pro configurable policy')
+  await expect(policy).toContainText('pro.exporters.endpoint_allowlist')
+  await expect(policy).toContainText('Enterprise tenant policy')
+  await expect(policy).toContainText('Enterprise tenant policy hook')
+  await expect(policy).toContainText('enterprise.exporters.critical_removal')
+  await expect(policy).toContainText('enterprise.resource_attributes.required')
+  await expect(policy).toContainText('pro.sampling.unsafe_percentage')
+  await expect(policy).toContainText('Sampling percentage is outside the configured safe range.')
   await expect(page.getByRole('button', { name: 'Request approval' })).toBeDisabled()
 })
 
