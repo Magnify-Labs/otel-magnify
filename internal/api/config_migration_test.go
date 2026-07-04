@@ -96,7 +96,7 @@ func TestPreviewConfigMigration_RejectsSourceAboveAssistantLimit(t *testing.T) {
 
 func TestPreviewConfigMigration_RejectsOverLimitRequestBodyBeforeDecode(t *testing.T) {
 	_, router, _ := newTestAPI(t)
-	body := `{"vendor":"datadog_agent","source":"dogstatsd_port: 8125","context":{"notes":"` + strings.Repeat("x", (2<<20)) + `"}}`
+	body := `{"vendor":"datadog_agent","source":"dogstatsd_port: 8125","labels":{"huge":"` + strings.Repeat("x", (2<<20)) + `"}}`
 	req := authedJSONRequest(t, http.MethodPost, "/api/configs/migration-assistant/preview", body, nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)

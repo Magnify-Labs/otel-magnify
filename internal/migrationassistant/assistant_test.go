@@ -177,23 +177,85 @@ logs:
 	}
 }
 
-func TestAssistantPreviewRejectsInjectedDatadogDogstatsdPort(t *testing.T) {
+func TestAssistantPreviewValidatesDatadogDogstatsdPortValues(t *testing.T) {
 	assistant := NewAssistant()
-	resp, err := assistant.Preview(models.ConfigMigrationPreviewRequest{
-		Vendor: models.ConfigMigrationVendorDatadogAgent,
-		Source: "dogstatsd_port: \"8125\n    injected: true\"\n",
-	})
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name             string
+		source           string
+		wantStatsd       bool
+		wantEndpoint     string
+		forbiddenInDraft []string
+	}{
+		{
+			name:         "valid numeric port",
+			source:       "dogstatsd_port: 8125\n",
+			wantStatsd:   true,
+			wantEndpoint: "endpoint: 0.0.0.0:8125",
+		},
+		{
+			name:         "valid maximum port",
+			source:       "dogstatsd_port: 65535\n",
+			wantStatsd:   true,
+			wantEndpoint: "endpoint: 0.0.0.0:65535",
+		},
+		{
+			name:             "newline cannot inject yaml keys",
+			source:           "dogstatsd_port: \"8125\n    injected: true\"\n",
+			forbiddenInDraft: []string{"injected: true", "statsd:", "0.0.0.0:8125"},
+		},
+		{
+			name:             "non numeric port",
+			source:           "dogstatsd_port: not-a-port\n",
+			forbiddenInDraft: []string{"statsd:", "not-a-port"},
+		},
+		{
+			name:             "zero port",
+			source:           "dogstatsd_port: 0\n",
+			forbiddenInDraft: []string{"statsd:", "0.0.0.0:0"},
+		},
+		{
+			name:             "negative port",
+			source:           "dogstatsd_port: -1\n",
+			forbiddenInDraft: []string{"statsd:", "0.0.0.0:-1"},
+		},
+		{
+			name:             "too large port",
+			source:           "dogstatsd_port: 65536\n",
+			forbiddenInDraft: []string{"statsd:", "0.0.0.0:65536"},
+		},
 	}
-	if strings.Contains(resp.DraftYAML, "injected: true") {
-		t.Fatalf("draft contains injected YAML key: %s", resp.DraftYAML)
-	}
-	if strings.Contains(resp.DraftYAML, "statsd:") || strings.Contains(resp.DraftYAML, "0.0.0.0:8125") {
-		t.Fatalf("draft should not render an invalid dogstatsd_port: %s", resp.DraftYAML)
-	}
-	if !hasUnsupportedPath(resp.UnsupportedKeys, "dogstatsd_port") {
-		t.Fatalf("unsupported dogstatsd_port missing: %+v", resp.UnsupportedKeys)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := assistant.Preview(models.ConfigMigrationPreviewRequest{
+				Vendor: models.ConfigMigrationVendorDatadogAgent,
+				Source: tt.source,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantStatsd {
+				if !strings.Contains(resp.DraftYAML, "statsd:") || !strings.Contains(resp.DraftYAML, tt.wantEndpoint) {
+					t.Fatalf("draft missing statsd endpoint %q: %s", tt.wantEndpoint, resp.DraftYAML)
+				}
+				if hasUnsupportedPath(resp.UnsupportedKeys, "dogstatsd_port") {
+					t.Fatalf("valid dogstatsd_port should not be unsupported: %+v", resp.UnsupportedKeys)
+				}
+				return
+			}
+
+			for _, forbidden := range tt.forbiddenInDraft {
+				if strings.Contains(resp.DraftYAML, forbidden) {
+					t.Fatalf("draft contains forbidden value %q: %s", forbidden, resp.DraftYAML)
+				}
+			}
+			if !hasUnsupportedPath(resp.UnsupportedKeys, "dogstatsd_port") {
+				t.Fatalf("unsupported dogstatsd_port missing: %+v", resp.UnsupportedKeys)
+			}
+			if !unsupportedReasonContains(resp.UnsupportedKeys, "dogstatsd_port", "1-65535") {
+				t.Fatalf("unsupported dogstatsd_port should explain valid range: %+v", resp.UnsupportedKeys)
+			}
+		})
 	}
 }
 
@@ -311,6 +373,15 @@ func hasEvidence(items []models.ConfigMigrationEvidence, ruleID string) bool {
 func hasRedaction(items []models.ConfigMigrationRedaction, path, placeholder string) bool {
 	for _, item := range items {
 		if item.Path == path && item.Placeholder == placeholder {
+			return true
+		}
+	}
+	return false
+}
+
+func unsupportedReasonContains(items []models.ConfigMigrationUnsupportedKey, path, want string) bool {
+	for _, item := range items {
+		if item.Path == path && strings.Contains(item.Reason, want) {
 			return true
 		}
 	}
