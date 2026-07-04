@@ -299,6 +299,20 @@
           "empty_sampling": "No sampling changes.",
           "empty_auth": "No auth or header changes."
         },
+        "blast_radius": {
+          "title": "Blast radius",
+          "helper": "Fleet context inferred before push.",
+          "impacted_services": "Impacted services",
+          "impacted_clusters": "Impacted clusters",
+          "affected_signals": "Affected signals",
+          "touched_exporters": "Touched exporters",
+          "critical_collectors": "Critical collectors",
+          "empty_services": "Unknown services.",
+          "empty_clusters": "Unknown clusters.",
+          "empty_signals": "Unknown signals.",
+          "empty_exporters": "No exporters touched.",
+          "empty_collectors": "No critical collectors."
+        },
         "requires_push_permission": "Requires workload:push_config permission",
         "known_good_only_applied": "Only applied revisions can be marked known-good",
         "content_unavailable": "Config content unavailable",

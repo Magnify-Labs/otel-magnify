@@ -7,8 +7,10 @@ import { basicSetup } from 'codemirror'
 import { yaml } from '@codemirror/lang-yaml'
 import { signalDeckYaml } from '../config/yamlTheme'
 import ConfigPolicyPanel from './ConfigPolicyPanel'
+import { buildBlastRadiusDisplaySections } from '../../lib/blastRadiusDisplay'
 import type {
   ConfigPolicyEvaluation,
+  OTelBlastRadius,
   OTelComponentDiff,
   OTelConfigDiffResponse,
   OTelDiffRisk,
@@ -132,6 +134,8 @@ function OtelImpactSummary({
         <CountPill label="Low" value={diff.summary.counts.low_risk} risk="low" />
       </div>
 
+      <BlastRadiusSummary radius={diff.blast_radius} />
+
       <OtelSection
         title={t('workloads.config.versioning.otel.dangerous')}
         empty={t('workloads.config.versioning.otel.empty_dangerous')}
@@ -208,6 +212,52 @@ function OtelImpactSummary({
           ))}
         </OtelSection>
       )}
+    </section>
+  )
+}
+
+function BlastRadiusSummary({ radius }: { radius?: OTelBlastRadius }) {
+  const { t } = useTranslation()
+  const sections = buildBlastRadiusDisplaySections(
+    radius,
+    {
+      impactedServices: t('workloads.config.versioning.blast_radius.impacted_services'),
+      impactedClusters: t('workloads.config.versioning.blast_radius.impacted_clusters'),
+      affectedSignals: t('workloads.config.versioning.blast_radius.affected_signals'),
+      touchedExporters: t('workloads.config.versioning.blast_radius.touched_exporters'),
+      criticalCollectors: t('workloads.config.versioning.blast_radius.critical_collectors'),
+    },
+    {
+      impactedServices: t('workloads.config.versioning.blast_radius.empty_services'),
+      impactedClusters: t('workloads.config.versioning.blast_radius.empty_clusters'),
+      affectedSignals: t('workloads.config.versioning.blast_radius.empty_signals'),
+      touchedExporters: t('workloads.config.versioning.blast_radius.empty_exporters'),
+      criticalCollectors: t('workloads.config.versioning.blast_radius.empty_collectors'),
+    },
+  )
+
+  return (
+    <section className="otel-impact-section blast-radius-section">
+      <div className="blast-radius-header">
+        <h3>{t('workloads.config.versioning.blast_radius.title')}</h3>
+        <p className="otel-impact-muted">{t('workloads.config.versioning.blast_radius.helper')}</p>
+      </div>
+      <div className="blast-radius-grid">
+        {sections.map((section) => (
+          <article className="blast-radius-card" key={section.key}>
+            <strong>{section.label}</strong>
+            {section.items.length > 0 ? (
+              <div className="otel-impact-meta">
+                {section.items.map((item, index) => (
+                  <code key={`${section.key}:${item}:${index}`}>{safeText(item)}</code>
+                ))}
+              </div>
+            ) : (
+              <p className="otel-impact-empty">{section.emptyText}</p>
+            )}
+          </article>
+        ))}
+      </div>
     </section>
   )
 }

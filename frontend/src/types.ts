@@ -1185,12 +1185,31 @@ export type OTelSignal = 'traces' | 'metrics' | 'logs' | 'profiles' | 'unknown'
 export interface OTelConfigDiffRequest {
   base_yaml: string
   target_yaml: string
-  context?: {
-    workload_id?: string
-    base_label?: string
-    target_label?: string
-    include_raw_paths?: boolean
-  }
+  context?: OTelConfigDiffContext
+}
+
+export interface OTelConfigDiffContext {
+  workload_id?: string
+  display_name?: string
+  workload_type?: string
+  type?: string
+  status?: string
+  labels?: Record<string, string>
+  fingerprint_keys?: Record<string, string>
+  fleet_peers?: OTelConfigDiffWorkloadContext[]
+  base_label?: string
+  target_label?: string
+  include_raw_paths?: boolean
+}
+
+export interface OTelConfigDiffWorkloadContext {
+  id?: string
+  display_name?: string
+  workload_type?: string
+  type?: string
+  status?: string
+  labels?: Record<string, string>
+  fingerprint_keys?: Record<string, string>
 }
 
 export interface OTelConfigDiffResponse {
@@ -1198,6 +1217,7 @@ export interface OTelConfigDiffResponse {
   valid: boolean
   summary: OTelDiffSummary
   risk_score?: ConfigRiskScore
+  blast_radius: OTelBlastRadius
   components: OTelComponentDiff[]
   pipelines: OTelPipelineDiff[]
   endpoints: OTelEndpointDiff[]
@@ -1212,6 +1232,30 @@ export interface OTelConfigDiffResponse {
     base_pipeline_count: number
     target_pipeline_count: number
   }
+}
+
+export interface OTelBlastRadius {
+  schema_version: 'otel-config-blast-radius.v1'
+  affected_signals: string[]
+  touched_exporters: string[]
+  impacted_services: OTelBlastRadiusService[]
+  impacted_clusters: string[]
+  critical_collectors: OTelBlastRadiusCollector[]
+}
+
+export interface OTelBlastRadiusService {
+  service_name: string
+  workload_id?: string
+  display_name?: string
+  type?: string
+  status?: string
+}
+
+export interface OTelBlastRadiusCollector {
+  workload_id: string
+  display_name?: string
+  status?: string
+  reasons: string[]
 }
 
 export interface OTelDiffSummary {
