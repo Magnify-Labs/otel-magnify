@@ -213,6 +213,8 @@ const (
 	ConfigSourceManual = "manual"
 	// ConfigSourceGit marks configs imported from a Git repository with provenance.
 	ConfigSourceGit = "git"
+	// ConfigSourceMigrationAssistant marks drafts explicitly saved from the migration assistant.
+	ConfigSourceMigrationAssistant = "migration_assistant"
 )
 
 // WorkloadConfig records a single push of a Config to a Workload, including its current apply status.
