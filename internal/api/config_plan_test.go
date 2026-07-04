@@ -15,6 +15,7 @@ import (
 const planBaseConfig = `receivers:
   otlp: {}
 processors:
+  memory_limiter: {}
   batch: {}
 exporters:
   logging: {}
@@ -22,7 +23,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [logging]
 `
 
@@ -71,6 +72,11 @@ type configPlanResponse struct {
 		HighRiskChangeCount      int `json:"high_risk_change_count"`
 		ExcludedCount            int `json:"excluded_count"`
 	} `json:"summary"`
+	RiskScore struct {
+		Severity       string   `json:"severity"`
+		Reasons        []string `json:"reasons"`
+		AppliesToCount int      `json:"applies_to_count"`
+	} `json:"risk_score"`
 	Targets []struct {
 		WorkloadID              string   `json:"workload_id"`
 		DisplayName             string   `json:"display_name"`
@@ -116,7 +122,7 @@ func seedPlanWorkload(t *testing.T, db ext.Store, wl models.Workload) {
 	if wl.AvailableComponents == nil {
 		wl.AvailableComponents = &models.AvailableComponents{Hash: "components-v1", Components: map[string][]string{
 			"receivers":  {"otlp"},
-			"processors": {"batch"},
+			"processors": {"batch", "memory_limiter"},
 			"exporters":  {"logging"},
 		}}
 	}
@@ -266,6 +272,12 @@ func TestPlanWorkloadConfig_CountsHighRiskChangesAgainstActiveConfig(t *testing.
 	}
 	if plan.Summary.HighRiskChangeCount == 0 || len(plan.Targets) != 1 || plan.Targets[0].HighRiskChangeCount == 0 || plan.Targets[0].ActiveConfigHash != currentHash {
 		t.Fatalf("risk counts not populated: %+v", plan)
+	}
+	if plan.RiskScore.Severity != "high" || plan.RiskScore.AppliesToCount != 1 {
+		t.Fatalf("risk score = %+v, want high applying to one collector", plan.RiskScore)
+	}
+	if !containsString(plan.RiskScore.Reasons, "Memory limiter removed from pipeline") {
+		t.Fatalf("risk score missing memory limiter reason: %+v", plan.RiskScore)
 	}
 }
 

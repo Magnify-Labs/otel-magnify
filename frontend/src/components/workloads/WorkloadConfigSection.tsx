@@ -24,6 +24,7 @@ import type {
   ValidationCheck,
   Config,
   ConfigApplicationPlan,
+  ConfigRiskScore,
   ConfigApprovalRequest,
   GitImportConfigRequest,
   GitOpsExportRequest,
@@ -695,6 +696,8 @@ function ConfigApplicationPlanPanel({
         </div>
       )}
 
+      {plan.risk_score && <ConfigRiskScorePanel riskScore={plan.risk_score} />}
+
       {plan.hard_failures.length > 0 && (
         <div className="config-plan-failures" role="alert">
           <strong>{t('workloads.config.application_plan.hard_failures')}</strong>
@@ -794,6 +797,60 @@ function ConfigApplicationPlanPanel({
                   : t('workloads.config.application_plan.export_fallback')}
         </span>
       </div>
+    </section>
+  )
+}
+
+function ConfigRiskScorePanel({ riskScore }: { riskScore: ConfigRiskScore }) {
+  const { t } = useTranslation()
+  const severity = normalizeRiskSeverity(riskScore.severity)
+  const reasons = riskScore.reasons.map((reason) => safeRiskText(reason)).filter(Boolean)
+
+  return (
+    <section
+      className={`config-risk-score-panel config-risk-score-panel-${severity}`}
+      aria-labelledby="config-risk-score-title"
+      role="region"
+    >
+      <div className="config-risk-score-header">
+        <div>
+          <p className="section-title" id="config-risk-score-title">
+            {t('workloads.config.application_plan.risk_score.title')}
+          </p>
+          <p className="config-plan-help">
+            {t('workloads.config.application_plan.risk_score.help')}
+          </p>
+        </div>
+        <span
+          className={`config-risk-score-badge config-risk-score-badge-${severity}`}
+          aria-label={t('workloads.config.application_plan.risk_score.badge_aria', {
+            severity: t(`workloads.config.application_plan.risk_score.severity.${severity}`),
+          })}
+        >
+          {t('workloads.config.application_plan.risk_score.badge', {
+            severity: t(`workloads.config.application_plan.risk_score.severity.${severity}`),
+          })}
+        </span>
+      </div>
+      <p className="config-risk-score-targets">
+        {t('workloads.config.application_plan.risk_score.applies_to', {
+          count: riskScore.applies_to_count,
+        })}
+      </p>
+      {reasons.length > 0 ? (
+        <ol
+          className="config-risk-score-reasons"
+          aria-label={t('workloads.config.application_plan.risk_score.reasons_aria')}
+        >
+          {reasons.map((reason, index) => (
+            <li key={`${reason}:${index}`}>{reason}</li>
+          ))}
+        </ol>
+      ) : (
+        <p className="config-risk-score-empty">
+          {t('workloads.config.application_plan.risk_score.no_reasons')}
+        </p>
+      )}
     </section>
   )
 }
@@ -2472,6 +2529,22 @@ function humanizePlanReason(reason: string, t: ReturnType<typeof useTranslation>
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ')
   }
+}
+
+function normalizeRiskSeverity(severity: string): 'none' | 'low' | 'medium' | 'high' {
+  if (severity === 'high' || severity === 'medium' || severity === 'low' || severity === 'none') {
+    return severity
+  }
+  return 'low'
+}
+
+function safeRiskText(value: string): string {
+  return value
+    .replace(/(Bearer\s+)[^\s]+/gi, '$1••••masked••••')
+    .replace(/([?&](?:token|api_key|apikey|password|secret)=)[^&#\s]+/gi, '$1••••masked••••')
+    .replace(/((?:token|api_key|apikey|password|secret)=)[^@\s]+@[^\s]+/gi, '$1••••masked••••')
+    .replace(/(https?:\/\/)[^/@\s]+:[^/@\s]+@/gi, '$1••••masked••••@')
+    .replace(/(https?:\/\/)[^/@\s:]+@/gi, '$1••••masked••••@')
 }
 
 function approvalStatusLabel(

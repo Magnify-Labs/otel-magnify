@@ -477,6 +477,11 @@ func (a *API) buildConfigApplicationPlan(ctx context.Context, workloadID string,
 	if len(plan.Targets) == 0 || plan.Summary.ExcludedCount == len(plan.Targets) {
 		plan.HardFailures = appendIfMissing(plan.HardFailures, "all_targets_excluded")
 	}
+	if active, activeAvailable := a.activeConfigContent(wl); activeAvailable {
+		plan.RiskScore = oteldiff.BuildRiskScore(oteldiff.Compare([]byte(active.Content), body), plan.Summary.CollectorTargetCount)
+	} else {
+		plan.RiskScore = oteldiff.BuildRiskScore(oteldiff.ConfigDiff{Summary: oteldiff.Summary{OverallRisk: oteldiff.RiskNone}}, plan.Summary.CollectorTargetCount)
+	}
 	if plan.Summary.ValidationFailedCount > 0 {
 		plan.HardFailures = appendIfMissing(plan.HardFailures, "validation_failed")
 	}

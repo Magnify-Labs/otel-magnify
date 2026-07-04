@@ -639,6 +639,58 @@ test('valid config shows plan counters before approval request', async ({ logged
   await expect(page.getByRole('button', { name: 'Push approved config' })).toHaveCount(0)
 })
 
+test('safety plan shows high risk score and redacted reasons before approval actions', async ({
+  loggedInPage: page,
+}) => {
+  await mockProConfigSafetyFeatures(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(
+    page,
+    buildPlan({
+      summary: {
+        ...buildPlan().summary,
+        target_count: 48,
+        collector_target_count: 48,
+        high_risk_change_count: 3,
+      },
+      risk_score: {
+        severity: 'high',
+        applies_to_count: 48,
+        reasons: [
+          'Removes logs pipeline service.pipelines.logs.',
+          'Changes OTLP endpoint from https://otel.example.com to https://secret-token@evil.example.com.',
+          'Disables memory_limiter processor.',
+        ],
+      },
+    }),
+  )
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page
+    .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+    .click()
+  await page.getByRole('button', { name: 'Generate safety plan' }).click()
+
+  const riskPanel = page.getByRole('region', { name: 'Pre-push risk score' })
+  await expect(riskPanel).toBeVisible()
+  await expect(riskPanel).toContainText('Risk: High')
+  await expect(riskPanel).toContainText('Applies to 48 target collectors')
+  await expect(riskPanel.locator('li')).toHaveText([
+    'Removes logs pipeline service.pipelines.logs.',
+    'Changes OTLP endpoint from https://otel.example.com to https://••••masked••••@evil.example.com.',
+    'Disables memory_limiter processor.',
+  ])
+  await expect(riskPanel).not.toContainText('secret-token')
+
+  const approvalTop = await page.locator('.config-approval-panel').boundingBox()
+  const riskTop = await riskPanel.boundingBox()
+  expect(riskTop?.y).toBeLessThan(approvalTop?.y ?? Number.POSITIVE_INFINITY)
+})
+
 function approvalRequest(overrides: Record<string, unknown> = {}) {
   const now = '2026-06-30T10:15:00.000Z'
   return {

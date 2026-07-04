@@ -8,6 +8,7 @@ type ConfigApplicationPlan struct {
 	WorkloadID    string                        `json:"workload_id"`
 	ConfigHash    string                        `json:"config_hash"`
 	Summary       ConfigApplicationPlanSummary  `json:"summary"`
+	RiskScore     ConfigRiskScore               `json:"risk_score"`
 	Targets       []ConfigApplicationPlanTarget `json:"targets"`
 	Policy        ConfigPolicyEvaluation        `json:"policy"`
 	HardFailures  []string                      `json:"hard_failures"`

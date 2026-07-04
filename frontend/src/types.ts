@@ -452,11 +452,20 @@ export interface ConfigApplicationPlan {
   config_hash: string
   summary: ConfigApplicationPlanSummary
   targets: ConfigApplicationPlanTarget[]
+  risk_score?: ConfigRiskScore
   policy?: ConfigPolicyEvaluation | null
   hard_failures: string[]
   can_push: boolean
   apply_allowed: boolean
   export: ConfigApplicationPlanExport
+}
+
+export type ConfigRiskScoreSeverity = 'none' | 'low' | 'medium' | 'high' | string
+
+export interface ConfigRiskScore {
+  severity: ConfigRiskScoreSeverity
+  reasons: string[]
+  applies_to_count: number
 }
 
 export interface ConfigPolicyTarget {
@@ -1188,6 +1197,7 @@ export interface OTelConfigDiffResponse {
   schema_version: 'otel-config-diff.v1'
   valid: boolean
   summary: OTelDiffSummary
+  risk_score?: ConfigRiskScore
   components: OTelComponentDiff[]
   pipelines: OTelPipelineDiff[]
   endpoints: OTelEndpointDiff[]
