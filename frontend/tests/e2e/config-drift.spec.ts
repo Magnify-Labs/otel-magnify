@@ -214,6 +214,7 @@ test.describe('Config drift dashboard', () => {
     await page.route('**/api/reports/config-safety*', async (route) => {
       const url = new URL(route.request().url())
       const format = url.searchParams.get('format') ?? 'json'
+      expect(url.searchParams.get('workload_id')).toBe('wl-drift,wl-pending')
       if (format === 'json') {
         await route.fulfill({
           status: 200,

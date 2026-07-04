@@ -199,10 +199,35 @@ test.describe('Dashboard', () => {
       ],
     })
 
+    await page.route('**/api/config-safety/drift', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          generated_at: '2026-05-09T12:00:00Z',
+          summary: {
+            total_collectors: 2,
+            drifted_collectors: 1,
+            pending_too_long: 0,
+            missing_effective_config: 0,
+            remote_config_unsupported: 0,
+            outdated_versions: 1,
+            unknown_incomplete_components: 0,
+            heterogeneous_groups: 0,
+          },
+          items: [
+            { workload_id: 'w1', collector: 'coll-a' },
+            { workload_id: 'w2', collector: 'coll-b' },
+          ],
+        }),
+      })
+    })
+
     let requestedFormat = ''
     await page.route('**/api/reports/config-safety*', async (route, request) => {
       const url = new URL(request.url())
       const format = url.searchParams.get('format') ?? 'json'
+      expect(url.searchParams.get('workload_id')).toBe('w1,w2')
       if (format === 'json') {
         await route.fulfill({
           status: 200,
@@ -352,7 +377,9 @@ test.describe('Dashboard', () => {
 
     const panel = page.locator('.config-evidence-panel')
     await expect(panel).toHaveCount(0)
-    await expect(page.getByRole('button', { name: /Export Markdown|Exporter Markdown/ })).toHaveCount(0)
+    await expect(
+      page.getByRole('button', { name: /Export Markdown|Exporter Markdown/ }),
+    ).toHaveCount(0)
   })
 
   test('deployed versions panel groups by version', async ({ loggedInPage: page }) => {

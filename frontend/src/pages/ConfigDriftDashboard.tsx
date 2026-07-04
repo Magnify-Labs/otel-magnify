@@ -11,6 +11,7 @@ import type {
   ConfigDriftSummary,
   EvidenceReport,
   EvidenceReportExportFormat,
+  ReportScope,
 } from '../types'
 import '../styles/config-drift.css'
 
@@ -128,9 +129,11 @@ function reportFilename(
 function ReportExportButton({
   format,
   report,
+  scope,
 }: {
   format: Exclude<EvidenceReportExportFormat, 'json'>
   report?: EvidenceReport
+  scope: ReportScope
 }) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
@@ -138,7 +141,7 @@ function ReportExportButton({
   async function exportReport() {
     setStatus('loading')
     try {
-      const blob = await configSafetyAPI.exportReport(format, report?.recommended_version)
+      const blob = await configSafetyAPI.exportReport(format, scope, report?.recommended_version)
       saveBlob(blob, reportFilename(report, format))
       setStatus('idle')
     } catch {
@@ -207,7 +210,7 @@ function SignatureMetadata({ report }: { report: EvidenceReport }) {
   )
 }
 
-function EvidenceReportPanel({ report }: { report: EvidenceReport }) {
+function EvidenceReportPanel({ report, scope }: { report: EvidenceReport; scope: ReportScope }) {
   const { t } = useTranslation()
   const configChanges = report.config_changes.slice(0, 3)
   const failures = report.validation_failures.slice(0, 3)
@@ -233,7 +236,7 @@ function EvidenceReportPanel({ report }: { report: EvidenceReport }) {
           aria-label={t('config_drift.report.export_aria')}
         >
           {reportExportFormats.map((format) => (
-            <ReportExportButton format={format} key={format} report={report} />
+            <ReportExportButton format={format} key={format} report={report} scope={scope} />
           ))}
         </div>
       </header>
@@ -334,11 +337,13 @@ export default function ConfigDriftDashboard() {
     staleTime: 30_000,
     enabled: driftDashboardEnabled,
   })
+  const reportWorkloadIDs = data?.items.map((item) => item.workload_id).filter(Boolean) ?? []
+  const reportScope: ReportScope = { workload_ids: reportWorkloadIDs }
   const reportQuery = useQuery({
-    queryKey: ['config-safety', 'report'],
-    queryFn: () => configSafetyAPI.report(),
+    queryKey: ['config-safety', 'report', reportWorkloadIDs],
+    queryFn: () => configSafetyAPI.report(reportScope),
     staleTime: 30_000,
-    enabled: driftDashboardEnabled && canExportReports,
+    enabled: driftDashboardEnabled && canExportReports && reportWorkloadIDs.length > 0,
   })
 
   if (driftDashboardLoading) {
@@ -409,7 +414,7 @@ export default function ConfigDriftDashboard() {
                 </button>
               </section>
             ) : (
-              <EvidenceReportPanel report={reportQuery.data} />
+              <EvidenceReportPanel report={reportQuery.data} scope={reportScope} />
             ))}
 
           <section className="panel config-drift-panel" aria-labelledby="config-drift-table-title">

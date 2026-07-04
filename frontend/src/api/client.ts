@@ -15,6 +15,7 @@ import type {
   ConfigApplicationPlan,
   ConfigApplicationPlanExportFormat,
   EvidencePack,
+  ReportScope,
   ReportExportFormat,
   ReportExportRequest,
   ConfigApprovalRequest,
@@ -399,34 +400,54 @@ function fallbackEvidenceReportFilename(format: EvidenceReportDownloadFormat): s
   return `config-safety-evidence-${stamp}.${extension}`
 }
 
+function evidenceReportParams(
+  format: EvidenceReportExportFormat,
+  scope: ReportScope,
+  recommendedVersion?: string,
+): Record<string, string> {
+  const params: Record<string, string> = { format }
+  if (scope.workload_ids?.length) {
+    params.workload_id = scope.workload_ids.join(',')
+  }
+  if (scope.group_id) {
+    params.group_id = scope.group_id
+  }
+  for (const [key, value] of Object.entries(scope.selector ?? {})) {
+    params[`selector.${key}`] = value
+  }
+  if (recommendedVersion) {
+    params.recommended_version = recommendedVersion
+  }
+  return params
+}
+
 export const configSafetyAPI = {
   drift: () => api.get<ConfigDriftDashboard>('/config-safety/drift').then((r) => r.data),
-  report: (recommendedVersion?: string) =>
+  report: (scope: ReportScope, recommendedVersion?: string) =>
     api
       .get<EvidenceReport>('/reports/config-safety', {
-        params: {
-          format: 'json' as EvidenceReportExportFormat,
-          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
-        },
+        params: evidenceReportParams('json', scope, recommendedVersion),
       })
       .then((r) => r.data),
-  exportReport: (format: EvidenceReportDownloadFormat, recommendedVersion?: string) =>
+  exportReport: (
+    format: EvidenceReportDownloadFormat,
+    scope: ReportScope,
+    recommendedVersion?: string,
+  ) =>
     api
       .get<Blob>('/reports/config-safety', {
-        params: {
-          format,
-          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
-        },
+        params: evidenceReportParams(format, scope, recommendedVersion),
         responseType: 'blob',
       })
       .then((r) => r.data),
-  exportReportDownload: (format: EvidenceReportDownloadFormat, recommendedVersion?: string) =>
+  exportReportDownload: (
+    format: EvidenceReportDownloadFormat,
+    scope: ReportScope,
+    recommendedVersion?: string,
+  ) =>
     api
       .get<Blob>('/reports/config-safety', {
-        params: {
-          format,
-          ...(recommendedVersion ? { recommended_version: recommendedVersion } : {}),
-        },
+        params: evidenceReportParams(format, scope, recommendedVersion),
         responseType: 'blob',
       })
       .then((r): EvidenceReportDownload => {

@@ -14,6 +14,7 @@ import type {
   EvidenceValidationFailure,
   FleetCollectorVersionFinding,
   ConfigDriftItem,
+  ReportScope,
 } from '../../types'
 
 const EXPORT_FORMATS: EvidenceReportDownloadFormat[] = ['markdown', 'csv', 'pdf']
@@ -21,20 +22,31 @@ const EXPORT_FORMATS: EvidenceReportDownloadFormat[] = ['markdown', 'csv', 'pdf'
 export default function ConfigEvidencePanel() {
   const { t } = useTranslation()
   const me = useStore((s) => s.me)
-  const canExport = hasPerm(me?.groups, 'workload:push_config')
+  const canExport = hasPerm(me?.groups, 'reports:export')
   const [exportStatus, setExportStatus] = useState<string | null>(null)
 
-  const reportQuery = useQuery({
-    queryKey: ['config-safety-evidence-report'],
-    queryFn: () => configSafetyAPI.report(),
+  const driftQuery = useQuery({
+    queryKey: ['config-safety-evidence-report-scope'],
+    queryFn: configSafetyAPI.drift,
     enabled: canExport,
+    staleTime: 60_000,
+    retry: false,
+  })
+  const reportWorkloadIDs =
+    driftQuery.data?.items.map((item) => item.workload_id).filter(Boolean) ?? []
+  const reportScope: ReportScope = { workload_ids: reportWorkloadIDs }
+
+  const reportQuery = useQuery({
+    queryKey: ['config-safety-evidence-report', reportWorkloadIDs],
+    queryFn: () => configSafetyAPI.report(reportScope),
+    enabled: canExport && reportWorkloadIDs.length > 0,
     staleTime: 60_000,
     retry: false,
   })
 
   const exportMutation = useMutation({
     mutationFn: (format: EvidenceReportDownloadFormat) =>
-      configSafetyAPI.exportReportDownload(format),
+      configSafetyAPI.exportReportDownload(format, reportScope),
     onMutate: () => setExportStatus(null),
     onSuccess: (download) => {
       downloadEvidenceReport(download)
@@ -82,11 +94,11 @@ export default function ConfigEvidencePanel() {
         </div>
       </header>
 
-      {reportQuery.isLoading ? (
+      {driftQuery.isLoading || reportQuery.isLoading ? (
         <p className="config-evidence-muted" aria-busy="true">
           {t('dashboard.config_safety.evidence.loading')}
         </p>
-      ) : reportQuery.isError ? (
+      ) : driftQuery.isError || reportQuery.isError ? (
         <p className="config-evidence-error" role="alert">
           {t('dashboard.config_safety.evidence.error')}
         </p>
