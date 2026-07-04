@@ -394,7 +394,9 @@ function canaryIneligibleReason(instance: Instance): CanaryIneligibleReason | un
   const remoteStatus = instance.remote_config_status?.status as string | undefined
   if (!instance.last_message_at) return 'offline'
   if (!instance.healthy) return 'unhealthy'
-  if (instance.accepts_remote_config === false) return 'read_only'
+  if (instance.remote_config_capability_known && instance.accepts_remote_config === false) {
+    return 'read_only'
+  }
   if (remoteStatus === 'unsupported') return 'unsupported'
   return undefined
 }
