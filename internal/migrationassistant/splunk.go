@@ -32,7 +32,7 @@ func convertSplunk(state *conversionState) error {
 			}
 		case strings.Contains(lowerHeader, "httpout") || strings.Contains(lowerHeader, "hec"):
 			if endpoint := sectionValue(section, "uri"); endpoint != "" {
-				state.draft.exporters["splunk_hec"] = endpoint
+				state.draft.exporters["splunk_hec"] = sanitizeEndpoint(endpoint, "["+section.Header+"].uri", state)
 				state.evidence = append(state.evidence, migrationEvidence("["+section.Header+"].uri", "exporters.splunk_hec.endpoint", "splunk.outputs.hec.uri_to_splunk_hec.endpoint", "Splunk HEC endpoint maps to Collector splunk_hec exporter endpoint."))
 				for name, p := range state.draft.pipelines {
 					p.exporters = []string{"splunk_hec"}

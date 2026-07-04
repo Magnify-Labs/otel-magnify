@@ -220,6 +220,65 @@ disabled = 0
 	}
 }
 
+func TestAssistantPreviewSanitizesContextOTLPEndpoint(t *testing.T) {
+	assistant := NewAssistant()
+	resp, err := assistant.Preview(models.ConfigMigrationPreviewRequest{
+		Vendor: models.ConfigMigrationVendorFluentBit,
+		Source: `[INPUT]
+    Name tail
+    Path /var/log/app.log
+`,
+		Context: models.ConfigMigrationContext{
+			OTLPEndpoint: "https://user:otlp-password@collector.example:4317/v1/traces?token=otlp-token&team=payments&client_secret=client-secret",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertResponseDoesNotContain(t, resp, "user:otlp-password")
+	assertResponseDoesNotContain(t, resp, "otlp-password")
+	assertResponseDoesNotContain(t, resp, "otlp-token")
+	assertResponseDoesNotContain(t, resp, "client-secret")
+	if !strings.Contains(resp.DraftYAML, "https://collector.example:4317/v1/traces") || !strings.Contains(resp.DraftYAML, "team=payments") {
+		t.Fatalf("sanitized endpoint did not preserve safe endpoint material: %s", resp.DraftYAML)
+	}
+	for _, wantPath := range []string{"context.otlp_endpoint.userinfo", "context.otlp_endpoint.query.token", "context.otlp_endpoint.query.client_secret"} {
+		if !hasRedaction(resp.Redactions, wantPath, "${REDACTED_SECRET}") {
+			t.Fatalf("endpoint redaction missing path %q: %+v", wantPath, resp.Redactions)
+		}
+	}
+}
+
+func TestAssistantPreviewSanitizesSplunkHECEndpoint(t *testing.T) {
+	assistant := NewAssistant()
+	resp, err := assistant.Preview(models.ConfigMigrationPreviewRequest{
+		Vendor: models.ConfigMigrationVendorSplunkForwarder,
+		Source: `[httpout]
+uri = https://admin:splunk-password@splunk.example:8088/services/collector?api_key=splunk-api-key&channel=main&license_key=splunk-license
+
+[monitor:///var/log/app.log]
+disabled = 0
+`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertResponseDoesNotContain(t, resp, "admin:splunk-password")
+	assertResponseDoesNotContain(t, resp, "splunk-password")
+	assertResponseDoesNotContain(t, resp, "splunk-api-key")
+	assertResponseDoesNotContain(t, resp, "splunk-license")
+	if !strings.Contains(resp.DraftYAML, "splunk.example:8088/services/collector") || !strings.Contains(resp.DraftYAML, "channel=main") {
+		t.Fatalf("sanitized Splunk endpoint did not preserve safe endpoint material: %s", resp.DraftYAML)
+	}
+	for _, wantPath := range []string{"[httpout].uri.userinfo", "[httpout].uri.query.api_key", "[httpout].uri.query.license_key"} {
+		if !hasRedaction(resp.Redactions, wantPath, "${REDACTED_SECRET}") {
+			t.Fatalf("endpoint redaction missing path %q: %+v", wantPath, resp.Redactions)
+		}
+	}
+}
+
 func hasEvidence(items []models.ConfigMigrationEvidence, ruleID string) bool {
 	for _, item := range items {
 		if item.RuleID == ruleID {
