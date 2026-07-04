@@ -2279,6 +2279,168 @@ code {
   white-space: nowrap;
 }
 
+.configs-section-eyebrow {
+  margin: 0 0 0.3rem;
+  color: var(--gold);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.migration-assistant-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+}
+
+.migration-assistant-header,
+.migration-assistant-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.migration-assistant-header {
+  align-items: flex-start;
+  padding: 1.1rem 1.15rem;
+  background: linear-gradient(135deg, var(--surface-2), var(--surface));
+  border-bottom: 1px solid var(--border);
+}
+
+.migration-assistant-header h2,
+.migration-assistant-preview-head h3,
+.migration-assistant-empty h3,
+.migration-finding-card h4 {
+  margin: 0;
+  color: var(--text-hi);
+}
+
+.migration-assistant-header p,
+.migration-assistant-preview-head p,
+.migration-assistant-empty p,
+.migration-finding-card p {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.migration-assistant-safe-badge,
+.migration-confidence {
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  color: var(--gold);
+  background: var(--gold-dim);
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.migration-assistant-samples,
+.migration-assistant-actions,
+.migration-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.migration-assistant-samples {
+  padding: 0.85rem 1.15rem 0;
+}
+
+.migration-assistant-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 1rem;
+  padding: 1.15rem;
+}
+
+.migration-assistant-source,
+.migration-assistant-preview,
+.migration-finding-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  padding: 1rem;
+}
+
+.migration-assistant-inline-fields,
+.migration-findings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.migration-assistant-preview-button {
+  margin-top: 0.9rem;
+}
+
+.migration-status-row {
+  justify-content: space-between;
+  align-items: center;
+  margin: 0.9rem 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.migration-status-row strong,
+.migration-success {
+  color: var(--text-hi);
+}
+
+.migration-draft-yaml {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.migration-findings-grid {
+  margin-top: 1rem;
+}
+
+.migration-finding-card ul {
+  margin: 0.55rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.migration-assistant-empty {
+  display: grid;
+  min-height: 300px;
+  place-content: center;
+  text-align: center;
+}
+
+.migration-assistant-error {
+  margin: 0 1.15rem 1.15rem;
+}
+
+@media (max-width: 980px) {
+  .migration-assistant-grid,
+  .migration-assistant-inline-fields,
+  .migration-findings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .migration-assistant-header,
+  .migration-assistant-preview-head {
+    flex-direction: column;
+  }
+}
+
 /* ── CodeMirror theme override ── */
 .cm-editor {
   background: var(--bg) !important;

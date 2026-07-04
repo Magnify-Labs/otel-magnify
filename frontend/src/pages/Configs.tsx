@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { configsAPI } from '../api/client'
+import MigrationAssistantPanel from '../components/config/MigrationAssistantPanel'
 import YamlEditor from '../components/config/YamlEditor'
 import type { Config, ConfigKind, ConfigVariable } from '../types'
 
@@ -67,7 +68,8 @@ export default function Configs() {
   })
 
   const createMutation = useMutation({
-    mutationFn: () => configsAPI.create(name, content),
+    mutationFn: () =>
+      configsAPI.create(name, content, { kind: 'draft', status: 'draft', source_type: 'manual' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['configs'] })
       setName('')
@@ -76,6 +78,11 @@ export default function Configs() {
       setShowForm(false)
     },
   })
+
+  const handleMigrationDraftSaved = () => {
+    queryClient.invalidateQueries({ queryKey: ['configs'] })
+    setActiveFilter('draft')
+  }
 
   const startBlankConfig = () => {
     setName('')
@@ -128,6 +135,8 @@ export default function Configs() {
           </button>
         ))}
       </section>
+
+      <MigrationAssistantPanel onDraftSaved={handleMigrationDraftSaved} />
 
       <div className="configs-filter-bar" role="tablist" aria-label={t('configs.filter.label')}>
         {KIND_ORDER.map((kind) => (

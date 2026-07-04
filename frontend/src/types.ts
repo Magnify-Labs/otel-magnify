@@ -261,13 +261,102 @@ export interface Config {
   variables?: ConfigVariable[]
   tags?: string[]
   built_in?: boolean
-  source_type?: 'manual' | 'git' | string
+  source_type?: 'manual' | 'git' | 'migration_assistant' | string
   git_url?: string
   git_provider?: 'github' | 'gitlab' | 'generic' | string
   git_ref?: string
   git_path?: string
   commit_sha?: string
   imported_at?: string
+}
+
+export interface CreateConfigRequest {
+  kind?: ConfigKind
+  status?: 'ready' | 'draft' | string
+  category?: string
+  stack?: string
+  tags?: string[]
+  source_type?: 'manual' | 'git' | 'migration_assistant' | string
+}
+
+export type ConfigMigrationVendor =
+  | 'datadog_agent'
+  | 'fluent_bit'
+  | 'splunk_forwarder'
+  | 'new_relic_infra'
+
+export interface ConfigMigrationContext {
+  target_signal?: string
+  target_exporter?: string
+  otlp_endpoint?: string
+  collector_distribution?: string
+  notes?: string
+}
+
+export interface ConfigMigrationPreviewRequest {
+  schema_version?: 'config_migration_preview_request.v1'
+  vendor: ConfigMigrationVendor
+  source: string
+  source_format?: string
+  labels?: Record<string, string>
+  context?: ConfigMigrationContext
+}
+
+export interface ConfigMigrationWarning {
+  code: string
+  severity: string
+  message: string
+  path?: string
+}
+
+export interface ConfigMigrationUnsupportedKey {
+  path: string
+  reason: string
+  suggestion?: string
+}
+
+export interface ConfigMigrationEvidence {
+  source_path: string
+  target_path: string
+  rule_id: string
+  explanation: string
+}
+
+export interface ConfigMigrationRedaction {
+  path: string
+  placeholder: string
+  reason: string
+}
+
+export interface ConfigMigrationValidation {
+  valid: boolean
+  overall_status: string
+  summary: string
+  validated_at: string
+}
+
+export interface ConfigMigrationSaveHint {
+  kind: ConfigKind | string
+  source_type: 'migration_assistant' | string
+  tags: string[]
+  category: string
+  stack: string
+}
+
+export interface ConfigMigrationPreviewResponse {
+  schema_version: 'config_migration_preview.v1' | string
+  vendor: ConfigMigrationVendor | string
+  source_format: string
+  draft_yaml: string
+  draft_name: string
+  confidence: 'low' | 'medium' | 'high' | string
+  summary: string
+  warnings: ConfigMigrationWarning[]
+  unsupported_keys: ConfigMigrationUnsupportedKey[]
+  evidence: ConfigMigrationEvidence[]
+  redactions: ConfigMigrationRedaction[]
+  validation?: ConfigMigrationValidation | null
+  save_hint: ConfigMigrationSaveHint
 }
 
 export interface GitImportConfigRequest {
