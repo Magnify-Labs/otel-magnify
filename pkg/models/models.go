@@ -553,6 +553,8 @@ type FleetCompatibilityMatrixEntry struct {
 	BlockingReasons     []FleetCompatibilityReason     `json:"blocking_reasons"`
 }
 
+// FleetCompatibilityVersion describes the collector version used in a
+// compatibility decision and whether it can be compared safely.
 type FleetCompatibilityVersion struct {
 	Reported   string `json:"reported"`
 	Status     string `json:"status"`
@@ -560,23 +562,30 @@ type FleetCompatibilityVersion struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
+// FleetCompatibilityAvailable summarizes the component capability inventory
+// advertised by a collector without exposing raw config content.
 type FleetCompatibilityAvailable struct {
 	Hash           string              `json:"hash,omitempty"`
 	Categories     []string            `json:"categories"`
 	ComponentTypes map[string][]string `json:"component_types"`
 }
 
+// FleetCompatibilityComponent identifies one component required by the target
+// config when evaluating whether a collector can run it.
 type FleetCompatibilityComponent struct {
 	Category      string `json:"category"`
 	ComponentType string `json:"component_type"`
 	Path          string `json:"path"`
 }
 
+// FleetCompatibilityConfig identifies the config candidate by metadata only.
 type FleetCompatibilityConfig struct {
 	Hash   string `json:"hash,omitempty"`
 	Source string `json:"source"`
 }
 
+// FleetCompatibilityKnownIssue reports a cataloged version compatibility issue
+// that may block or warn for a collector.
 type FleetCompatibilityKnownIssue struct {
 	Code            string `json:"code"`
 	Severity        string `json:"severity"`
@@ -584,12 +593,16 @@ type FleetCompatibilityKnownIssue struct {
 	Message         string `json:"message"`
 }
 
+// FleetCompatibilityOpAMP captures the remote-config capability state used for
+// compatibility blocking decisions.
 type FleetCompatibilityOpAMP struct {
 	AcceptsRemoteConfig bool   `json:"accepts_remote_config"`
 	RemoteConfigStatus  string `json:"remote_config_status,omitempty"`
 	ConfigHash          string `json:"config_hash,omitempty"`
 }
 
+// FleetCompatibilityReason is a stable code/message pair explaining why a
+// collector cannot run the selected config.
 type FleetCompatibilityReason struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
