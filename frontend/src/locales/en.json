@@ -84,6 +84,33 @@
       "action": {
         "upgrade_collector": "Upgrade collector to {{version}}",
         "unsupported_component": "Choose an older config, upgrade collector, or remove {{component}}."
+      },
+      "compatibility": {
+        "summary": "This config cannot run on {{count}} collectors",
+        "matrix_label": "Local compatibility matrix",
+        "can_run": "Can run",
+        "cannot_run": "Cannot run",
+        "no_blockers": "No blockers",
+        "warnings": "Warnings",
+        "config_hash": "Config hash {{hash}}",
+        "capabilities_hash": "Capabilities hash {{hash}}",
+        "status_unknown": "Unknown",
+        "category": {
+          "version": "Version / known issue",
+          "components": "Missing components / features",
+          "opamp": "OpAMP / remote config",
+          "other": "Other blockers"
+        },
+        "reason": {
+          "known_issue": "Collector version is blocked by a known compatibility issue.",
+          "invalid_version": "Collector version cannot be parsed for compatibility checks.",
+          "unknown_version": "Collector version is unknown.",
+          "unsupported_component": "Collector capabilities are missing a required component.",
+          "component_capabilities_unknown": "Collector has not reported component capabilities for compatibility checks.",
+          "component_capability_category_missing": "Collector capabilities are missing a required component category.",
+          "remote_config_not_accepted": "Collector has not reported OpAMP remote config acceptance.",
+          "default": "Collector is not compatible with this config."
+        }
       }
     },
     "alerts": {
@@ -285,6 +312,7 @@
           "loading": "Computing OTel impact summary…",
           "unavailable": "OTel impact summary unavailable. Fix YAML errors or reload the active config to compute it.",
           "counts_label": "Risk item counts",
+          "what_changed": "What changed?",
           "dangerous": "Dangerous removals",
           "components": "Components summary",
           "pipelines": "Impacted pipelines",

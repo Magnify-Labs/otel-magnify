@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -917,6 +918,233 @@ func TestFleetVersionIntelligence_InvalidRecommendedVersionDoesNotFlagCollectors
 	if below := body["collectors_below_recommended"].([]any); len(below) != 0 {
 		t.Fatalf("collectors_below_recommended = %+v, want empty when recommended_version is invalid", below)
 	}
+}
+
+func TestFleetVersionIntelligence_CompatibilityMatrixAllCompatible(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	content := `receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+	configID := seedFleetCompatibilityConfig(t, db, "w-compatible", content, now)
+	if err := db.UpsertWorkload(models.Workload{
+		ID: "w-compatible", DisplayName: "collector compatible", Type: "collector", Version: "0.100.0", Status: "connected",
+		LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: configID,
+		AvailableComponents: &models.AvailableComponents{Hash: "components-compatible", Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}},
+		AcceptsRemoteConfig: true,
+		RemoteConfigStatus:  &models.RemoteConfigStatus{Status: models.PushStatusApplied, ConfigHash: configID, UpdatedAt: now},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/version-intelligence?recommended_version=0.100.0")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	summary := body["compatibility_summary"].(map[string]any)
+	if summary["total_collectors"] != float64(1) || summary["not_runnable_count"] != float64(0) || summary["runnable_count"] != float64(1) {
+		t.Fatalf("compatibility_summary = %+v", summary)
+	}
+	matrix := body["compatibility_matrix"].([]any)
+	if len(matrix) != 1 {
+		t.Fatalf("compatibility_matrix = %+v", matrix)
+	}
+	entry := matrix[0].(map[string]any)
+	if entry["workload_id"] != "w-compatible" || entry["runnable"] != true {
+		t.Fatalf("compatibility entry = %+v", entry)
+	}
+	if entry["config"].(map[string]any)["hash"] != configID {
+		t.Fatalf("config metadata = %+v", entry["config"])
+	}
+	if len(entry["required_components"].([]any)) != 2 {
+		t.Fatalf("required_components = %+v", entry["required_components"])
+	}
+	if strings.Contains(rec.Body.String(), "receivers:") || strings.Contains(rec.Body.String(), "exporters:") {
+		t.Fatalf("response leaked raw config content: %s", rec.Body.String())
+	}
+}
+
+func TestFleetVersionIntelligence_CompatibilityMatrixAggregatesBlockers(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	compatibleConfig := `receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+	unsupportedConfig := `receivers:
+  otlp: {}
+exporters:
+  datadog: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [datadog]
+`
+	compatibleHash := seedFleetCompatibilityConfig(t, db, "w-known-issue", compatibleConfig, now)
+	unsupportedHash := seedFleetCompatibilityConfig(t, db, "w-unsupported", unsupportedConfig, now)
+	seedFleetCompatibilityConfigWithHash(t, db, "w-no-remote", compatibleHash, now.Add(time.Second))
+	seedFleetCompatibilityConfigWithHash(t, db, "w-invalid", compatibleHash, now.Add(2*time.Second))
+	seedFleetCompatibilityConfigWithHash(t, db, "w-multi", unsupportedHash, now.Add(3*time.Second))
+
+	workloads := []models.Workload{
+		{ID: "w-unsupported", DisplayName: "collector unsupported", Type: "collector", Version: "0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: unsupportedHash, AvailableComponents: &models.AvailableComponents{Hash: "components-no-datadog", Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}, AcceptsRemoteConfig: true, RemoteConfigStatus: &models.RemoteConfigStatus{Status: models.PushStatusApplied, ConfigHash: unsupportedHash, UpdatedAt: now}},
+		{ID: "w-known-issue", DisplayName: "collector known issue", Type: "collector", Version: "0.79.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: compatibleHash, AvailableComponents: &models.AvailableComponents{Hash: "components-known", Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}, AcceptsRemoteConfig: true, RemoteConfigStatus: &models.RemoteConfigStatus{Status: models.PushStatusApplied, ConfigHash: compatibleHash, UpdatedAt: now}},
+		{ID: "w-no-remote", DisplayName: "collector no remote", Type: "collector", Version: "0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: compatibleHash, AvailableComponents: &models.AvailableComponents{Hash: "components-no-remote", Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}, AcceptsRemoteConfig: false},
+		{ID: "w-invalid", DisplayName: "collector invalid", Type: "collector", Version: "nightly", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: compatibleHash, AvailableComponents: &models.AvailableComponents{Hash: "components-invalid", Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}, AcceptsRemoteConfig: true},
+		{ID: "w-multi", DisplayName: "collector multi", Type: "collector", Version: "dev-build", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: unsupportedHash, AvailableComponents: &models.AvailableComponents{Hash: "components-multi", Components: map[string][]string{"receivers": {"otlp"}, "exporters": {"logging"}}}, AcceptsRemoteConfig: false},
+	}
+	for _, wl := range workloads {
+		if err := db.UpsertWorkload(wl); err != nil {
+			t.Fatalf("UpsertWorkload(%s): %v", wl.ID, err)
+		}
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/version-intelligence?recommended_version=0.100.0")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	summary := body["compatibility_summary"].(map[string]any)
+	if summary["not_runnable_count"] != float64(5) || summary["runnable_count"] != float64(0) {
+		t.Fatalf("compatibility_summary = %+v", summary)
+	}
+	notRunnable := summary["not_runnable_collectors"].([]any)
+	if len(notRunnable) != 5 {
+		t.Fatalf("not_runnable_collectors = %+v", notRunnable)
+	}
+	matrix := body["compatibility_matrix"].([]any)
+	assertCompatibilityEntryBlockedBy(t, matrix, "w-unsupported", "unsupported_component")
+	assertCompatibilityEntryBlockedBy(t, matrix, "w-known-issue", "known_issue")
+	assertCompatibilityEntryBlockedBy(t, matrix, "w-no-remote", "remote_config_not_accepted")
+	assertCompatibilityEntryBlockedBy(t, matrix, "w-invalid", "invalid_version")
+	multi := assertCompatibilityEntryBlockedBy(t, matrix, "w-multi", "remote_config_not_accepted")
+	if len(multi["blocking_reasons"].([]any)) < 3 {
+		t.Fatalf("multi blocker entry = %+v", multi)
+	}
+	if len(multi["known_issues"].([]any)) != 0 {
+		t.Fatalf("dev-build should be invalid, not a comparable known issue match: %+v", multi["known_issues"])
+	}
+	if strings.Contains(rec.Body.String(), "datadog: {}") {
+		t.Fatalf("response leaked raw config content: %s", rec.Body.String())
+	}
+}
+
+func TestFleetVersionIntelligence_CompatibilityMatrixFailsClosedAndRedactsComponentInstances(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	content := `receivers:
+  otlp/SECRET_TOKEN<script>: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp/SECRET_TOKEN<script>]
+      exporters: [logging]
+`
+	configHash := seedFleetCompatibilityConfig(t, db, "w-unknown-components", content, now)
+	seedFleetCompatibilityConfigWithHash(t, db, "w-empty-components", configHash, now.Add(time.Second))
+	seedFleetCompatibilityConfigWithHash(t, db, "w-missing-category", configHash, now.Add(2*time.Second))
+
+	workloads := []models.Workload{
+		{ID: "w-unknown-components", DisplayName: "collector unknown components", Type: "collector", Version: "0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: configHash, AcceptsRemoteConfig: true},
+		{ID: "w-empty-components", DisplayName: "collector empty components", Type: "collector", Version: "0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: configHash, AvailableComponents: &models.AvailableComponents{Hash: "empty-components", Components: map[string][]string{}}, AcceptsRemoteConfig: true},
+		{ID: "w-missing-category", DisplayName: "collector missing category", Type: "collector", Version: "0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: configHash, AvailableComponents: &models.AvailableComponents{Hash: "missing-category", Components: map[string][]string{"exporters": {"logging"}}}, AcceptsRemoteConfig: true},
+	}
+	for _, wl := range workloads {
+		if err := db.UpsertWorkload(wl); err != nil {
+			t.Fatalf("UpsertWorkload(%s): %v", wl.ID, err)
+		}
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/version-intelligence?recommended_version=0.100.0")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	summary := body["compatibility_summary"].(map[string]any)
+	if summary["not_runnable_count"] != float64(3) || summary["runnable_count"] != float64(0) {
+		t.Fatalf("compatibility_summary = %+v", summary)
+	}
+	matrix := body["compatibility_matrix"].([]any)
+	assertCompatibilityEntryBlockedBy(t, matrix, "w-unknown-components", "component_capabilities_unknown")
+	assertCompatibilityEntryBlockedBy(t, matrix, "w-empty-components", "component_capabilities_unknown")
+	missing := assertCompatibilityEntryBlockedBy(t, matrix, "w-missing-category", "component_capability_category_missing")
+	for _, item := range missing["required_components"].([]any) {
+		component := item.(map[string]any)
+		path := fmt.Sprint(component["path"])
+		if strings.Contains(path, "SECRET_TOKEN") || strings.Contains(path, "<script>") {
+			t.Fatalf("required component leaked raw instance path: %+v", component)
+		}
+	}
+	if strings.Contains(rec.Body.String(), "SECRET_TOKEN") || strings.Contains(rec.Body.String(), "<script>") || strings.Contains(rec.Body.String(), "otlp/SECRET") {
+		t.Fatalf("response leaked raw config-derived component instance: %s", rec.Body.String())
+	}
+}
+
+func seedFleetCompatibilityConfig(t *testing.T, db ext.Store, workloadID, content string, appliedAt time.Time) string {
+	t.Helper()
+	hash := configHash(content)
+	if err := db.CreateConfig(models.Config{ID: hash, Name: "cfg-" + hash[:8], Content: content, CreatedAt: appliedAt}); err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+	seedFleetCompatibilityConfigWithHash(t, db, workloadID, hash, appliedAt)
+	return hash
+}
+
+func seedFleetCompatibilityConfigWithHash(t *testing.T, db ext.Store, workloadID, hash string, appliedAt time.Time) {
+	t.Helper()
+	if err := db.UpsertWorkload(models.Workload{ID: workloadID, Type: "collector", Status: "connected", LastSeenAt: appliedAt, Labels: models.Labels{}, FingerprintKeys: models.FingerprintKeys{}, AcceptsRemoteConfig: true}); err != nil {
+		t.Fatalf("UpsertWorkload seed: %v", err)
+	}
+	if err := db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: workloadID, ConfigID: hash, AppliedAt: appliedAt, Status: models.PushStatusApplied}); err != nil {
+		t.Fatalf("RecordWorkloadConfig: %v", err)
+	}
+}
+
+func assertCompatibilityEntryBlockedBy(t *testing.T, matrix []any, workloadID, code string) map[string]any {
+	t.Helper()
+	for _, item := range matrix {
+		entry := item.(map[string]any)
+		if entry["workload_id"] != workloadID {
+			continue
+		}
+		if entry["runnable"] != false {
+			t.Fatalf("entry %s runnable = %v, want false: %+v", workloadID, entry["runnable"], entry)
+		}
+		for _, reason := range entry["blocking_reasons"].([]any) {
+			if reason.(map[string]any)["code"] == code {
+				return entry
+			}
+		}
+		t.Fatalf("entry %s missing blocker %q: %+v", workloadID, code, entry)
+	}
+	t.Fatalf("missing compatibility entry for %s in %+v", workloadID, matrix)
+	return nil
 }
 
 func assertVersionMatrixEntry(t *testing.T, matrix []any, group, typ, status, version string, count float64, versionStatus string) {

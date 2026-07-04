@@ -95,6 +95,44 @@ const HIGH_OTEL_DIFF = {
       },
     ],
   },
+  human_summary: [
+    {
+      kind: 'added',
+      category: 'component',
+      component_id: 'exporters/loki',
+      risk: 'low',
+      text: 'Adds Loki exporter.',
+    },
+    {
+      kind: 'modified',
+      category: 'pipeline',
+      pipeline_key: 'logs',
+      signal: 'logs',
+      risk: 'low',
+      text: 'Routes logs to Loki.',
+    },
+    {
+      kind: 'unchanged',
+      category: 'unchanged',
+      signal: 'traces',
+      risk: 'none',
+      text: 'Keeps traces unchanged.',
+    },
+    {
+      kind: 'removed',
+      category: 'component',
+      component_id: 'exporters/debug',
+      risk: 'medium',
+      text: 'Removes debug exporter.',
+    },
+    {
+      kind: 'modified',
+      category: 'field',
+      path: 'processors.batch.timeout',
+      risk: 'low',
+      text: 'Changes batch timeout.',
+    },
+  ],
   components: [
     {
       id: 'processors:memory_limiter',
@@ -447,6 +485,14 @@ test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page
   await page.getByRole('button', { name: 'Compare revisions' }).click()
 
   await expect(page.getByRole('dialog', { name: 'Compare two revisions' })).toBeVisible()
+  const whatChanged = page.getByRole('region', { name: 'What changed?' })
+  await expect(whatChanged).toBeVisible()
+  await expect(whatChanged).toContainText('Adds Loki exporter.')
+  await expect(whatChanged).toContainText('Routes logs to Loki.')
+  await expect(whatChanged).toContainText('Keeps traces unchanged.')
+  await expect(whatChanged).toContainText('Removes debug exporter.')
+  await expect(whatChanged).toContainText('Changes batch timeout.')
+  await expect(page.getByText(SECRET_LITERAL)).toHaveCount(0)
   // The MergeView from CodeMirror renders two .cm-content panes side-by-side.
   await expect(page.locator('.config-diff-view .cm-content')).toHaveCount(2)
 })
@@ -1073,7 +1119,9 @@ test('compare dialog renders enriched OTel diff without leaking redacted secrets
   await expect(page.getByText('Touched exporters')).toBeVisible()
   await expect(page.getByText('otlp/prod')).toBeVisible()
   await expect(page.getByText('Critical collectors')).toBeVisible()
-  await expect(page.getByText('checkout collector · degraded · critical=true, degraded')).toBeVisible()
+  await expect(
+    page.getByText('checkout collector · degraded · critical=true, degraded'),
+  ).toBeVisible()
   await expect(page.getByText('Endpoints changed')).toBeVisible()
   await expect(page.getByText('https://otel-new.example:4317').first()).toBeVisible()
   await expect(page.getByText('Auth and headers touched')).toBeVisible()

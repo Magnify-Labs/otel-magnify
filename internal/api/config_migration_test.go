@@ -70,7 +70,19 @@ func TestPreviewConfigMigration_RejectsInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestPreviewConfigMigration_RejectsOversizedBody(t *testing.T) {
+func TestPreviewConfigMigration_AcceptsSourceAtAssistantLimit(t *testing.T) {
+	_, router, _ := newTestAPI(t)
+	sourceAtLimit := strings.Repeat("x", 1<<20)
+	body := `{"vendor":"datadog_agent","source":"` + sourceAtLimit + `"}`
+	req := authedJSONRequest(t, http.MethodPost, "/api/configs/migration-assistant/preview", body, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPreviewConfigMigration_RejectsSourceAboveAssistantLimit(t *testing.T) {
 	_, router, _ := newTestAPI(t)
 	oversizedSource := strings.Repeat("x", (1<<20)+1)
 	body := `{"vendor":"datadog_agent","source":"` + oversizedSource + `"}`
