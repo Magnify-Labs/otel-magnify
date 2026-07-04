@@ -758,6 +758,193 @@ test.describe('Dashboard', () => {
     await expect(page.getByText('Remove kafka from this config before applying it.')).toHaveCount(0)
   })
 
+  test('fleet compatibility matrix separates blockers and warnings by category without raw config', async ({
+    loggedInPage: page,
+  }) => {
+    await mockFeatures(page, { 'config_safety.version_intelligence': true })
+    await page.route('**/api/workloads/version-intelligence*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schema_version: 'fleet-version-intelligence.v1',
+          recommended_version: '0.100.0',
+          version_matrix: [],
+          compatibility_summary: {
+            total_collectors: 3,
+            runnable_count: 1,
+            not_runnable_count: 2,
+            not_runnable_collectors: [
+              {
+                workload_id: 'collector-prod-a',
+                display_name: 'collector-prod-a',
+                blocking_reasons: [
+                  {
+                    code: 'known_issue',
+                    message: 'collector versions before 0.80.0 are blocked by the local compatibility catalog',
+                  },
+                ],
+              },
+              {
+                workload_id: 'collector-payments-b',
+                display_name: 'collector-payments-b',
+                blocking_reasons: [
+                  {
+                    code: 'unsupported_component',
+                    message: 'receivers "kafka" is required by config cfg_target_hash but is not installed',
+                  },
+                  {
+                    code: 'remote_config_not_accepted',
+                    message: 'collector has not reported OpAMP remote config acceptance',
+                  },
+                ],
+              },
+            ],
+          },
+          compatibility_matrix: [
+            {
+              workload_id: 'collector-prod-a',
+              display_name: 'collector-prod-a',
+              group: 'prod',
+              status: 'connected',
+              version: {
+                reported: '0.79.0',
+                status: 'below_recommended',
+                comparable: true,
+              },
+              available_components: {
+                hash: 'cap_prod_hash',
+                categories: ['receivers', 'processors'],
+                component_types: { receivers: ['otlp'], processors: ['batch'] },
+              },
+              required_components: [],
+              config: { hash: 'cfg_prod_hash', source: 'active_or_applied' },
+              known_issues: [
+                {
+                  code: 'collector_pre_0_80_remote_config_issue',
+                  severity: 'blocking',
+                  affected_version: '0.79.0',
+                  message: 'collector versions before 0.80.0 are blocked by the local compatibility catalog',
+                },
+                {
+                  code: 'collector_warning_example',
+                  severity: 'warning',
+                  affected_version: '0.79.0',
+                  message: 'upgrade soon to keep support windows current',
+                },
+              ],
+              opamp: { accepts_remote_config: true, remote_config_status: 'applied' },
+              runnable: false,
+              blocking_reasons: [
+                {
+                  code: 'known_issue',
+                  message: 'collector versions before 0.80.0 are blocked by the local compatibility catalog',
+                },
+              ],
+            },
+            {
+              workload_id: 'collector-payments-b',
+              display_name: 'collector-payments-b',
+              group: 'payments',
+              status: 'degraded',
+              version: {
+                reported: '0.99.0',
+                status: 'below_recommended',
+                comparable: true,
+              },
+              available_components: {
+                hash: 'cap_payments_hash',
+                categories: ['receivers'],
+                component_types: { receivers: ['otlp'] },
+              },
+              required_components: [
+                { category: 'receivers', component_type: 'kafka', path: 'receivers.kafka' },
+              ],
+              config: { hash: 'cfg_target_hash', source: 'active_or_applied' },
+              known_issues: [],
+              opamp: { accepts_remote_config: false, remote_config_status: 'none' },
+              runnable: false,
+              blocking_reasons: [
+                {
+                  code: 'unsupported_component',
+                  message: 'receivers "kafka" is required by config cfg_target_hash but is not installed',
+                },
+                {
+                  code: 'remote_config_not_accepted',
+                  message: 'collector has not reported OpAMP remote config acceptance',
+                },
+              ],
+            },
+            {
+              workload_id: 'collector-staging-c',
+              display_name: 'collector-staging-c',
+              group: 'staging',
+              status: 'connected',
+              version: {
+                reported: '0.100.0',
+                status: 'at_recommended',
+                comparable: true,
+              },
+              available_components: {
+                hash: 'cap_staging_hash',
+                categories: ['receivers'],
+                component_types: { receivers: ['otlp', 'kafka'] },
+              },
+              required_components: [
+                { category: 'receivers', component_type: 'kafka', path: 'receivers.kafka' },
+              ],
+              config: { hash: 'cfg_staging_hash', source: 'active_or_applied' },
+              known_issues: [],
+              opamp: { accepts_remote_config: true, remote_config_status: 'applied' },
+              runnable: true,
+              blocking_reasons: [],
+            },
+          ],
+          collectors_below_recommended: [],
+          unsupported_config_components: [],
+          invalid_versions: [],
+          recommendations: [],
+        }),
+      }),
+    )
+
+    await page.goto('/')
+
+    const matrix = page.getByRole('table', { name: 'Local compatibility matrix' })
+    await expect(page.getByText('This config cannot run on 2 collectors')).toBeVisible()
+    await expect(matrix).toBeVisible()
+    await expect(matrix.locator('.compatibility-matrix-row')).toHaveCount(3)
+
+    const prodRow = matrix.locator('.compatibility-matrix-row', { hasText: 'collector-prod-a' })
+    await expect(prodRow).toContainText('prod')
+    await expect(prodRow).toContainText('Connected')
+    await expect(prodRow).toContainText('0.79.0')
+    await expect(prodRow).toContainText('Cannot run')
+    await expect(prodRow).toContainText('Version / known issue')
+    await expect(prodRow).toContainText('collector versions before 0.80.0 are blocked')
+    await expect(prodRow).toContainText('Warnings')
+    await expect(prodRow).toContainText('upgrade soon to keep support windows current')
+
+    const paymentsRow = matrix.locator('.compatibility-matrix-row', {
+      hasText: 'collector-payments-b',
+    })
+    await expect(paymentsRow).toContainText('payments')
+    await expect(paymentsRow).toContainText('Degraded')
+    await expect(paymentsRow).toContainText('0.99.0')
+    await expect(paymentsRow).toContainText('Missing components / features')
+    await expect(paymentsRow).toContainText('receivers "kafka" is required')
+    await expect(paymentsRow).toContainText('OpAMP / remote config')
+    await expect(paymentsRow).toContainText('collector has not reported OpAMP remote config acceptance')
+    await expect(paymentsRow).toContainText('Config hash cfg_target_hash')
+    await expect(paymentsRow).toContainText('Capabilities hash cap_payments_hash')
+
+    const stagingRow = matrix.locator('.compatibility-matrix-row', { hasText: 'collector-staging-c' })
+    await expect(stagingRow).toContainText('Can run')
+    await expect(stagingRow).toContainText('No blockers')
+    await expect(matrix).not.toContainText('exporters:\n')
+    await expect(matrix).not.toContainText('SECRET_TOKEN')
+  })
+
   test('fleet version intelligence represents loading, empty, and error states', async ({
     loggedInPage: page,
   }) => {

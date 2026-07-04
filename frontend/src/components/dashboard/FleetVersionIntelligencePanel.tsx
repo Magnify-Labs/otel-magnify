@@ -1,5 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import type {
+  FleetCompatibilityKnownIssue,
+  FleetCompatibilityMatrixEntry,
+  FleetCompatibilityReason,
   FleetVersionIntelligence,
   FleetVersionMatrixEntry,
   FleetVersionRecommendation,
@@ -20,6 +23,16 @@ const STATUS_CLASS: Record<FleetVersionStatus, string> = {
   above_recommended: 'version-status-above',
   unknown: 'version-status-unknown',
   not_applicable: 'version-status-muted',
+}
+
+type CompatibilityReasonCategory = 'version' | 'components' | 'opamp' | 'other'
+
+const REASON_CATEGORY_BY_CODE: Record<string, CompatibilityReasonCategory> = {
+  known_issue: 'version',
+  invalid_version: 'version',
+  unknown_version: 'version',
+  unsupported_component: 'components',
+  remote_config_not_accepted: 'opamp',
 }
 
 function recommendationByAction(
@@ -80,18 +93,50 @@ function matrixKey(row: FleetVersionMatrixEntry) {
   return [row.group, row.type, row.status, row.version].join(':')
 }
 
+function compatibilityKey(row: FleetCompatibilityMatrixEntry) {
+  return [row.workload_id, row.config.hash ?? 'no-config', row.version.reported].join(':')
+}
+
+function compatibilityStatusKey(status: string) {
+  return ['connected', 'degraded', 'disconnected'].includes(status)
+    ? `inventory.filter.status.${status}`
+    : 'dashboard.version_intelligence.compatibility.status_unknown'
+}
+
+function categorizeReason(reason: FleetCompatibilityReason): CompatibilityReasonCategory {
+  return REASON_CATEGORY_BY_CODE[reason.code] ?? 'other'
+}
+
+function groupReasonsByCategory(reasons: FleetCompatibilityReason[]) {
+  return reasons.reduce<Record<CompatibilityReasonCategory, FleetCompatibilityReason[]>>(
+    (groups, reason) => {
+      groups[categorizeReason(reason)].push(reason)
+      return groups
+    },
+    { version: [], components: [], opamp: [], other: [] },
+  )
+}
+
+function compatibilityWarnings(knownIssues: FleetCompatibilityKnownIssue[]) {
+  return knownIssues.filter((issue) => issue.severity !== 'blocking')
+}
+
 export default function FleetVersionIntelligencePanel({ intelligence, isLoading, isError }: Props) {
   const { t, i18n } = useTranslation()
   const canUseBackendReason =
     i18n.resolvedLanguage?.startsWith('en') ?? i18n.language.startsWith('en')
 
   const matrix = intelligence?.version_matrix ?? []
+  const compatibilityMatrix = intelligence?.compatibility_matrix ?? []
+  const compatibilitySummary = intelligence?.compatibility_summary
   const belowRecommended = intelligence?.collectors_below_recommended ?? []
   const unsupportedComponents = intelligence?.unsupported_config_components ?? []
   const recommendations = intelligence?.recommendations ?? []
   const recommendedVersion = intelligence?.recommended_version || undefined
   const recommendedLabel =
     recommendedVersion ?? t('dashboard.version_intelligence.no_recommendation')
+  const hasVersionMatrix = matrix.length > 0
+  const hasCompatibilityMatrix = Boolean(compatibilitySummary && compatibilityMatrix.length > 0)
   const hasFindings = belowRecommended.length > 0 || unsupportedComponents.length > 0
 
   return (
@@ -112,42 +157,51 @@ export default function FleetVersionIntelligencePanel({ intelligence, isLoading,
         <div className="versions-empty">{t('dashboard.version_intelligence.loading')}</div>
       ) : isError ? (
         <div className="versions-empty">{t('dashboard.version_intelligence.error')}</div>
-      ) : matrix.length === 0 ? (
+      ) : !hasVersionMatrix && !hasCompatibilityMatrix ? (
         <div className="versions-empty">{t('dashboard.version_intelligence.empty')}</div>
       ) : (
         <div className="version-intelligence-stack">
-          <div
-            className="version-intelligence-matrix"
-            role="table"
-            aria-label={t('dashboard.version_intelligence.matrix_label')}
-          >
-            {matrix.map((row) => {
-              const rowStatus = statusForRow(row, recommendedVersion)
-              return (
-                <div className="version-intelligence-row" role="row" key={matrixKey(row)}>
-                  <span className="version-intelligence-group" role="cell">
-                    {row.group}
-                  </span>
-                  <span className="version-intelligence-meta" role="cell">
-                    {t(`inventory.filter.type.${row.type}`)} ·{' '}
-                    {t(`inventory.filter.status.${row.status}`)}
-                  </span>
-                  <span className="version-intelligence-version" role="cell">
-                    {row.version}
-                  </span>
-                  <span
-                    className={`version-intelligence-badge ${STATUS_CLASS[rowStatus]}`}
-                    role="cell"
-                  >
-                    {t(`dashboard.version_intelligence.status.${rowStatus}`)}
-                  </span>
-                  <span className="version-intelligence-count" role="cell">
-                    {t('dashboard.version_intelligence.count', { count: row.count })}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
+          {hasVersionMatrix && (
+            <div
+              className="version-intelligence-matrix"
+              role="table"
+              aria-label={t('dashboard.version_intelligence.matrix_label')}
+            >
+              {matrix.map((row) => {
+                const rowStatus = statusForRow(row, recommendedVersion)
+                return (
+                  <div className="version-intelligence-row" role="row" key={matrixKey(row)}>
+                    <span className="version-intelligence-group" role="cell">
+                      {row.group}
+                    </span>
+                    <span className="version-intelligence-meta" role="cell">
+                      {t(`inventory.filter.type.${row.type}`)} ·{' '}
+                      {t(`inventory.filter.status.${row.status}`)}
+                    </span>
+                    <span className="version-intelligence-version" role="cell">
+                      {row.version}
+                    </span>
+                    <span
+                      className={`version-intelligence-badge ${STATUS_CLASS[rowStatus]}`}
+                      role="cell"
+                    >
+                      {t(`dashboard.version_intelligence.status.${rowStatus}`)}
+                    </span>
+                    <span className="version-intelligence-count" role="cell">
+                      {t('dashboard.version_intelligence.count', { count: row.count })}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {compatibilitySummary && compatibilityMatrix.length > 0 && (
+            <CompatibilityMatrix
+              matrix={compatibilityMatrix}
+              notRunnableCount={compatibilitySummary.not_runnable_count}
+            />
+          )}
 
           {hasFindings ? (
             <div className="version-intelligence-findings">
@@ -195,6 +249,143 @@ export default function FleetVersionIntelligencePanel({ intelligence, isLoading,
         </div>
       )}
     </section>
+  )
+}
+
+function CompatibilityMatrix({
+  matrix,
+  notRunnableCount,
+}: {
+  matrix: FleetCompatibilityMatrixEntry[]
+  notRunnableCount: number
+}) {
+  const { t, i18n } = useTranslation()
+  const canUseBackendReason =
+    i18n.resolvedLanguage?.startsWith('en') ?? i18n.language.startsWith('en')
+  const categories: CompatibilityReasonCategory[] = ['version', 'components', 'opamp', 'other']
+
+  return (
+    <div className="compatibility-matrix-section">
+      <div className="compatibility-matrix-summary">
+        {t('dashboard.version_intelligence.compatibility.summary', {
+          count: notRunnableCount,
+        })}
+      </div>
+      <div
+        className="compatibility-matrix"
+        role="table"
+        aria-label={t('dashboard.version_intelligence.compatibility.matrix_label')}
+      >
+        {matrix.map((row) => {
+          const reasonGroups = groupReasonsByCategory(row.blocking_reasons)
+          const warnings = compatibilityWarnings(row.known_issues)
+          return (
+            <article className="compatibility-matrix-row" role="row" key={compatibilityKey(row)}>
+              <div className="compatibility-matrix-main" role="cell">
+                <div>
+                  <div className="compatibility-matrix-name">{row.display_name}</div>
+                  <div className="compatibility-matrix-meta">
+                    {row.group} · {t(compatibilityStatusKey(row.status))} · {row.version.reported}
+                  </div>
+                </div>
+                <span
+                  className={`compatibility-matrix-badge ${
+                    row.runnable
+                      ? 'compatibility-matrix-badge-ok'
+                      : 'compatibility-matrix-badge-blocked'
+                  }`}
+                >
+                  {t(
+                    row.runnable
+                      ? 'dashboard.version_intelligence.compatibility.can_run'
+                      : 'dashboard.version_intelligence.compatibility.cannot_run',
+                  )}
+                </span>
+              </div>
+
+              <div className="compatibility-matrix-hashes" role="cell">
+                {row.config.hash && (
+                  <span>
+                    {t('dashboard.version_intelligence.compatibility.config_hash', {
+                      hash: row.config.hash,
+                    })}
+                  </span>
+                )}
+                {row.available_components.hash && (
+                  <span>
+                    {t('dashboard.version_intelligence.compatibility.capabilities_hash', {
+                      hash: row.available_components.hash,
+                    })}
+                  </span>
+                )}
+              </div>
+
+              <div className="compatibility-matrix-reasons" role="cell">
+                {row.blocking_reasons.length === 0 ? (
+                  <span className="compatibility-matrix-empty">
+                    {t('dashboard.version_intelligence.compatibility.no_blockers')}
+                  </span>
+                ) : (
+                  categories.map((category) =>
+                    reasonGroups[category].length > 0 ? (
+                      <ReasonCategory
+                        canUseBackendReason={canUseBackendReason}
+                        category={category}
+                        key={`${row.workload_id}:${category}`}
+                        reasons={reasonGroups[category]}
+                      />
+                    ) : null,
+                  )
+                )}
+              </div>
+
+              {warnings.length > 0 && (
+                <div className="compatibility-matrix-warnings" role="cell">
+                  <div className="compatibility-matrix-category-title">
+                    {t('dashboard.version_intelligence.compatibility.warnings')}
+                  </div>
+                  <ul>
+                    {warnings.map((warning) => (
+                      <li key={`${warning.code}:${warning.affected_version}`}>{warning.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </article>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ReasonCategory({
+  canUseBackendReason,
+  category,
+  reasons,
+}: {
+  canUseBackendReason: boolean
+  category: CompatibilityReasonCategory
+  reasons: FleetCompatibilityReason[]
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="compatibility-matrix-category">
+      <div className="compatibility-matrix-category-title">
+        {t(`dashboard.version_intelligence.compatibility.category.${category}`)}
+      </div>
+      <ul>
+        {reasons.map((reason) => (
+          <li key={`${reason.code}:${reason.message}`}>
+            {canUseBackendReason && reason.message
+              ? reason.message
+              : t(`dashboard.version_intelligence.compatibility.reason.${reason.code}`, {
+                  defaultValue: t('dashboard.version_intelligence.compatibility.reason.default'),
+                })}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
