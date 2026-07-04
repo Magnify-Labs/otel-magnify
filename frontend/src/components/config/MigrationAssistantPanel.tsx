@@ -2,11 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { configsAPI, getAPIErrorDetails } from '../../api/client'
 import YamlEditor from './YamlEditor'
-import type {
-  Config,
-  ConfigMigrationPreviewResponse,
-  ConfigMigrationVendor,
-} from '../../types'
+import type { Config, ConfigMigrationPreviewResponse, ConfigMigrationVendor } from '../../types'
 
 type MigrationAssistantPanelProps = {
   onDraftSaved: (config: Config) => void
@@ -248,7 +244,9 @@ export default function MigrationAssistantPanel({ onDraftSaved }: MigrationAssis
               </div>
               <div className="migration-status-row">
                 <span>{t('configs.migration.validation')}</span>
-                <strong>{preview.validation?.summary ?? t('configs.migration.validation_unknown')}</strong>
+                <strong>
+                  {preview.validation?.summary ?? t('configs.migration.validation_unknown')}
+                </strong>
               </div>
               <pre className="migration-draft-yaml">{preview.draft_yaml}</pre>
               <div className="migration-assistant-actions">
@@ -304,7 +302,11 @@ export default function MigrationAssistantPanel({ onDraftSaved }: MigrationAssis
           ) : (
             <div className="migration-assistant-empty">
               <h3>{t('configs.migration.empty_preview_title')}</h3>
-              <p>{t('configs.migration.empty_preview_body', { vendor: t(`configs.migration.vendor.${selectedSample.vendor}`) })}</p>
+              <p>
+                {t('configs.migration.empty_preview_body', {
+                  vendor: t(`configs.migration.vendor.${selectedSample.vendor}`),
+                })}
+              </p>
             </div>
           )}
         </div>
