@@ -1015,6 +1015,7 @@ test('canary wizard selects one eligible instance and explains disabled options'
       last_message_at: new Date().toISOString(),
       effective_config_hash: 'abc123',
       healthy: true,
+      remote_config_capability_known: true,
       accepts_remote_config: false,
     },
     {
@@ -1117,6 +1118,57 @@ test('canary wizard treats healthy remote-config capable instances without prior
     selection: { strategy: 'one', instance_uid: 'inst-new' },
   })
   await expect(page.getByRole('button', { name: 'Push canary' })).toBeEnabled()
+})
+
+test('canary wizard does not treat unknown remote-config capability as read-only', async ({
+  loggedInPage: page,
+}) => {
+  await mockProConfigSafetyFeatures(page)
+  await mockEditorMe(page)
+  await mockWorkload(page)
+  await mockConfig(page, 'receivers:\n  otlp: {}\n')
+  await mockHistory(page, [])
+  await mockValidate(page, { valid: true })
+  await mockPlan(page, buildPlan())
+  await mockInstances(page, [
+    {
+      instance_uid: 'inst-legacy',
+      pod_name: 'otel-legacy',
+      version: '0.98.0',
+      connected_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+      effective_config_hash: 'abc123',
+      healthy: true,
+      accepts_remote_config: false,
+    },
+  ])
+
+  let canaryValidationBody: unknown
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/config/canary/validate`, async (route) => {
+    canaryValidationBody = route.request().postDataJSON()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        valid: true,
+        targets: [{ instance_uid: 'inst-legacy', pod_name: 'otel-legacy', status: 'sent' }],
+      }),
+    })
+  })
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await generateSafetyPlan(page)
+  await page.getByRole('button', { name: 'Start canary' }).click()
+
+  const picker = page.getByLabel('Collector instance')
+  await expect(picker).toHaveValue('inst-legacy')
+  await expect(picker.locator('option[value="inst-legacy"]')).not.toHaveAttribute('disabled', '')
+
+  await page.getByRole('button', { name: 'Validate canary targets' }).click()
+  await expect.poll(() => canaryValidationBody).toMatchObject({
+    selection: { strategy: 'one', instance_uid: 'inst-legacy' },
+  })
 })
 
 test('canary validation expires when the draft changes before push', async ({

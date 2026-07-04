@@ -156,6 +156,7 @@ export interface Instance {
   effective_config_hash?: string
   healthy: boolean
   accepts_remote_config?: boolean
+  remote_config_capability_known?: boolean
   remote_config_status?: RemoteConfigStatus
 }
 
