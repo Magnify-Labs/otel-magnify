@@ -321,7 +321,7 @@ func TestImportConfigFromGit_RedactsFetchFailure(t *testing.T) {
 	oldAllowPrivate := allowPrivateGitURLs
 	allowPrivateGitURLs = true
 	gitImportConfig = func(context.Context, gitImportRequest) (gitImportResult, error) {
-		return gitImportResult{}, errors.New("git fetch failed for http://token:secret@git.example.com/repo.git with access_token=query-secret")
+		return gitImportResult{}, errors.New("git fetch failed for http://token:secret@git.example.com/repo.git ssh://ssh-token:ssh-secret@git.example.com/repo.git git://git-token:git-secret@git.example.com/repo.git with access_token=query-secret")
 	}
 	t.Cleanup(func() {
 		gitImportConfig = old
@@ -338,7 +338,7 @@ func TestImportConfigFromGit_RedactsFetchFailure(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	for _, forbidden := range []string{"token:secret", "access_token", "query-secret"} {
+	for _, forbidden := range []string{"token:secret", "ssh-token:ssh-secret", "git-token:git-secret", "access_token", "query-secret"} {
 		if strings.Contains(rec.Body.String(), forbidden) {
 			t.Fatalf("import failure leaked %q: %s", forbidden, rec.Body.String())
 		}

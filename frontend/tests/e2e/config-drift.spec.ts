@@ -213,6 +213,7 @@ test.describe('Config drift dashboard', () => {
     const exportedFormats: string[] = []
     await page.route('**/api/reports/config-safety*', async (route) => {
       const url = new URL(route.request().url())
+      expect(url.searchParams.get('workload_ids')).toBe('wl-drift,wl-pending')
       const format = url.searchParams.get('format') ?? 'json'
       if (format === 'json') {
         await route.fulfill({
@@ -256,6 +257,23 @@ test.describe('Config drift dashboard', () => {
     await page.getByRole('button', { name: 'Download PDF' }).click()
 
     expect(exportedFormats).toEqual(['markdown', 'csv', 'pdf'])
+  })
+
+  test('does not query or render evidence report when evidence pack feature is disabled', async ({
+    loggedInPage: page,
+  }) => {
+    await mockFeatures(page, { 'config_safety.drift_dashboard': true })
+    await mockMe(page, { groups: [editorGroup] })
+    let reportHit = false
+    await page.route('**/api/reports/config-safety*', (route) => {
+      reportHit = true
+      return route.fulfill({ status: 500, body: 'evidence report should be gated' })
+    })
+
+    await page.goto('/config-safety/drift')
+
+    await expect(page.getByRole('heading', { name: 'Evidence report' })).toHaveCount(0)
+    expect(reportHit).toBe(false)
   })
 
   test('hides evidence report actions from viewers without report export permission', async ({

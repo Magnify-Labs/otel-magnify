@@ -187,6 +187,7 @@ test.describe('Dashboard', () => {
   test('config safety evidence pack previews redacted report data and exports formats', async ({
     loggedInPage: page,
   }) => {
+    await mockFeatures(page, { 'reports.evidence_pack': true })
     await mockMe(page, {
       groups: [
         {
@@ -202,6 +203,7 @@ test.describe('Dashboard', () => {
     let requestedFormat = ''
     await page.route('**/api/reports/config-safety*', async (route, request) => {
       const url = new URL(request.url())
+      expect(url.searchParams.get('workload_ids')).toBe('w1')
       const format = url.searchParams.get('format') ?? 'json'
       if (format === 'json') {
         await route.fulfill({
@@ -345,14 +347,43 @@ test.describe('Dashboard', () => {
     await expect.poll(() => requestedFormat).toBe('pdf')
   })
 
-  test('config safety evidence export actions are hidden without push permission', async ({
+  test('config safety evidence export actions are hidden without report export permission', async ({
     loggedInPage: page,
   }) => {
+    await mockFeatures(page, { 'reports.evidence_pack': true })
+    await mockMe(page, {
+      groups: [
+        {
+          id: 'grp-viewer',
+          name: 'viewer',
+          role: 'viewer',
+          is_system: true,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    })
     await page.goto('/')
 
     const panel = page.locator('.config-evidence-panel')
     await expect(panel).toHaveCount(0)
-    await expect(page.getByRole('button', { name: /Export Markdown|Exporter Markdown/ })).toHaveCount(0)
+    await expect(
+      page.getByRole('button', { name: /Export Markdown|Exporter Markdown/ }),
+    ).toHaveCount(0)
+  })
+
+  test('config safety evidence pack is hidden when evidence feature is disabled', async ({
+    loggedInPage: page,
+  }) => {
+    let reportHit = false
+    await page.route('**/api/reports/config-safety*', (route) => {
+      reportHit = true
+      return route.fulfill({ status: 500, body: 'evidence report should be gated' })
+    })
+
+    await page.goto('/')
+
+    await expect(page.locator('.config-evidence-panel')).toHaveCount(0)
+    expect(reportHit).toBe(false)
   })
 
   test('deployed versions panel groups by version', async ({ loggedInPage: page }) => {
