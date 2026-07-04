@@ -184,7 +184,7 @@ func (a *API) handleImportConfigFromGit(w http.ResponseWriter, r *http.Request) 
 
 	result, err := gitImportConfig(r.Context(), req)
 	if err != nil {
-		respondError(w, 400, err.Error())
+		respondError(w, 400, redactGitOpsText(err.Error()))
 		return
 	}
 	validation := validator.Validate([]byte(result.Content), nil)
