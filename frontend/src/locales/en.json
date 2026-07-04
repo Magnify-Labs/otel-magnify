@@ -106,6 +106,8 @@
           "invalid_version": "Collector version cannot be parsed for compatibility checks.",
           "unknown_version": "Collector version is unknown.",
           "unsupported_component": "Collector capabilities are missing a required component.",
+          "component_capabilities_unknown": "Collector has not reported component capabilities for compatibility checks.",
+          "component_capability_category_missing": "Collector capabilities are missing a required component category.",
           "remote_config_not_accepted": "Collector has not reported OpAMP remote config acceptance.",
           "default": "Collector is not compatible with this config."
         }

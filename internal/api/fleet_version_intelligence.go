@@ -245,6 +245,10 @@ func (a *API) compatibilityEntryForWorkload(wl models.Workload, group, versionSt
 		entry.Config = models.FleetCompatibilityConfig{Hash: target.ConfigID, Source: "active_or_applied"}
 		entry.RequiredComponents = requiredComponentsFromConfig(target.Content)
 	}
+	entry.BlockingReasons = append(
+		entry.BlockingReasons,
+		componentCapabilityBlockers(entry.RequiredComponents, wl.AvailableComponents)...,
+	)
 	if !entry.Version.Comparable {
 		entry.BlockingReasons = append(entry.BlockingReasons, models.FleetCompatibilityReason{Code: entry.Version.Reason, Message: fmt.Sprintf("collector version %q cannot be compared", wl.Version)})
 	}
@@ -288,6 +292,38 @@ func compatibilityAvailable(available *models.AvailableComponents) models.FleetC
 	}
 	sort.Strings(out.Categories)
 	return out
+}
+
+func componentCapabilityBlockers(required []models.FleetCompatibilityComponent, available *models.AvailableComponents) []models.FleetCompatibilityReason {
+	if len(required) == 0 {
+		return nil
+	}
+	if available == nil || len(available.Components) == 0 {
+		return []models.FleetCompatibilityReason{{
+			Code:    "component_capabilities_unknown",
+			Message: "collector has not reported component capabilities for compatibility checks",
+		}}
+	}
+	requiredCategories := map[string]bool{}
+	for _, component := range required {
+		requiredCategories[component.Category] = true
+	}
+	categories := make([]string, 0, len(requiredCategories))
+	for category := range requiredCategories {
+		categories = append(categories, category)
+	}
+	sort.Strings(categories)
+	blockers := []models.FleetCompatibilityReason{}
+	for _, category := range categories {
+		components, ok := available.Components[category]
+		if !ok || len(components) == 0 {
+			blockers = append(blockers, models.FleetCompatibilityReason{
+				Code:    "component_capability_category_missing",
+				Message: fmt.Sprintf("collector capabilities do not report %s needed by this config", category),
+			})
+		}
+	}
+	return blockers
 }
 
 func compatibilityOpAMP(wl models.Workload) models.FleetCompatibilityOpAMP {
@@ -341,7 +377,7 @@ func requiredComponentsFromConfig(content string) []models.FleetCompatibilityCom
 				continue
 			}
 			seen[key] = true
-			out = append(out, models.FleetCompatibilityComponent{Category: category, ComponentType: componentType, Path: category + "." + id})
+			out = append(out, models.FleetCompatibilityComponent{Category: category, ComponentType: componentType, Path: category + "." + componentType})
 		}
 	}
 	return out

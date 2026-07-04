@@ -106,6 +106,8 @@
           "invalid_version": "La version du collecteur ne peut pas être analysée pour les contrôles de compatibilité.",
           "unknown_version": "La version du collecteur est inconnue.",
           "unsupported_component": "Les capacités du collecteur ne contiennent pas un composant requis.",
+          "component_capabilities_unknown": "Le collecteur n’a pas déclaré ses capacités de composants pour les contrôles de compatibilité.",
+          "component_capability_category_missing": "Les capacités du collecteur ne contiennent pas une catégorie de composants requise.",
           "remote_config_not_accepted": "Le collecteur n’a pas déclaré accepter la config distante OpAMP.",
           "default": "Le collecteur n’est pas compatible avec cette config."
         }

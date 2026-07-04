@@ -32,6 +32,8 @@ const REASON_CATEGORY_BY_CODE: Record<string, CompatibilityReasonCategory> = {
   invalid_version: 'version',
   unknown_version: 'version',
   unsupported_component: 'components',
+  component_capabilities_unknown: 'components',
+  component_capability_category_missing: 'components',
   remote_config_not_accepted: 'opamp',
 }
 

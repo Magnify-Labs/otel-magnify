@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1046,6 +1047,62 @@ service:
 	}
 	if strings.Contains(rec.Body.String(), "datadog: {}") {
 		t.Fatalf("response leaked raw config content: %s", rec.Body.String())
+	}
+}
+
+func TestFleetVersionIntelligence_CompatibilityMatrixFailsClosedAndRedactsComponentInstances(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	now := time.Now().UTC()
+	content := `receivers:
+  otlp/SECRET_TOKEN<script>: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp/SECRET_TOKEN<script>]
+      exporters: [logging]
+`
+	configHash := seedFleetCompatibilityConfig(t, db, "w-unknown-components", content, now)
+	seedFleetCompatibilityConfigWithHash(t, db, "w-empty-components", configHash, now.Add(time.Second))
+	seedFleetCompatibilityConfigWithHash(t, db, "w-missing-category", configHash, now.Add(2*time.Second))
+
+	workloads := []models.Workload{
+		{ID: "w-unknown-components", DisplayName: "collector unknown components", Type: "collector", Version: "0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: configHash, AcceptsRemoteConfig: true},
+		{ID: "w-empty-components", DisplayName: "collector empty components", Type: "collector", Version: "0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: configHash, AvailableComponents: &models.AvailableComponents{Hash: "empty-components", Components: map[string][]string{}}, AcceptsRemoteConfig: true},
+		{ID: "w-missing-category", DisplayName: "collector missing category", Type: "collector", Version: "0.100.0", Status: "connected", LastSeenAt: now, Labels: models.Labels{"group": "prod"}, FingerprintKeys: models.FingerprintKeys{}, ActiveConfigHash: configHash, AvailableComponents: &models.AvailableComponents{Hash: "missing-category", Components: map[string][]string{"exporters": {"logging"}}}, AcceptsRemoteConfig: true},
+	}
+	for _, wl := range workloads {
+		if err := db.UpsertWorkload(wl); err != nil {
+			t.Fatalf("UpsertWorkload(%s): %v", wl.ID, err)
+		}
+	}
+
+	req := authedRequest(t, http.MethodGet, "/api/workloads/version-intelligence?recommended_version=0.100.0")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	summary := body["compatibility_summary"].(map[string]any)
+	if summary["not_runnable_count"] != float64(3) || summary["runnable_count"] != float64(0) {
+		t.Fatalf("compatibility_summary = %+v", summary)
+	}
+	matrix := body["compatibility_matrix"].([]any)
+	assertCompatibilityEntryBlockedBy(t, matrix, "w-unknown-components", "component_capabilities_unknown")
+	assertCompatibilityEntryBlockedBy(t, matrix, "w-empty-components", "component_capabilities_unknown")
+	missing := assertCompatibilityEntryBlockedBy(t, matrix, "w-missing-category", "component_capability_category_missing")
+	for _, item := range missing["required_components"].([]any) {
+		component := item.(map[string]any)
+		path := fmt.Sprint(component["path"])
+		if strings.Contains(path, "SECRET_TOKEN") || strings.Contains(path, "<script>") {
+			t.Fatalf("required component leaked raw instance path: %+v", component)
+		}
+	}
+	if strings.Contains(rec.Body.String(), "SECRET_TOKEN") || strings.Contains(rec.Body.String(), "<script>") || strings.Contains(rec.Body.String(), "otlp/SECRET") {
+		t.Fatalf("response leaked raw config-derived component instance: %s", rec.Body.String())
 	}
 }
 
