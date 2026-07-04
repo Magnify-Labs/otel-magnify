@@ -84,6 +84,33 @@
       "action": {
         "upgrade_collector": "Mettre à niveau vers {{version}}",
         "unsupported_component": "Choisir une config plus ancienne, mettre à niveau le collecteur ou retirer {{component}}."
+      },
+      "compatibility": {
+        "summary": "Cette config ne peut pas tourner sur {{count}} collecteurs",
+        "matrix_label": "Matrice de compatibilité locale",
+        "can_run": "Compatible",
+        "cannot_run": "Incompatible",
+        "no_blockers": "Aucun blocage",
+        "warnings": "Avertissements",
+        "config_hash": "Hash config {{hash}}",
+        "capabilities_hash": "Hash capacités {{hash}}",
+        "status_unknown": "Inconnu",
+        "category": {
+          "version": "Version / issue connue",
+          "components": "Composants / fonctionnalités manquants",
+          "opamp": "OpAMP / config distante",
+          "other": "Autres blocages"
+        },
+        "reason": {
+          "known_issue": "La version du collecteur est bloquée par une incompatibilité connue.",
+          "invalid_version": "La version du collecteur ne peut pas être analysée pour les contrôles de compatibilité.",
+          "unknown_version": "La version du collecteur est inconnue.",
+          "unsupported_component": "Les capacités du collecteur ne contiennent pas un composant requis.",
+          "component_capabilities_unknown": "Le collecteur n’a pas déclaré ses capacités de composants pour les contrôles de compatibilité.",
+          "component_capability_category_missing": "Les capacités du collecteur ne contiennent pas une catégorie de composants requise.",
+          "remote_config_not_accepted": "Le collecteur n’a pas déclaré accepter la config distante OpAMP.",
+          "default": "Le collecteur n’est pas compatible avec cette config."
+        }
       }
     },
     "alerts": {

@@ -594,9 +594,111 @@
   white-space: normal;
 }
 
+.compatibility-matrix-section,
+.compatibility-matrix,
+.compatibility-matrix-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.compatibility-matrix-summary {
+  border: 1px solid var(--red-dim);
+  border-radius: var(--radius);
+  padding: 0.65rem;
+  background: var(--red-dim);
+  color: var(--text-hi);
+  font-weight: 700;
+}
+
+.compatibility-matrix-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.compatibility-matrix-main,
+.compatibility-matrix-hashes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.compatibility-matrix-name {
+  color: var(--text-hi);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.compatibility-matrix-meta,
+.compatibility-matrix-hashes {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.compatibility-matrix-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.compatibility-matrix-badge-ok {
+  color: var(--green);
+  background: var(--green-dim);
+}
+
+.compatibility-matrix-badge-blocked {
+  color: var(--red);
+  background: var(--red-dim);
+}
+
+.compatibility-matrix-category,
+.compatibility-matrix-warnings {
+  border-left: 2px solid var(--amber);
+  padding-left: 0.55rem;
+}
+
+.compatibility-matrix-warnings {
+  border-left-color: var(--text-muted);
+}
+
+.compatibility-matrix-category-title {
+  color: var(--text-hi);
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.compatibility-matrix-category ul,
+.compatibility-matrix-warnings ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+  color: var(--text);
+  font-size: 0.74rem;
+}
+
+.compatibility-matrix-empty {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
 @media (max-width: 640px) {
   .version-intelligence-row,
-  .version-intelligence-finding {
+  .version-intelligence-finding,
+  .compatibility-matrix-main,
+  .compatibility-matrix-hashes {
     display: flex;
     flex-direction: column;
     align-items: flex-start;

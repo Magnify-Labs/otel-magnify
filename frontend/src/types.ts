@@ -958,10 +958,82 @@ export interface FleetVersionRecommendation {
   components?: string[]
 }
 
+export interface FleetCompatibilityReason {
+  code: string
+  message: string
+}
+
+export interface FleetCompatibilityCollectorSummary {
+  workload_id: string
+  display_name: string
+  blocking_reasons: FleetCompatibilityReason[]
+}
+
+export interface FleetCompatibilitySummary {
+  total_collectors: number
+  runnable_count: number
+  not_runnable_count: number
+  not_runnable_collectors: FleetCompatibilityCollectorSummary[]
+}
+
+export interface FleetCompatibilityVersion {
+  reported: string
+  status: FleetVersionStatus | string
+  comparable: boolean
+  reason?: string
+}
+
+export interface FleetCompatibilityAvailable {
+  hash?: string
+  categories: string[]
+  component_types: Record<string, string[]>
+}
+
+export interface FleetCompatibilityComponent {
+  category: string
+  component_type: string
+  path: string
+}
+
+export interface FleetCompatibilityConfig {
+  hash?: string
+  source: string
+}
+
+export interface FleetCompatibilityKnownIssue {
+  code: string
+  severity: string
+  affected_version: string
+  message: string
+}
+
+export interface FleetCompatibilityOpAMP {
+  accepts_remote_config: boolean
+  remote_config_status?: string
+  config_hash?: string
+}
+
+export interface FleetCompatibilityMatrixEntry {
+  workload_id: string
+  display_name: string
+  group: string
+  status: Workload['status'] | string
+  version: FleetCompatibilityVersion
+  available_components: FleetCompatibilityAvailable
+  required_components: FleetCompatibilityComponent[]
+  config: FleetCompatibilityConfig
+  known_issues: FleetCompatibilityKnownIssue[]
+  opamp: FleetCompatibilityOpAMP
+  runnable: boolean
+  blocking_reasons: FleetCompatibilityReason[]
+}
+
 export interface FleetVersionIntelligence {
   schema_version: 'fleet-version-intelligence.v1'
   recommended_version: string
   version_matrix: FleetVersionMatrixEntry[]
+  compatibility_summary?: FleetCompatibilitySummary
+  compatibility_matrix?: FleetCompatibilityMatrixEntry[]
   collectors_below_recommended: FleetCollectorVersionFinding[]
   unsupported_config_components: FleetUnsupportedComponentFinding[]
   invalid_versions: FleetInvalidVersionFinding[]
