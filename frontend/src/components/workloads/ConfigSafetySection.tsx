@@ -8,6 +8,7 @@ interface Props {
   isValidating: boolean
   activeConfigLoading: boolean
   activeConfigError: boolean
+  activeConfigRestricted?: boolean
   pendingHash: string | null
   timedOut: boolean
   configStatus?: RemoteConfigStatus
@@ -31,6 +32,7 @@ export default function ConfigSafetySection({
   isValidating,
   activeConfigLoading,
   activeConfigError,
+  activeConfigRestricted = false,
   pendingHash,
   timedOut,
   configStatus,
@@ -53,7 +55,13 @@ export default function ConfigSafetySection({
     : configStatus
 
   const validateStep = buildValidateStep(t, validation, isValidating)
-  const compareStep = buildCompareStep(t, hasActiveConfig, activeConfigLoading, activeConfigError)
+  const compareStep = buildCompareStep(
+    t,
+    hasActiveConfig,
+    activeConfigLoading,
+    activeConfigError,
+    activeConfigRestricted,
+  )
   const pushStep = buildPushStep(t, readOnly, validation, canPush, visibleStatus, timedOut)
   const rollbackStep = buildRollbackStep(t, hasActiveConfig, rollback)
   const steps = [validateStep, compareStep, pushStep, rollbackStep]
@@ -162,6 +170,7 @@ function buildCompareStep(
   hasActiveConfig: boolean,
   activeConfigLoading: boolean,
   activeConfigError: boolean,
+  activeConfigRestricted: boolean,
 ): SafetyStep {
   if (activeConfigLoading) {
     return {
@@ -178,6 +187,15 @@ function buildCompareStep(
       badge: t('workloads.config.safety.compare.badge.error'),
       helper: t('workloads.config.safety.compare.helper.error'),
       tone: 'danger',
+    }
+  }
+  if (activeConfigRestricted) {
+    return {
+      title: t('workloads.config.safety.compare.title'),
+      body: t('workloads.config.safety.compare.body'),
+      badge: t('workloads.config.safety.compare.badge.restricted'),
+      helper: t('workloads.config.safety.compare.helper.restricted'),
+      tone: 'neutral',
     }
   }
   if (!hasActiveConfig) {

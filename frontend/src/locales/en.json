@@ -416,11 +416,13 @@
           "badge": {
             "loading": "Loading active config",
             "error": "Diff unavailable",
+            "restricted": "Content restricted",
             "first": "First config",
             "available": "Diff available"
           },
           "helper": {
             "error": "Reload the active config before relying on the diff.",
+            "restricted": "Your role can view config metadata, but not raw YAML content or diffs.",
             "first": "No active config exists yet, so this push will become the first known config.",
             "available": "Review the active-vs-draft diff before pushing."
           }
@@ -702,6 +704,7 @@
       },
       "permission": {
         "push_blocked": "You don't have permission to push workload configurations. This config is read-only for your account.",
+        "content_restricted": "Config content is restricted by role. Metadata and history remain available.",
         "validate_blocked": "You don't have permission to validate workload configurations."
       },
       "scope": {

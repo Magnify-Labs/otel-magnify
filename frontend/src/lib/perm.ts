@@ -2,6 +2,7 @@ import type { Group } from '../types'
 
 export type Permission =
   | 'workload:push_config'
+  | 'config:read_content'
   | 'workload:validate_config'
   | 'config:create'
   | 'alert:resolve'
@@ -16,6 +17,7 @@ const matrix: Record<string, Set<Permission>> = {
   viewer: new Set(),
   editor: new Set<Permission>([
     'workload:push_config',
+    'config:read_content',
     'workload:validate_config',
     'config:create',
     'alert:resolve',
@@ -24,6 +26,7 @@ const matrix: Record<string, Set<Permission>> = {
   ]),
   administrator: new Set<Permission>([
     'workload:push_config',
+    'config:read_content',
     'workload:validate_config',
     'config:create',
     'alert:resolve',

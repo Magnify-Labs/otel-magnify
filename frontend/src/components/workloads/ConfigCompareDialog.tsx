@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import axios from 'axios'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { configsAPI, workloadsAPI } from '../../api/client'
@@ -27,6 +28,10 @@ function dedupeRevisions(history: WorkloadConfig[]): RevisionEntry[] {
     appliedAt: row.applied_at,
     label: row.label,
   }))
+}
+
+function isForbiddenError(err: unknown) {
+  return axios.isAxiosError(err) && err.response?.status === 403
 }
 
 export default function ConfigCompareDialog({ workloadId, history, onClose }: Props) {
@@ -59,6 +64,8 @@ export default function ConfigCompareDialog({ workloadId, history, onClose }: Pr
   const rightYaml = rightQuery.data?.content ?? ''
   const isLoading = leftQuery.isLoading || rightQuery.isLoading
   const isError = leftQuery.isError || rightQuery.isError
+  const isContentRestricted =
+    isForbiddenError(leftQuery.error) || isForbiddenError(rightQuery.error)
   const canCompare = !isLoading && !isError && leftYaml.length > 0 && rightYaml.length > 0
 
   const otelDiffQuery = useQuery({
@@ -145,6 +152,8 @@ export default function ConfigCompareDialog({ workloadId, history, onClose }: Pr
         <div style={{ padding: '0 1rem 1rem' }}>
           {isLoading ? (
             <div className="loading">{t('workloads.config.versioning.compare_loading')}</div>
+          ) : isContentRestricted ? (
+            <div className="empty-state">{t('workloads.config.permission.content_restricted')}</div>
           ) : isError ? (
             <div className="error-text">{t('workloads.config.versioning.compare_error')}</div>
           ) : (
