@@ -132,6 +132,37 @@ func TestInstanceCountStartsZero(t *testing.T) {
 	}
 }
 
+func TestClassifyAgentMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  *protobufs.AgentToServer
+		want agentMessageKind
+	}{
+		{
+			name: "full state includes agent description",
+			msg: &protobufs.AgentToServer{
+				AgentDescription: &protobufs.AgentDescription{},
+			},
+			want: agentMessageWithDescription,
+		},
+		{
+			name: "remote config status without description is heartbeat",
+			msg: &protobufs.AgentToServer{
+				RemoteConfigStatus: &protobufs.RemoteConfigStatus{},
+			},
+			want: agentMessageHeartbeat,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyAgentMessage(tt.msg); got != tt.want {
+				t.Fatalf("classifyAgentMessage() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPushConfig_TargetInstanceSendsOnlyToThatConnection(t *testing.T) {
 	srv := New(nil, nil, Options{})
 	srv.registry.BindInstance("uid-a", "w1", Instance{Healthy: true})

@@ -283,142 +283,206 @@ func flattenAttrs(identifying, nonIdentifying []*protobufs.KeyValue) map[string]
 	return out
 }
 
+type agentMessageKind int
+
+const (
+	agentMessageWithDescription agentMessageKind = iota
+	agentMessageHeartbeat
+)
+
+func classifyAgentMessage(msg *protobufs.AgentToServer) agentMessageKind {
+	if msg.AgentDescription != nil {
+		return agentMessageWithDescription
+	}
+	return agentMessageHeartbeat
+}
+
 func (s *Server) onMessage(_ context.Context, conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	uid := hex.EncodeToString(msg.InstanceUid)
-
-	// Track connection in both directions for O(1) lookup on close. A nil
-	// conn slips in from unit tests — tolerate it so we still exercise the
-	// message-handling logic.
-	if conn != nil {
-		s.mu.Lock()
-		s.conns[uid] = conn
-		s.connToUID[conn] = uid
-		s.mu.Unlock()
-	}
+	s.registerConnection(uid, conn)
 
 	var workloadID string
 	var requestComponents bool
 
-	if desc := msg.AgentDescription; desc != nil {
-		attrs := flattenAttrs(desc.IdentifyingAttributes, desc.NonIdentifyingAttributes)
-		fp := Fingerprint(attrs, uid)
-		workloadID = fp.ID
-
-		version := attrs["service.version"]
-		// Capture the previous version BEFORE BindInstance overwrites it so
-		// we can emit a version_changed event on rebind.
-		prevVersion, _ := s.registry.PreviousVersion(uid)
-
-		ins := Instance{
-			PodName:                     attrs["k8s.pod.name"],
-			Version:                     version,
-			Healthy:                     true,
-			AcceptsRemoteConfig:         msg.Capabilities&acceptsRemoteConfigCap != 0,
-			RemoteConfigCapabilityKnown: true,
+	switch classifyAgentMessage(msg) {
+	case agentMessageWithDescription:
+		workloadID, requestComponents = s.handleAgentDescription(uid, msg)
+	case agentMessageHeartbeat:
+		var known bool
+		workloadID, known = s.handleKnownInstanceUpdate(uid, msg)
+		if !known {
+			return reportFullStateReply(msg)
 		}
-		if msg.Health != nil && !msg.Health.Healthy {
-			ins.Healthy = false
-		}
-		if msg.RemoteConfigStatus != nil {
-			ins.EffectiveConfigHash = hex.EncodeToString(msg.RemoteConfigStatus.LastRemoteConfigHash)
-		}
+	}
 
-		isFresh := s.registry.BindInstance(uid, workloadID, ins)
-		// A new binding supersedes any pending grace timer.
-		s.grace.Cancel(workloadID)
+	s.refreshWorkloadState(workloadID, uid)
+	s.recordRemoteConfigStatus(workloadID, uid, msg.RemoteConfigStatus)
 
-		// Upsert the workload row BEFORE emitting events — workload_events
-		// has a FK to workloads(id) so the parent must exist first.
-		s.upsertWorkloadFromDescription(uid, workloadID, fp, attrs, msg)
+	return replyToAgent(msg, requestComponents)
+}
 
-		if isFresh {
-			s.emitEvent(models.WorkloadEvent{
-				WorkloadID:  workloadID,
-				InstanceUID: uid,
-				PodName:     ins.PodName,
-				EventType:   "connected",
-				Version:     ins.Version,
-				OccurredAt:  time.Now().UTC(),
-			})
-		} else if prevVersion != "" && prevVersion != version {
-			s.emitEvent(models.WorkloadEvent{
-				WorkloadID:  workloadID,
-				InstanceUID: uid,
-				PodName:     ins.PodName,
-				EventType:   "version_changed",
-				Version:     version,
-				PrevVersion: prevVersion,
-				OccurredAt:  time.Now().UTC(),
-			})
-		}
+func (s *Server) registerConnection(uid string, conn types.Connection) {
+	// Track connection in both directions for O(1) lookup on close. A nil
+	// conn slips in from unit tests — tolerate it so we still exercise the
+	// message-handling logic.
+	if conn == nil {
+		return
+	}
+	s.mu.Lock()
+	s.conns[uid] = conn
+	s.connToUID[conn] = uid
+	s.mu.Unlock()
+}
 
-		// Only ask for available_components when the capability bit is set
-		// and the agent hasn't already populated the list.
-		if msg.Capabilities&reportsAvailableComponentsCap != 0 {
-			if wl, err := s.getWorkload(workloadID); err == nil && wl.AvailableComponents == nil {
-				requestComponents = true
-			}
-		}
-	} else {
-		wl, ok := s.registry.LookupWorkload(uid)
-		if !ok {
-			// Unknown UID with no AgentDescription — either a fresh agent
-			// that hasn't identified yet, or an existing agent reconnecting
-			// after we lost registry state (server restart with ephemeral
-			// DB). Ask for a full state so we can bootstrap the workload;
-			// OpAMP agents won't resend AgentDescription on their own.
-			return &protobufs.ServerToAgent{
-				InstanceUid: msg.InstanceUid,
-				Flags:       uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
-			}
-		}
-		workloadID = wl
-		s.registry.UpdateInstance(uid, func(i *Instance) {
-			if msg.Health != nil {
-				i.Healthy = msg.Health.Healthy
-			}
-			if msg.RemoteConfigStatus != nil {
-				i.EffectiveConfigHash = hex.EncodeToString(msg.RemoteConfigStatus.LastRemoteConfigHash)
-			}
+func (s *Server) handleAgentDescription(uid string, msg *protobufs.AgentToServer) (string, bool) {
+	desc := msg.AgentDescription
+	attrs := flattenAttrs(desc.IdentifyingAttributes, desc.NonIdentifyingAttributes)
+	fp := Fingerprint(attrs, uid)
+	workloadID := fp.ID
+
+	version := attrs["service.version"]
+	// Capture the previous version BEFORE BindInstance overwrites it so
+	// we can emit a version_changed event on rebind.
+	prevVersion, _ := s.registry.PreviousVersion(uid)
+
+	ins := Instance{
+		PodName:                     attrs["k8s.pod.name"],
+		Version:                     version,
+		Healthy:                     true,
+		AcceptsRemoteConfig:         msg.Capabilities&acceptsRemoteConfigCap != 0,
+		RemoteConfigCapabilityKnown: true,
+	}
+	if msg.Health != nil && !msg.Health.Healthy {
+		ins.Healthy = false
+	}
+	if msg.RemoteConfigStatus != nil {
+		ins.EffectiveConfigHash = hex.EncodeToString(msg.RemoteConfigStatus.LastRemoteConfigHash)
+	}
+
+	isFresh := s.registry.BindInstance(uid, workloadID, ins)
+	// A new binding supersedes any pending grace timer.
+	s.grace.Cancel(workloadID)
+
+	// Upsert the workload row BEFORE emitting events — workload_events
+	// has a FK to workloads(id) so the parent must exist first.
+	s.upsertWorkloadFromDescription(uid, workloadID, fp, attrs, msg)
+	s.emitBindEvent(workloadID, uid, ins, isFresh, prevVersion, version)
+
+	return workloadID, s.shouldRequestAvailableComponents(workloadID, msg)
+}
+
+func (s *Server) emitBindEvent(workloadID, uid string, ins Instance, isFresh bool, prevVersion, version string) {
+	if isFresh {
+		s.emitEvent(models.WorkloadEvent{
+			WorkloadID:  workloadID,
+			InstanceUID: uid,
+			PodName:     ins.PodName,
+			EventType:   "connected",
+			Version:     ins.Version,
+			OccurredAt:  time.Now().UTC(),
+		})
+		return
+	}
+	if prevVersion != "" && prevVersion != version {
+		s.emitEvent(models.WorkloadEvent{
+			WorkloadID:  workloadID,
+			InstanceUID: uid,
+			PodName:     ins.PodName,
+			EventType:   "version_changed",
+			Version:     version,
+			PrevVersion: prevVersion,
+			OccurredAt:  time.Now().UTC(),
 		})
 	}
+}
 
+func (s *Server) shouldRequestAvailableComponents(workloadID string, msg *protobufs.AgentToServer) bool {
+	// Only ask for available_components when the capability bit is set and the
+	// agent hasn't already populated the list.
+	if msg.Capabilities&reportsAvailableComponentsCap == 0 {
+		return false
+	}
+	wl, err := s.getWorkload(workloadID)
+	return err == nil && wl.AvailableComponents == nil
+}
+
+func (s *Server) handleKnownInstanceUpdate(uid string, msg *protobufs.AgentToServer) (string, bool) {
+	wl, ok := s.registry.LookupWorkload(uid)
+	if !ok {
+		return "", false
+	}
+	s.registry.UpdateInstance(uid, func(i *Instance) {
+		if msg.Health != nil {
+			i.Healthy = msg.Health.Healthy
+		}
+		if msg.RemoteConfigStatus != nil {
+			i.EffectiveConfigHash = hex.EncodeToString(msg.RemoteConfigStatus.LastRemoteConfigHash)
+		}
+	})
+	return wl, true
+}
+
+func (s *Server) refreshWorkloadState(workloadID, uid string) {
 	// Aggregated status + broadcast + conditional auto-push.
-	if s.store != nil {
-		if wl, err := s.store.GetWorkload(workloadID); err == nil {
-			wl.Status = s.registry.AggregatedStatus(workloadID)
-			wl.LastSeenAt = time.Now().UTC()
-			if err := s.store.UpsertWorkload(wl); err != nil {
-				log.Printf("Failed to upsert workload %s: %v", workloadID, err)
-			}
-			if s.notifier != nil {
-				connected := s.registry.Count(workloadID)
-				drifted := s.countDrift(workloadID, wl.ActiveConfigHash)
-				s.notifier.BroadcastWorkloadUpdate(wl, connected, drifted)
-			}
+	if s.store == nil {
+		return
+	}
+	wl, err := s.store.GetWorkload(workloadID)
+	if err != nil {
+		return
+	}
+	wl.Status = s.registry.AggregatedStatus(workloadID)
+	wl.LastSeenAt = time.Now().UTC()
+	if err := s.store.UpsertWorkload(wl); err != nil {
+		log.Printf("Failed to upsert workload %s: %v", workloadID, err)
+	}
+	if s.notifier != nil {
+		connected := s.registry.Count(workloadID)
+		drifted := s.countDrift(workloadID, wl.ActiveConfigHash)
+		s.notifier.BroadcastWorkloadUpdate(wl, connected, drifted)
+	}
+	s.maybeTriggerAutoPush(workloadID, uid, wl)
+}
 
-			// Auto-push (P.2): only when this specific instance diverges
-			// from the workload's pinned active config.
-			if wl.ActiveConfigHash != "" && wl.ActiveConfigID != nil {
-				for _, i := range s.registry.Instances(workloadID) {
-					if i.InstanceUID != uid {
-						continue
-					}
-					if i.EffectiveConfigHash != "" && i.EffectiveConfigHash != wl.ActiveConfigHash {
-						//nolint:gosec // auto-push is server-initiated and must outlive the OpAMP message context
-						go s.triggerAutoPush(context.Background(), *wl.ActiveConfigID, workloadID, uid)
-					}
-				}
-			}
+func (s *Server) maybeTriggerAutoPush(workloadID, uid string, wl models.Workload) {
+	// Auto-push (P.2): only when this specific instance diverges from the
+	// workload's pinned active config.
+	if wl.ActiveConfigHash == "" || wl.ActiveConfigID == nil {
+		return
+	}
+	for _, i := range s.registry.Instances(workloadID) {
+		if i.InstanceUID != uid {
+			continue
+		}
+		if i.EffectiveConfigHash != "" && i.EffectiveConfigHash != wl.ActiveConfigHash {
+			//nolint:gosec // auto-push is server-initiated and must outlive the OpAMP message context
+			go s.triggerAutoPush(context.Background(), *wl.ActiveConfigID, workloadID, uid)
 		}
 	}
+}
 
+func (s *Server) recordRemoteConfigStatus(workloadID, uid string, status *protobufs.RemoteConfigStatus) {
 	// RemoteConfigStatus bookkeeping (keeps the audit trail in workload_configs
 	// + auto-rollback on FAILED).
-	if s.store != nil && msg.RemoteConfigStatus != nil {
-		s.handleRemoteConfigStatus(workloadID, uid, msg.RemoteConfigStatus)
+	if s.store == nil || status == nil {
+		return
 	}
+	s.handleRemoteConfigStatus(workloadID, uid, status)
+}
 
+func reportFullStateReply(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+	// Unknown UID with no AgentDescription — either a fresh agent that hasn't
+	// identified yet, or an existing agent reconnecting after we lost registry
+	// state (server restart with ephemeral DB). Ask for a full state so we can
+	// bootstrap the workload; OpAMP agents won't resend AgentDescription on their
+	// own.
+	return &protobufs.ServerToAgent{
+		InstanceUid: msg.InstanceUid,
+		Flags:       uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
+	}
+}
+
+func replyToAgent(msg *protobufs.AgentToServer, requestComponents bool) *protobufs.ServerToAgent {
 	reply := &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 	if requestComponents {
 		reply.Flags = uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportAvailableComponents)
