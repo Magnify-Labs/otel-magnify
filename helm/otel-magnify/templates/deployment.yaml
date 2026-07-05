@@ -46,6 +46,11 @@ spec:
               value: ":8080"
             - name: OPAMP_ADDR
               value: ":4320"
+            - name: OPAMP_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secret
+                  key: opamp-shared-secret
             - name: CORS_ORIGINS
               value: {{ .Values.config.corsOrigins | quote }}
           resources:

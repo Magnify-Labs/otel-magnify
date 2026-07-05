@@ -7,7 +7,7 @@ Exhaustive reference. See [Configuration](../users/configuration.md) for a user-
 | `JWT_SECRET` | Yes | — | Auth | HS256 signing key for JWT tokens; must be at least 32 characters and must not use the placeholder value. |
 | `LISTEN_ADDR` | No | `:8080` | API | HTTP listen address for the API and embedded frontend. |
 | `OPAMP_ADDR` | No | `:4320` | OpAMP | WebSocket listen address for the OpAMP server. |
-| `OPAMP_SHARED_SECRET` | No | — | OpAMP | If set, OpAMP clients must send the configured value as an `Authorization` bearer token during the HTTP/WebSocket handshake. Empty keeps local/dev unauthenticated. |
+| `OPAMP_SHARED_SECRET` | No | — | OpAMP | If set, OpAMP clients must send the configured value in an `Authorization` header using `Bearer REPLACE_WITH_OPAMP_SHARED_SECRET` during the HTTP/WebSocket handshake; missing or mismatched tokens receive `401 Unauthorized`. Empty keeps local/dev OpAMP connections unauthenticated. |
 | `CORS_ORIGINS` | No | `http://localhost:5173` | API | Comma-separated list of allowed origins. |
 | `DB_DRIVER` | No | `sqlite` | Store | `sqlite` (default) or `pgx` for PostgreSQL. |
 | `DB_DSN` | No | `otel-magnify.db` | Store | SQLite file path or PostgreSQL DSN. |

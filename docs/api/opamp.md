@@ -13,5 +13,5 @@
 - `AvailableComponents` capture and how it is used to validate pushed configs (see commit `5bf11da`).
 - Mapping from OpAMP `AgentDescription` fields to the otel-magnify workload model, including the workload fingerprint strategies (`k8s` → `host` → `uid`) — see [Workload identity](../users/connecting-agents.md#workload-identity).
 - Agent type detection via `service.name` (collectors vs SDK agents).
-- Authentication: set `OPAMP_SHARED_SECRET` to require an `Authorization` header using the bearer token scheme on the HTTP/WebSocket handshake. Missing or mismatched tokens receive `401 Unauthorized`; empty `OPAMP_SHARED_SECRET` preserves local/dev unauthenticated connections.
+- Authentication: set `OPAMP_SHARED_SECRET` to require an `Authorization` header using `Bearer REPLACE_WITH_OPAMP_SHARED_SECRET` on the HTTP/WebSocket handshake. Missing or mismatched tokens receive `401 Unauthorized` before OpAMP messages are processed; empty `OPAMP_SHARED_SECRET` preserves local/dev unauthenticated connections.
 - TLS: currently served plain-WS; terminate TLS at a reverse proxy for production.

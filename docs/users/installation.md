@@ -12,6 +12,8 @@ JWT_SECRET=$(openssl rand -base64 32) docker compose up --build
 
 The API and embedded frontend are served at `http://localhost:8080`. The OpAMP endpoint listens on `:4320`.
 
+This local command leaves `OPAMP_SHARED_SECRET` unset, so demo collectors can connect without OpAMP bearer authentication. If `:4320` is reachable outside your trusted local machine or Docker network, set `OPAMP_SHARED_SECRET` and pass the same value to each OpAMP client.
+
 To enable PostgreSQL persistence:
 
 ```bash
@@ -25,7 +27,8 @@ DB_DRIVER=pgx \
 ```bash
 helm install magnify helm/otel-magnify/ \
   --set jwtSecret=your-secret \
-  --set config.dbDSN="postgres://user:pass@host:5432/magnify?sslmode=require"
+  --set opampSharedSecret=replace-with-a-random-opamp-token \
+  --set config.dbDSN="postgres://user:***@host:5432/magnify?sslmode=require"
 ```
 
 See the chart values under `helm/otel-magnify/values.yaml` for ingress, resources, and persistence options.

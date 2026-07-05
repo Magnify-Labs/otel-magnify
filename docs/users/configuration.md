@@ -21,8 +21,17 @@ otel-magnify is configured entirely via environment variables. See the [referenc
 |----------|---------|-------------|
 | `LISTEN_ADDR` | `:8080` | API + frontend listen address. |
 | `OPAMP_ADDR` | `:4320` | OpAMP WebSocket listen address. |
-| `OPAMP_SHARED_SECRET` | *(empty)* | Optional bearer token required from OpAMP clients. Set in production and configure agents to send the same value with the `Authorization` bearer scheme. Leave empty only for local/dev demos. |
+| `OPAMP_SHARED_SECRET` | *(empty)* | Optional bearer token required from OpAMP clients. Empty keeps `:4320` unauthenticated for local/dev demos; set a random value for production, shared, or exposed networks and configure agents to send an `Authorization` header using `Bearer REPLACE_WITH_OPAMP_SHARED_SECRET`. |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins for the API. |
+
+### OpAMP shared secret
+
+`OPAMP_SHARED_SECRET` protects the OpAMP HTTP/WebSocket handshake on `OPAMP_ADDR`.
+
+- Unset or empty: OpAMP clients can connect without an `Authorization` header. This is intended for local development and demo collectors on a trusted machine or private Docker network.
+- Set: every OpAMP client must send the exact value as a bearer token, for example `Authorization: Bearer REPLACE_WITH_OPAMP_SHARED_SECRET`. Missing or mismatched tokens are rejected with `401 Unauthorized` before any OpAMP message is processed.
+
+Use placeholders in examples and store the real value in your deployment secret manager or shell environment; do not commit real OpAMP secrets.
 
 ## Bootstrap
 

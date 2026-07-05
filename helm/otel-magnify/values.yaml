@@ -27,6 +27,10 @@ config:
   corsOrigins: ""
 
 jwtSecret: ""
+# Optional OpAMP bearer token. Leave empty only for local/trusted runs; set for
+# production, shared, or exposed OpAMP boundaries and configure agents to send
+# the same Authorization bearer value.
+opampSharedSecret: ""
 
 # UID/GID 10001 matches the non-root user created in the Dockerfile.
 podSecurityContext:

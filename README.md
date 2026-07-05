@@ -86,7 +86,7 @@ npm install
 npm run dev
 ```
 
-The API runs on `:8080`, OpAMP on `:4320`, frontend dev server on `:5173` (proxied to backend).
+The API runs on `:8080`, OpAMP on `:4320`, frontend dev server on `:5173` (proxied to backend). OpAMP authentication is intentionally off in this local command because `OPAMP_SHARED_SECRET` is unset.
 
 ### Seed an admin user
 
@@ -102,12 +102,20 @@ JWT_SECRET=$(openssl rand -base64 32) docker compose up --build
 
 App available at `http://localhost:8080`.
 
+For any run where port `4320` crosses a production, shared, or exposed network boundary, set an OpAMP shared secret and configure agents to send it as a bearer token:
+
+```bash
+export OPAMP_SHARED_SECRET="replace-with-a-random-opamp-token"
+JWT_SECRET=$(openssl rand -base64 32) docker compose up --build
+```
+
 ### Kubernetes (Helm)
 
 ```bash
 helm install magnify helm/otel-magnify/ \
   --set jwtSecret=your-secret \
-  --set config.dbDSN="postgres://user:pass@host:5432/magnify?sslmode=require"
+  --set opampSharedSecret=replace-with-a-random-opamp-token \
+  --set config.dbDSN="postgres://user:***@host:5432/magnify?sslmode=require"
 ```
 
 ## Configuration
@@ -120,7 +128,7 @@ All configuration via environment variables:
 | `DB_DSN` | `otel-magnify.db` | Database connection string |
 | `LISTEN_ADDR` | `:8080` | API server listen address |
 | `OPAMP_ADDR` | `:4320` | OpAMP server listen address |
-| `OPAMP_SHARED_SECRET` | *(empty)* | Optional bearer token required from OpAMP clients in production |
+| `OPAMP_SHARED_SECRET` | *(empty)* | Optional bearer token required from OpAMP clients. Empty allows unauthenticated local/demo connections; set it for production or exposed OpAMP boundaries. |
 | `JWT_SECRET` | *(required)* | Secret key for JWT signing; must be at least 32 characters and not the placeholder value |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `SEED_ADMIN_EMAIL` | *(optional)* | Create admin user on startup |
