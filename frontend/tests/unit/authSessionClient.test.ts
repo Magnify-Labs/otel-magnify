@@ -23,6 +23,15 @@ test('WebSocket connects to same-origin /ws without putting a token in the URL',
   assert.match(websocketSource, /new WebSocket\(`\$\{protocol\}\/\/\$\{window\.location\.host\}\/ws`\)/)
 })
 
+test('WebSocket auth-expiry closes end the SPA session instead of reconnecting with stale cookies', () => {
+  assert.match(websocketSource, /WS_CLOSE_POLICY_VIOLATION\s*=\s*1008/)
+  assert.match(websocketSource, /import \{ endClientSession \} from '\.\/session'/)
+  assert.match(
+    websocketSource,
+    /ws\.onclose = \(event\) => \{[\s\S]*isAuthClose\(event\)[\s\S]*shouldReconnect = false[\s\S]*endClientSession\(\)[\s\S]*window\.location\.href = '\/login'[\s\S]*return[\s\S]*scheduleReconnect\(\)/,
+  )
+})
+
 test('SPA session gates never persist or read bearer tokens from localStorage', () => {
   for (const [label, source] of [
     ['App.tsx', appSource],

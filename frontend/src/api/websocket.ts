@@ -1,5 +1,6 @@
 import { useStore } from '../store'
 import { queryClient } from './queryClient'
+import { endClientSession } from './session'
 import type { QueryKey } from '@tanstack/react-query'
 import type { Workload, Alert, RemoteConfigStatus, WorkloadEvent, EventsStats } from '../types'
 
@@ -11,6 +12,8 @@ let shouldReconnect = false
 const RECONNECT_BASE_MS = 1_000
 const RECONNECT_CAP_MS = 30_000
 const RECONNECT_JITTER_RATIO = 0.2
+const WS_CLOSE_POLICY_VIOLATION = 1008
+const WS_CLOSE_TOKEN_EXPIRED_REASON = 'token expired'
 
 interface TestWindowFlags {
   __OTEL_MAGNIFY_E2E_DISABLE_WS__?: boolean
@@ -218,6 +221,10 @@ function scheduleReconnect() {
   }, nextReconnectDelay())
 }
 
+function isAuthClose(event: CloseEvent) {
+  return event.code === WS_CLOSE_POLICY_VIOLATION && event.reason === WS_CLOSE_TOKEN_EXPIRED_REASON
+}
+
 export function connectWS() {
   if ((window as unknown as TestWindowFlags).__OTEL_MAGNIFY_E2E_DISABLE_WS__) return
   if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return
@@ -235,7 +242,15 @@ export function connectWS() {
     if (message) dispatch(message)
   }
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
+    ws = null
+    if (isAuthClose(event)) {
+      shouldReconnect = false
+      reconnectAttempt = 0
+      endClientSession()
+      window.location.href = '/login'
+      return
+    }
     scheduleReconnect()
   }
 

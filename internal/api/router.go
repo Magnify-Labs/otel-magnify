@@ -72,7 +72,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 
 	r := chi.NewRouter()
 	r.Use(securityHeaders)
-	r.Use(middleware.Logger)
+	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 
 	// CORS middleware
