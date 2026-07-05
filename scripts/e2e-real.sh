@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 
 # Test credentials — fixed so re-runs on the same DB volume are predictable.
 # The volume is wiped by `docker compose down -v` at the end of each run.
-export JWT_SECRET="e2e-real-jwt-secret"
+export JWT_SECRET="e2e-real-jwt-secret-test-only-32b"
 export SEED_ADMIN_EMAIL="admin@e2e.local"
 export SEED_ADMIN_PASSWORD="initialPass!!!12"
 

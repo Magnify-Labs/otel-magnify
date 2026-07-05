@@ -138,13 +138,14 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 func validateJWTSecret(secret string) error {
-	if strings.TrimSpace(secret) == "" {
+	trimmed := strings.TrimSpace(secret)
+	if trimmed == "" {
 		return errors.New("JWT_SECRET environment variable is required")
 	}
-	if secret == "change-me-in-production" {
+	if trimmed == "change-me-in-production" {
 		return errors.New("JWT_SECRET must not use the placeholder value")
 	}
-	if len(secret) < 32 {
+	if len(trimmed) < 32 {
 		return errors.New("JWT_SECRET must be at least 32 characters")
 	}
 	return nil
