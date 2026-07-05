@@ -99,7 +99,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright e2e suite (mocked API, no backend dependency)
-        run: npx playwright test
+        run: npm run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()
