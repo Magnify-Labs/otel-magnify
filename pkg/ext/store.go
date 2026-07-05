@@ -30,6 +30,7 @@ type Store interface {
 	MarkWorkloadDisconnected(id string, retentionUntil time.Time) error
 	ClearWorkloadRetention(id string) error
 	ArchiveExpiredWorkloads(now time.Time) (int64, error)
+	ArchiveWorkload(id string, archivedAt time.Time) error
 	DeleteWorkload(id string) error
 
 	InsertWorkloadEvent(e models.WorkloadEvent) (int64, error)

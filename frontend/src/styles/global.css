@@ -673,6 +673,20 @@ h4 {
   margin-top: 0.75rem;
 }
 
+.notice {
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.notice-muted {
+  border-color: var(--border);
+}
+
 .validation-block {
   margin-top: 0.5rem;
 }

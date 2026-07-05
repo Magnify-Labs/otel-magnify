@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, mockMe } from './fixtures'
 
 test.describe('Inventory instance count', () => {
   test.beforeEach(async ({ loggedInPage: page }) => {
@@ -88,5 +88,108 @@ test.describe('Inventory instance count', () => {
     await expect(page.locator('.workload-card', { hasText: 'otel-collector' }).locator('.badge')).toHaveText(
       'degraded',
     )
+  })
+})
+
+test.describe('Workload archive UX', () => {
+  test('hides archived workloads by default and reveals them on demand', async ({ loggedInPage: page }) => {
+    await page.route('**/api/workloads*', async (route) => {
+      const url = route.request().url()
+      if (!/\/api\/workloads(\?|$)/.test(url) && !url.endsWith('/api/workloads')) {
+        await route.continue()
+        return
+      }
+      const includeArchived = new URL(url).searchParams.get('include_archived') === 'true'
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'w-live',
+            fingerprint_source: 'k8s',
+            fingerprint_keys: {},
+            display_name: 'live-collector',
+            type: 'collector',
+            version: '0.100.0',
+            status: 'connected',
+            last_seen_at: new Date().toISOString(),
+            labels: {},
+            accepts_remote_config: true,
+          },
+          ...(includeArchived
+            ? [
+                {
+                  id: 'w-old',
+                  fingerprint_source: 'k8s',
+                  fingerprint_keys: {},
+                  display_name: 'old-collector',
+                  type: 'collector',
+                  version: '0.99.0',
+                  status: 'disconnected',
+                  last_seen_at: new Date(Date.now() - 86_400_000).toISOString(),
+                  labels: {},
+                  archived_at: new Date().toISOString(),
+                },
+              ]
+            : []),
+        ]),
+      })
+    })
+
+    await page.goto('/inventory')
+    await expect(page.getByText('live-collector')).toBeVisible()
+    await expect(page.getByText('old-collector')).toHaveCount(0)
+
+    await page.getByLabel('Show archived').check()
+
+    await expect(page.getByText('old-collector')).toBeVisible()
+    await expect(page.locator('.agent-archived-pill')).toHaveText('ARCHIVED')
+  })
+
+  test('lets editors archive a disconnected workload from detail', async ({ loggedInPage: page }) => {
+    await mockMe(page, {
+      groups: [
+        {
+          id: 'grp_system_editor',
+          name: 'editor',
+          role: 'editor',
+          is_system: true,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    })
+    await page.route('**/api/workloads/w-old', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'w-old',
+          fingerprint_source: 'k8s',
+          fingerprint_keys: {},
+          display_name: 'old-collector',
+          type: 'collector',
+          version: '0.99.0',
+          status: 'disconnected',
+          last_seen_at: new Date(Date.now() - 86_400_000).toISOString(),
+          labels: {},
+          accepts_remote_config: true,
+        }),
+      })
+    })
+    await page.route('**/api/configs', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    })
+    await page.route('**/api/workloads/w-old/configs', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    })
+    await page.route('**/api/workloads/w-old/archive', async (route) => {
+      await route.fulfill({ status: 204 })
+    })
+
+    page.on('dialog', (dialog) => dialog.accept())
+    await page.goto('/workloads/w-old')
+    await page.getByRole('button', { name: 'Archive workload' }).click()
+
+    await expect(page).toHaveURL(/\/inventory$/)
   })
 })

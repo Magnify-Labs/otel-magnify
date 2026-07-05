@@ -301,6 +301,25 @@ func (d *DB) ArchiveExpiredWorkloads(now time.Time) (int64, error) {
 	return res.RowsAffected()
 }
 
+// ArchiveWorkload hides a workload from the default inventory immediately while
+// keeping its row available for audit/history views. The workload is marked
+// disconnected because an archived workload should not contribute to live fleet
+// health until it reconnects and UpsertWorkload clears archived_at again.
+func (d *DB) ArchiveWorkload(id string, archivedAt time.Time) error {
+	res, err := d.Exec(`UPDATE workloads
+	                    SET status = 'disconnected', retention_until = ?, archived_at = ?
+	                    WHERE id = ?`,
+		archivedAt.UTC(), archivedAt.UTC(), id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // DeleteWorkload permanently removes a workload row.
 func (d *DB) DeleteWorkload(id string) error {
 	_, err := d.Exec(`DELETE FROM workloads WHERE id = ?`, id)

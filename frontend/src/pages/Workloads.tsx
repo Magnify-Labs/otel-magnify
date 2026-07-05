@@ -12,9 +12,10 @@ type ControlFilter = '' | 'supervised' | 'readonly'
 
 export default function Inventory() {
   const { t } = useTranslation()
+  const [includeArchived, setIncludeArchived] = useState(false)
   const { data: workloads, isLoading } = useQuery({
-    queryKey: ['workloads'],
-    queryFn: () => workloadsAPI.list(),
+    queryKey: ['workloads', { includeArchived }],
+    queryFn: () => workloadsAPI.list(includeArchived),
   })
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -67,6 +68,8 @@ export default function Inventory() {
     ? filtered.slice(virtual.startIndex, virtual.endIndex)
     : filtered
 
+  const archivedCount = (workloads ?? []).filter((w) => w.archived_at).length
+
   return (
     <div>
       <header className="page-header">
@@ -112,6 +115,17 @@ export default function Inventory() {
           <option value="supervised">{t('inventory.filter.control.supervised')}</option>
           <option value="readonly">{t('inventory.filter.control.readonly')}</option>
         </select>
+        <label className="filter-check">
+          <input
+            type="checkbox"
+            checked={includeArchived}
+            onChange={(e) => setIncludeArchived(e.target.checked)}
+          />
+          <span>{t('inventory.filter.include_archived')}</span>
+          {includeArchived && archivedCount > 0 && (
+            <span className="filter-check-count">{archivedCount}</span>
+          )}
+        </label>
       </div>
 
       {isLoading ? (

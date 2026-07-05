@@ -1,38 +1,90 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { workloadsAPI } from '../api/client'
 import StatusBadge from '../components/workloads/StatusBadge'
 import WorkloadConfigSection from '../components/workloads/WorkloadConfigSection'
 import InstancesTab from '../components/workloads/InstancesTab'
 import ActivityTab from '../components/workloads/ActivityTab'
 import { isSupervised } from '../lib/workloadCapabilities'
+import { hasPerm } from '../lib/perm'
+import { useStore } from '../store'
 
 type Tab = 'overview' | 'instances' | 'activity'
 
 export default function WorkloadDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const me = useStore((s) => s.me)
   const { data: workload, isLoading } = useQuery({
     queryKey: ['workload', id],
     queryFn: () => workloadsAPI.get(id!),
     enabled: !!id,
+  })
+  const archiveMutation = useMutation({
+    mutationFn: (workloadId: string) => workloadsAPI.archive(workloadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workloads'] })
+      navigate('/inventory')
+    },
   })
   const [tab, setTab] = useState<Tab>('overview')
 
   if (isLoading) return <div className="loading">Loading workload...</div>
   if (!workload) return <div className="error-text">Workload not found.</div>
 
+  const currentWorkload = workload
   const supervised = isSupervised(workload)
   const isCollector = workload.type === 'collector'
+  const canArchive = hasPerm(me?.groups, 'workload:archive')
+  const showArchiveAction =
+    canArchive && !workload.archived_at && workload.status === 'disconnected'
+
+  function archiveWorkload() {
+    if (
+      !window.confirm(
+        t('workloads.archive.confirm', {
+          name: currentWorkload.display_name || currentWorkload.id,
+        }),
+      )
+    ) {
+      return
+    }
+    archiveMutation.mutate(currentWorkload.id)
+  }
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">{workload.display_name || workload.id}</h1>
+        {showArchiveAction && (
+          <button
+            type="button"
+            className="btn btn-danger btn-small"
+            onClick={archiveWorkload}
+            disabled={archiveMutation.isPending}
+          >
+            {archiveMutation.isPending
+              ? t('workloads.archive.in_flight')
+              : t('workloads.archive.button')}
+          </button>
+        )}
         <Link to="/inventory" className="page-header-backlink">
           ← Inventory
         </Link>
       </div>
+
+      {workload.archived_at && (
+        <div className="notice notice-muted">
+          {t('workloads.archive.notice', {
+            date: new Date(workload.archived_at).toLocaleString(),
+          })}
+        </div>
+      )}
+      {archiveMutation.isError && <div className="error-text">{t('workloads.archive.error')}</div>}
 
       <nav className="workload-tab-bar">
         <button
