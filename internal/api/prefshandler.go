@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
@@ -23,8 +22,7 @@ func (a *API) handlePutPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req putPrefsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON")
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if !validThemes[req.Theme] {
