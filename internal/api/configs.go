@@ -15,6 +15,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/configpolicy"
 	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
+	"github.com/magnify-labs/otel-magnify/internal/perm"
 	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
@@ -105,6 +106,9 @@ func (a *API) handleListConfigs(w http.ResponseWriter, r *http.Request) {
 		if configMatchesLibraryFilters(cfg, kind, category, stack) {
 			configs = append(configs, cfg)
 		}
+	}
+	if !requestHasPerm(r, perm.ReadConfigContent) {
+		redactConfigContent(configs)
 	}
 	respondJSON(w, 200, configs)
 }
@@ -208,6 +212,12 @@ func (a *API) handlePreviewConfigPolicy(w http.ResponseWriter, r *http.Request) 
 		Settings:      req.Settings,
 	})
 	respondJSON(w, 200, result)
+}
+
+func redactConfigContent(configs []models.Config) {
+	for i := range configs {
+		configs[i].Content = ""
+	}
 }
 
 func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {

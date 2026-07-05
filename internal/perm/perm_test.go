@@ -12,10 +12,12 @@ func TestHas_MatrixPerRole(t *testing.T) {
 		perm Permission
 		want bool
 	}{
+		{"viewer", ReadConfigContent, false},
 		{"viewer", PushConfig, false},
 		{"viewer", ViewAudit, false},
 		{"viewer", DeleteWorkload, false},
 		{"viewer", ManageUsers, false},
+		{"editor", ReadConfigContent, true},
 		{"editor", PushConfig, true},
 		{"editor", ValidateConfig, true},
 		{"editor", CreateConfigTpl, true},
@@ -24,6 +26,7 @@ func TestHas_MatrixPerRole(t *testing.T) {
 		{"editor", DeleteWorkload, false},
 		{"editor", ViewAudit, false},
 		{"editor", ManageUsers, false},
+		{"administrator", ReadConfigContent, true},
 		{"administrator", PushConfig, true},
 		{"administrator", ViewAudit, true},
 		{"administrator", DeleteWorkload, true},

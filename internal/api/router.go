@@ -146,7 +146,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.Get("/api/workloads/{id}/configs", api.handleGetWorkloadConfigHistory)
 		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/rollback/prepare", api.handlePrepareRollback)
 		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/rollback/status", api.handleRollbackStatus)
-		r.Get("/api/workloads/{id}/configs/{hash}", api.handleGetWorkloadConfigByHash)
+		r.With(api.RequirePerm(perm.ReadConfigContent)).Get("/api/workloads/{id}/configs/{hash}", api.handleGetWorkloadConfigByHash)
 		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/known-good", api.handleGetWorkloadKnownGood)
 		r.With(api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/label", api.handleSetWorkloadConfigLabel)
 		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/configs/{hash}/known-good", api.handleMarkWorkloadConfigKnownGood)
@@ -170,7 +170,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.With(api.RequireFeature(FeatureConfigSafetyGitOpsExport), api.RequirePerm(perm.CreateConfigTpl)).Post("/api/configs/import/git", api.handleImportConfigFromGit)
 		r.With(api.RequireFeature(FeatureConfigSafetyGitOpsExport), api.RequirePerm(perm.PushConfig)).Post("/api/configs/{id}/export/git", api.handleExportConfigToGit)
 		r.With(api.RequireFeature(FeatureConfigSafetyPolicyPreview), api.RequirePerm(perm.ValidateConfig)).Post("/api/configs/policy/preview", api.handlePreviewConfigPolicy)
-		r.Get("/api/configs/{id}", api.handleGetConfig)
+		r.With(api.RequirePerm(perm.ReadConfigContent)).Get("/api/configs/{id}", api.handleGetConfig)
 
 		r.Get("/api/alerts", api.handleListAlerts)
 		r.With(api.RequirePerm(perm.ResolveAlert)).Post("/api/alerts/{id}/resolve", api.handleResolveAlert)
