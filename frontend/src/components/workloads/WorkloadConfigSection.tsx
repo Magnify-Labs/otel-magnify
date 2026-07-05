@@ -472,7 +472,7 @@ function ReadOnlyGitComparison({
         </div>
       </div>
       <ConfigProvenanceCard config={config} />
-      <ConfigDiffView oldYaml={config.content} newYaml={config.content} />
+      <ConfigDiffView oldYaml={config.content ?? ''} newYaml={config.content ?? ''} />
     </section>
   )
 }
@@ -1174,7 +1174,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const loadConfigMutation = useMutation({
     mutationFn: (configId: string) => configsAPI.get(configId),
     onSuccess: (cfg) => {
-      enterEditMode(cfg.content, workload.active_config_id ? 'diff' : 'edit')
+      enterEditMode(cfg.content ?? '', workload.active_config_id ? 'diff' : 'edit')
       setImportedGitConfig(isGitConfig(cfg) ? cfg : null)
       setSelectedConfigId('')
     },
@@ -1195,7 +1195,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const gitImportMutation = useMutation({
     mutationFn: () => configsAPI.importFromGit(gitImportForm),
     onSuccess: ({ config: imported, validation: importValidation }) => {
-      enterEditMode(imported.content, workload.active_config_id ? 'diff' : 'edit')
+      enterEditMode(imported.content ?? '', workload.active_config_id ? 'diff' : 'edit')
       setImportedGitConfig(imported)
       setValidation(importValidation)
       setGitImportOpen(false)

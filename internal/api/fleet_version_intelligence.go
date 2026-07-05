@@ -206,23 +206,15 @@ func (a *API) unsupportedComponentsForWorkload(wl models.Workload) []models.Flee
 }
 
 func (a *API) targetConfigForWorkload(wl models.Workload) *models.WorkloadConfig {
-	history, err := a.db.GetWorkloadConfigHistory(wl.ID)
-	if err != nil {
-		return nil
-	}
-	var target *models.WorkloadConfig
-	for i := range history {
-		if history[i].Content == "" {
-			continue
-		}
-		if history[i].ConfigID == wl.ActiveConfigHash || target == nil && history[i].Status == "applied" {
-			target = &history[i]
-			if history[i].ConfigID == wl.ActiveConfigHash {
-				break
-			}
+	if wl.ActiveConfigHash != "" {
+		if wc, err := a.db.GetWorkloadConfigByHash(wl.ID, wl.ActiveConfigHash); err == nil && wc != nil && wc.Content != "" {
+			return wc
 		}
 	}
-	return target
+	if wc, err := a.db.GetLastAppliedWorkloadConfig(wl.ID); err == nil && wc != nil && wc.Content != "" {
+		return wc
+	}
+	return nil
 }
 
 func (a *API) compatibilityEntryForWorkload(wl models.Workload, group, versionStatus string, unsupported []models.FleetUnsupportedComponentFinding) models.FleetCompatibilityMatrixEntry {

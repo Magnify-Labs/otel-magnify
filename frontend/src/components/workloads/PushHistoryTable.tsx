@@ -93,6 +93,11 @@ export default function PushHistoryTable({ workloadId }: Props) {
   const activeKnownGoodHash =
     knownGood?.config_id ?? history.find((row) => row.is_last_known_good)?.config_id
 
+  const viewingQuery = useQuery({
+    queryKey: ['workload-config-by-hash', workloadId, viewing?.config_id],
+    queryFn: () => workloadsAPI.getConfigByHash(workloadId, viewing!.config_id),
+    enabled: canReadConfigContent && !!viewing,
+  })
   const labelMutation = useMutation({
     mutationFn: ({ hash, label }: { hash: string; label: string }) =>
       workloadsAPI.setConfigLabel(workloadId, hash, label),
@@ -146,7 +151,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
 
   if (history.length === 0) return null
 
-  const hasReadableContent = canReadConfigContent && history.some((row) => Boolean(row.content))
+  const hasReadableContent = canReadConfigContent && history.some((row) => hasContent(row))
 
   // Each (config_id, applied_at) pair is unique in history; the same hash
   // can appear multiple times (push then rollback). The label edit applies
@@ -296,12 +301,12 @@ export default function PushHistoryTable({ workloadId }: Props) {
                 </td>
                 <td className="history-error">{row.error_message || ''}</td>
                 <td>
-                  {canReadConfigContent && row.content && (
+                  {canReadConfigContent && hasContent(row) && (
                     <button className="btn btn-small" onClick={() => setViewing(row)}>
                       {t('workloads.config.versioning.view_button')}
                     </button>
                   )}
-                  {canReadConfigContent && row.content && (
+                  {canReadConfigContent && hasContent(row) && (
                     <button
                       className="btn btn-small"
                       onClick={() => setRollbackTarget(row)}
@@ -361,7 +366,13 @@ export default function PushHistoryTable({ workloadId }: Props) {
                 {t('workloads.config.versioning.close_button')}
               </button>
             </div>
-            <YamlEditor value={viewing.content ?? ''} readOnly />
+            {viewingQuery.isLoading ? (
+              <div className="loading">{t('workloads.config.versioning.compare_loading')}</div>
+            ) : viewingQuery.isError ? (
+              <div className="error-text">{t('workloads.config.versioning.compare_error')}</div>
+            ) : (
+              <YamlEditor value={viewingQuery.data?.content ?? ''} readOnly />
+            )}
           </div>
         </div>
       )}

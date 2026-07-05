@@ -22,7 +22,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/configpolicy"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
-	"github.com/magnify-labs/otel-magnify/internal/perm"
+
 	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
@@ -691,16 +691,13 @@ func (a *API) handleGetWorkloadConfigHistory(w http.ResponseWriter, r *http.Requ
 		respondError(w, 500, "failed to get config history")
 		return
 	}
-	if !requestHasPerm(r, perm.ReadConfigContent) {
-		redactWorkloadConfigContent(history)
-	}
+	redactWorkloadConfigContent(history)
 	respondJSON(w, 200, history)
 }
 
 func redactWorkloadConfigContent(history []models.WorkloadConfig) {
 	for i := range history {
 		history[i].Content = ""
-		history[i].ContentAvailable = false
 	}
 }
 

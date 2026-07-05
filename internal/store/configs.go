@@ -57,10 +57,11 @@ func (d *DB) GetConfig(id string) (models.Config, error) {
 	return c, nil
 }
 
-// ListConfigs returns all saved config library rows ordered by created_at desc.
+// ListConfigs returns saved config library metadata ordered by created_at desc.
+// Use GetConfig when the YAML content is explicitly needed.
 func (d *DB) ListConfigs() ([]models.Config, error) {
 	rows, err := d.Query(`
-		SELECT id, name, content, created_at, created_by,
+		SELECT id, name, '' AS content, created_at, created_by,
 		       COALESCE(kind, 'saved'), COALESCE(status, 'ready'), COALESCE(category, ''), COALESCE(stack, ''), COALESCE(description, ''),
 		       COALESCE(variables, '[]'), COALESCE(tags, '[]'), COALESCE(source_type, 'manual'),
 		       git_url, git_provider, git_ref, git_path, commit_sha, imported_at

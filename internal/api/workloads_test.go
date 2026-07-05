@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -1485,7 +1486,7 @@ func TestGetWorkloadConfigHistory(t *testing.T) {
 	}
 	var hist []models.WorkloadConfig
 	_ = json.Unmarshal(rec.Body.Bytes(), &hist)
-	if len(hist) != 1 || hist[0].ErrorMessage != models.SanitizeRemoteConfigErrorMessage("oops") || hist[0].Content != "my-yaml" || hist[0].PushedBy != "u@x" {
+	if len(hist) != 1 || hist[0].ErrorMessage != models.SanitizeRemoteConfigErrorMessage("oops") || hist[0].Content != "" || hist[0].PushedBy != "u@x" {
 		t.Fatalf("history shape: %+v", hist)
 	}
 }
@@ -1969,6 +1970,32 @@ service:
 func ptrString(v string) *string { return &v }
 
 func ptrTime(v time.Time) *time.Time { return &v }
+
+func TestGetWorkloadConfigHistoryOmitsYAMLContent(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	content := "receivers:\n  otlp:\n    protocols:\n      grpc: {}"
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}})
+	_ = db.CreateConfig(models.Config{ID: "c1", Name: "n", Content: content, CreatedAt: time.Now().UTC()})
+	_ = db.RecordWorkloadConfig(models.WorkloadConfig{WorkloadID: "w1", ConfigID: "c1", Status: "failed", ErrorMessage: "oops", PushedBy: "u@x"})
+
+	req := authedRequest(t, "GET", "/api/workloads/w1/configs")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte(content)) || bytes.Contains(rec.Body.Bytes(), []byte(`"content"`)) {
+		t.Fatalf("history payload leaked config content: %s", rec.Body.String())
+	}
+
+	var hist []models.WorkloadConfig
+	if err := json.Unmarshal(rec.Body.Bytes(), &hist); err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) != 1 || hist[0].ErrorMessage != models.SanitizeRemoteConfigErrorMessage("oops") || hist[0].PushedBy != "u@x" || hist[0].ConfigID != "c1" {
+		t.Fatalf("history metadata shape: %+v", hist)
+	}
+}
 
 // --- Delete ---
 
