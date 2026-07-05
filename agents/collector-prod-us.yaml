@@ -8,6 +8,9 @@ extensions:
     server:
       ws:
         endpoint: ws://otel-magnify:4320/v1/opamp
+        # For servers started with OPAMP_SHARED_SECRET, uncomment:
+        # headers:
+        #   Authorization: "Bearer ${env:OPAMP_SHARED_SECRET}"
         tls:
           insecure: true
 
