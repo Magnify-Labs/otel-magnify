@@ -73,7 +73,7 @@ test.beforeAll(async () => {
   proc = spawn(EE_BINARY, [], {
     env: {
       ...process.env,
-      JWT_SECRET: 'e2e-real-sso-secret',
+      JWT_SECRET: 'e2e-real-sso-secret-test-only-32b',
       SEED_ADMIN_EMAIL: 'admin@e2e-sso.local',
       SEED_ADMIN_PASSWORD: 'admin12345',
       DB_DRIVER: 'sqlite',

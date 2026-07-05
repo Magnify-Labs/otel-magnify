@@ -73,6 +73,21 @@ func TestRun_RejectsWeakJWTSecretsBeforeOpeningDatabase(t *testing.T) {
 			secret:    "short-secret",
 			wantError: "JWT_SECRET must be at least 32 characters",
 		},
+		{
+			name:      "whitespace_only",
+			secret:    "    	\n",
+			wantError: "JWT_SECRET environment variable is required",
+		},
+		{
+			name:      "padded_placeholder",
+			secret:    "  change-me-in-production          ",
+			wantError: "JWT_SECRET must not use the placeholder value",
+		},
+		{
+			name:      "padded_too_short",
+			secret:    "short-secret                         ",
+			wantError: "JWT_SECRET must be at least 32 characters",
+		},
 	}
 
 	for _, tt := range tests {
