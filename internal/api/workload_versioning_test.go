@@ -183,7 +183,8 @@ func TestGetWorkloadConfigByHash_HappyPath(t *testing.T) {
 
 func TestGetWorkloadConfigHistory_RedactsContentForViewer(t *testing.T) {
 	db, router, _, _ := newAuditTestAPI(t)
-	seedHistory(t, db, "w1", "hash-a", "secret-yaml")
+	const content = "receivers:\n  otlp: {}\nexporters:\n  logging: {}\n"
+	seedHistory(t, db, "w1", "hash-a", content)
 	_ = db.SetWorkloadConfigLabel("w1", "hash-a", "blessed")
 
 	req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/configs", "", []string{"viewer"})
@@ -209,11 +210,45 @@ func TestGetWorkloadConfigHistory_RedactsContentForViewer(t *testing.T) {
 	if history[0].ConfigID != "hash-a" || history[0].Label == nil || *history[0].Label != "blessed" {
 		t.Fatalf("metadata was not preserved: %+v", history[0])
 	}
+	assertResponseDoesNotContainConfigYAML(t, rec.Body.String())
+}
+
+func TestGetWorkloadConfigHistory_OperatorsAndAdminsRetainContentAccess(t *testing.T) {
+	for _, role := range []string{"editor", "administrator"} {
+		t.Run(role, func(t *testing.T) {
+			db, router, _, _ := newAuditTestAPI(t)
+			const content = "receivers:\n  otlp: {}\nexporters:\n  logging: {}\n"
+			seedHistory(t, db, "w1", "hash-a", content)
+			_ = db.SetWorkloadConfigLabel("w1", "hash-a", "blessed")
+
+			req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/configs", "", []string{role})
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+			}
+			var history []models.WorkloadConfig
+			if err := json.Unmarshal(rec.Body.Bytes(), &history); err != nil {
+				t.Fatal(err)
+			}
+			if len(history) != 1 {
+				t.Fatalf("len = %d, want 1", len(history))
+			}
+			if history[0].Content != content || !history[0].ContentAvailable {
+				t.Fatalf("history content = %q available=%v, want unredacted available content", history[0].Content, history[0].ContentAvailable)
+			}
+			if history[0].ConfigID != "hash-a" || history[0].Label == nil || *history[0].Label != "blessed" {
+				t.Fatalf("metadata was not preserved: %+v", history[0])
+			}
+		})
+	}
 }
 
 func TestGetWorkloadConfigByHash_403ForViewer(t *testing.T) {
 	db, router, _, _ := newAuditTestAPI(t)
-	seedHistory(t, db, "w1", "hash-a", "secret-yaml")
+	const content = "receivers:\n  otlp: {}\nexporters:\n  logging: {}\n"
+	seedHistory(t, db, "w1", "hash-a", content)
 
 	req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/configs/hash-a", "", []string{"viewer"})
 	rec := httptest.NewRecorder()
@@ -221,6 +256,32 @@ func TestGetWorkloadConfigByHash_403ForViewer(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	assertResponseDoesNotContainConfigYAML(t, rec.Body.String())
+}
+
+func TestGetWorkloadConfigByHash_OperatorsAndAdminsRetainContentAccess(t *testing.T) {
+	for _, role := range []string{"editor", "administrator"} {
+		t.Run(role, func(t *testing.T) {
+			db, router, _, _ := newAuditTestAPI(t)
+			const content = "receivers:\n  otlp: {}\nexporters:\n  logging: {}\n"
+			seedHistory(t, db, "w1", "hash-a", content)
+
+			req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/configs/hash-a", "", []string{role})
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+			}
+			var wc models.WorkloadConfig
+			if err := json.Unmarshal(rec.Body.Bytes(), &wc); err != nil {
+				t.Fatal(err)
+			}
+			if wc.Content != content {
+				t.Fatalf("content = %q, want unredacted config content", wc.Content)
+			}
+		})
 	}
 }
 

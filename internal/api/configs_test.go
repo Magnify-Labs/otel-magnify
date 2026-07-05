@@ -521,10 +521,21 @@ func assertPolicyAPIFinding(t *testing.T, resp models.ConfigPolicyEvaluation, ru
 
 func TestListConfigs_RedactsContentForViewer(t *testing.T) {
 	db, router, _ := newTestAPI(t)
+	const content = `receivers:
+  otlp: {}
+exporters:
+  otlphttp:
+    headers:
+      api-key: ***
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp]`
 	if err := db.CreateConfig(models.Config{
 		ID:        "hash-a",
 		Name:      "collector-base",
-		Content:   "exporters:\n  otlphttp:\n    headers:\n      api-key: secret",
+		Content:   content,
 		CreatedAt: time.Now().UTC(),
 		CreatedBy: "admin@test.com",
 	}); err != nil {
@@ -538,6 +549,7 @@ func TestListConfigs_RedactsContentForViewer(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
+	assertResponseDoesNotContainConfigYAML(t, rec.Body.String())
 	var configs []models.Config
 	if err := json.NewDecoder(rec.Body).Decode(&configs); err != nil {
 		t.Fatal(err)
@@ -559,12 +571,51 @@ func TestListConfigs_RedactsContentForViewer(t *testing.T) {
 	}
 }
 
+func TestListConfigs_OperatorsAndAdminsRetainContentAccess(t *testing.T) {
+	for _, role := range []string{"editor", "administrator"} {
+		t.Run(role, func(t *testing.T) {
+			db, router, _ := newTestAPI(t)
+			const content = "receivers:\n  otlp: {}\nexporters:\n  otlphttp:\n    endpoint: https://example.invalid:4318"
+			if err := db.CreateConfig(models.Config{
+				ID:        "hash-a",
+				Name:      "collector-base",
+				Content:   content,
+				CreatedAt: time.Now().UTC(),
+				CreatedBy: "admin@test.com",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			req := authedJSONRequest(t, http.MethodGet, "/api/configs", "", []string{role})
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			var configs []models.Config
+			if err := json.NewDecoder(rec.Body).Decode(&configs); err != nil {
+				t.Fatal(err)
+			}
+			for _, cfg := range configs {
+				if cfg.ID == "hash-a" {
+					if cfg.Content != content {
+						t.Fatalf("Content = %q, want unredacted config content", cfg.Content)
+					}
+					return
+				}
+			}
+			t.Fatalf("created config not listed: %+v", configs)
+		})
+	}
+}
+
 func TestGetConfig_403ForViewer(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	if err := db.CreateConfig(models.Config{
 		ID:        "hash-a",
 		Name:      "collector-base",
-		Content:   "secret-yaml",
+		Content:   "receivers:\n  otlp: {}\nexporters:\n  otlphttp: {}",
 		CreatedAt: time.Now().UTC(),
 		CreatedBy: "admin@test.com",
 	}); err != nil {
@@ -577,6 +628,49 @@ func TestGetConfig_403ForViewer(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	assertResponseDoesNotContainConfigYAML(t, rec.Body.String())
+}
+
+func TestGetConfig_OperatorsAndAdminsRetainContentAccess(t *testing.T) {
+	for _, role := range []string{"editor", "administrator"} {
+		t.Run(role, func(t *testing.T) {
+			db, router, _ := newTestAPI(t)
+			const content = "receivers:\n  otlp: {}\nexporters:\n  otlphttp: {}"
+			if err := db.CreateConfig(models.Config{
+				ID:        "hash-a",
+				Name:      "collector-base",
+				Content:   content,
+				CreatedAt: time.Now().UTC(),
+				CreatedBy: "admin@test.com",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			req := authedJSONRequest(t, http.MethodGet, "/api/configs/hash-a", "", []string{role})
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			var cfg models.Config
+			if err := json.NewDecoder(rec.Body).Decode(&cfg); err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Content != content {
+				t.Fatalf("Content = %q, want unredacted config content", cfg.Content)
+			}
+		})
+	}
+}
+
+func assertResponseDoesNotContainConfigYAML(t *testing.T, body string) {
+	t.Helper()
+	for _, forbidden := range []string{"receivers:", "exporters:", "service:", "otlphttp", "TEST_API_KEY"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("response leaked config marker %q: %s", forbidden, body)
+		}
 	}
 }
 
