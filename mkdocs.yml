@@ -81,5 +81,6 @@ nav:
       - OpAMP: api/opamp.md
   - Reference:
       - Environment variables: reference/environment.md
+      - P1 remediation gate: reference/p1-remediation-gate.md
       - Glossary: reference/glossary.md
       - Changelog: reference/changelog.md
