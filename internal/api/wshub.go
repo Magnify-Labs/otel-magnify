@@ -4,21 +4,22 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
-var upgrader = websocket.Upgrader{
-	// Allow all origins — restrict in production via a proper CheckOrigin
-	CheckOrigin: func(_ *http.Request) bool { return true },
-}
-
 type wsClient struct {
-	conn *websocket.Conn
-	send chan []byte
+	conn      *websocket.Conn
+	send      chan []byte
+	expiresAt time.Time
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Hub manages WebSocket clients and fans out broadcast messages to all of them.
@@ -163,21 +164,86 @@ func (h *Hub) BroadcastAlertUpdate(alert models.Alert) {
 }
 
 // HandleWS upgrades an HTTP connection to WebSocket and registers the client.
-func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
+func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request, allowedOrigins []string, expiresAt time.Time) {
+	upgrader := websocket.Upgrader{CheckOrigin: checkWebSocketOrigin(allowedOrigins)}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("ws upgrade: %v", err)
 		return
 	}
 
-	client := &wsClient{
-		conn: conn,
-		send: make(chan []byte, 256),
-	}
+	client := &wsClient{conn: conn, send: make(chan []byte, 256), expiresAt: expiresAt, done: make(chan struct{})}
 	h.register <- client
 
 	go client.writePump()
 	go client.readPump(h)
+	go client.expirationPump()
+}
+
+func parseAllowedOrigins(corsOrigins string) []string {
+	allowedOrigins := []string{"http://localhost:5173"}
+	if corsOrigins != "" {
+		allowedOrigins = strings.Split(corsOrigins, ",")
+	}
+	for i := range allowedOrigins {
+		allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+	}
+	return allowedOrigins
+}
+
+func checkWebSocketOrigin(allowedOrigins []string) func(*http.Request) bool {
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+
+		originURL, err := url.Parse(origin)
+		if err != nil || !isValidOriginHeaderURL(originURL) {
+			return false
+		}
+		if isSameHostOrigin(r, originURL) {
+			return true
+		}
+		originValue := strings.ToLower(originURL.Scheme + "://" + originURL.Host)
+
+		for _, allowed := range allowedOrigins {
+			allowed = strings.ToLower(allowed)
+			if allowed == "" {
+				continue
+			}
+			if allowed == "*" {
+				return true
+			}
+			if strings.Count(allowed, "*") == 1 {
+				parts := strings.SplitN(allowed, "*", 2)
+				if strings.HasPrefix(originValue, parts[0]) && strings.HasSuffix(originValue, parts[1]) {
+					return true
+				}
+				continue
+			}
+			allowedURL, err := url.Parse(allowed)
+			if err != nil || allowedURL.Scheme == "" || allowedURL.Host == "" {
+				continue
+			}
+			if strings.EqualFold(originURL.Scheme, allowedURL.Scheme) && strings.EqualFold(originURL.Host, allowedURL.Host) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func isValidOriginHeaderURL(originURL *url.URL) bool {
+	return originURL.Scheme != "" && originURL.Host != "" && originURL.User == nil && originURL.Path == "" && originURL.RawQuery == "" && originURL.Fragment == ""
+}
+
+func isSameHostOrigin(r *http.Request, originURL *url.URL) bool {
+	expectedScheme := "http"
+	if r.TLS != nil {
+		expectedScheme = "https"
+	}
+	return strings.EqualFold(originURL.Scheme, expectedScheme) && strings.EqualFold(originURL.Host, r.Host)
 }
 
 // writePump drains the send channel and writes messages to the WebSocket.
@@ -191,10 +257,39 @@ func (c *wsClient) writePump() {
 	}
 }
 
+func (c *wsClient) expirationPump() {
+	if c.expiresAt.IsZero() {
+		return
+	}
+	wait := time.Until(c.expiresAt)
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-c.done:
+			return
+		}
+	}
+	deadline := time.Now().Add(time.Second)
+	//nolint:errcheck // best-effort close frame before forcing the expired connection down
+	c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "token expired"), deadline)
+	//nolint:errcheck,gosec // token lifetime is over; force teardown regardless of close-frame success
+	c.conn.Close()
+}
+
+func (c *wsClient) closeDone() {
+	if c.done == nil {
+		return
+	}
+	c.closeOnce.Do(func() { close(c.done) })
+}
+
 // readPump consumes incoming frames so the connection stays healthy and triggers
 // unregistration when the client disconnects.
 func (c *wsClient) readPump(h *Hub) {
 	defer func() {
+		c.closeDone()
 		h.unregister <- c
 		//nolint:errcheck,gosec // deferred cleanup; connection is being torn down regardless
 		c.conn.Close()
