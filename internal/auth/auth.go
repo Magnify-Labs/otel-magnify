@@ -28,6 +28,11 @@ type Auth struct {
 	secret []byte
 }
 
+// SessionCookieName is the browser session cookie used by the SPA. The cookie
+// stores the same signed JWT returned in the login response, but marks it
+// HttpOnly so application JavaScript does not need to persist or read it.
+const SessionCookieName = "om_session"
+
 // New creates an Auth instance. The secret must be at least 32 bytes for
 // adequate HMAC-SHA256 security.
 func New(secret string) *Auth { return &Auth{secret: []byte(secret)} }
@@ -101,17 +106,34 @@ func legacyRoleToGroupName(role string) string {
 	return role
 }
 
+// RequestToken extracts the authenticated token from a request. Bearer headers
+// keep precedence for API compatibility; the HttpOnly session cookie is the
+// browser-friendly fallback used by the SPA.
+func RequestToken(r *http.Request) (string, bool) {
+	header := r.Header.Get("Authorization")
+	if strings.HasPrefix(header, "Bearer ") {
+		token := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+		if token != "" {
+			return token, true
+		}
+	}
+	cookie, err := r.Cookie(SessionCookieName)
+	if err == nil && strings.TrimSpace(cookie.Value) != "" {
+		return cookie.Value, true
+	}
+	return "", false
+}
+
 // Middleware returns an HTTP handler that enforces Bearer token authentication.
 // On success it stores the validated UserInfo in the request context so downstream
 // handlers can retrieve it via ext.UserInfoFromContext.
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := r.Header.Get("Authorization")
-		if header == "" || !strings.HasPrefix(header, "Bearer ") {
+		tokenStr, ok := RequestToken(r)
+		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		tokenStr := strings.TrimPrefix(header, "Bearer ")
 		info, err := a.ValidateToken(tokenStr)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)

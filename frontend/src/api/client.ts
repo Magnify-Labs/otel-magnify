@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { endClientSession } from './session'
+import { endClientSession } from './session.ts'
 import type {
   APIErrorDetails,
   APIErrorResponse,
@@ -73,7 +73,7 @@ export type AuthMethod = {
   login_url: string
 }
 
-const api = axios.create({ baseURL: '/api' })
+const api = axios.create({ baseURL: '/api', withCredentials: true })
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -103,14 +103,6 @@ export function getAPIErrorDetails(err: unknown, fallback = 'Request failed'): A
   }
   return { message: fallback }
 }
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
 
 api.interceptors.response.use(
   (res) => res,
@@ -484,6 +476,7 @@ export const reportsAPI = {
 export const authAPI = {
   login: (email: string, password: string) =>
     api.post<{ token: string }>('/auth/login', { email, password }).then((r) => r.data),
+  logout: () => api.post('/auth/logout'),
   getMethods: () => api.get<{ methods: AuthMethod[] }>('/auth/methods').then((r) => r.data.methods),
 }
 

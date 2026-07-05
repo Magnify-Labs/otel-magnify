@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
 import { connectWS, disconnectWS } from './api/websocket'
 import { meAPI } from './api/client'
@@ -8,20 +8,38 @@ import { useTheme } from './hooks/useTheme'
 export default function RootLayout() {
   useTheme()
   const setMe = useStore((s) => s.setMe)
+  const setSessionChecked = useStore((s) => s.setSessionChecked)
+  const location = useLocation()
 
   useEffect(() => {
-    connectWS()
-    // Skip the boot-time hydration when there is no token: RootLayout mounts on
-    // /login too, and a 401 here would trip the axios interceptor into a
-    // window.location = '/login' reload loop.
-    if (localStorage.getItem('token')) {
-      meAPI
-        .get()
-        .then(setMe)
-        .catch(() => {})
+    let cancelled = false
+    disconnectWS()
+    if (location.pathname === '/login') {
+      setSessionChecked(true)
+      return () => {
+        cancelled = true
+        disconnectWS()
+      }
     }
-    return () => disconnectWS()
-  }, [setMe])
+
+    setSessionChecked(false)
+    meAPI
+      .get()
+      .then((me) => {
+        if (cancelled) return
+        setMe(me)
+        connectWS()
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setSessionChecked(true)
+      })
+
+    return () => {
+      cancelled = true
+      disconnectWS()
+    }
+  }, [location.pathname, setMe, setSessionChecked])
 
   return <Outlet />
 }

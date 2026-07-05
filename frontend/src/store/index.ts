@@ -8,6 +8,7 @@ interface AppState {
   driftedInstanceCounts: Record<string, number | undefined>
 
   me: MeResponse | null
+  sessionChecked: boolean
 
   setConfigStatus: (workloadId: string, status: RemoteConfigStatus) => void
   setAutoRollback: (ev: AutoRollbackEvent) => void
@@ -16,6 +17,7 @@ interface AppState {
   setInstanceCounts: (workloadId: string, connected: number, drifted: number) => void
 
   setMe: (me: MeResponse | null) => void
+  setSessionChecked: (checked: boolean) => void
   updateMyPreferences: (prefs: UserPreferences) => void
 }
 
@@ -26,6 +28,7 @@ export const useStore = create<AppState>((set) => ({
   driftedInstanceCounts: {},
 
   me: null,
+  sessionChecked: false,
 
   setConfigStatus: (workloadId, status) =>
     set((state) => ({ configStatus: { ...state.configStatus, [workloadId]: status } })),
@@ -45,6 +48,7 @@ export const useStore = create<AppState>((set) => ({
     })),
 
   setMe: (me) => set({ me }),
+  setSessionChecked: (checked) => set({ sessionChecked: checked }),
   updateMyPreferences: (prefs) =>
     set((state) => (state.me ? { me: { ...state.me, preferences: prefs } } : {})),
 }))

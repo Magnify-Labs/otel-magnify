@@ -1,5 +1,5 @@
-import { queryClient } from './queryClient'
-import { useStore } from '../store'
+import { queryClient } from './queryClient.ts'
+import { useStore } from '../store/index.ts'
 
 export function clearClientSessionState() {
   queryClient.clear()
@@ -7,11 +7,16 @@ export function clearClientSessionState() {
 }
 
 export function endClientSession() {
+  void fetch('/api/auth/logout', {
+    method: 'POST',
+    credentials: 'same-origin',
+    keepalive: true,
+  }).catch(() => {})
   localStorage.removeItem('token')
   clearClientSessionState()
 }
 
-export function startClientSession(token: string) {
+export function startClientSession() {
   clearClientSessionState()
-  localStorage.setItem('token', token)
+  localStorage.removeItem('token')
 }

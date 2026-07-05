@@ -45,8 +45,8 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      const { token } = await authAPI.login(email, password)
-      startClientSession(token)
+      await authAPI.login(email, password)
+      startClientSession()
       // AppShell's boot effect already ran with no token; hydrate `me` here
       // so the SPA navigate to '/' lands on a screen with the user available.
       const me = await meAPI.get()

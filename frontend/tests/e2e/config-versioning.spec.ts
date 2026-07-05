@@ -351,7 +351,6 @@ async function gotoWorkloadDetail(
     ],
   })
   await page.goto('/login', { waitUntil: 'domcontentloaded' })
-  await page.evaluate(() => localStorage.setItem('token', 'test.token.stub'))
   await page.goto(`/workloads/${WORKLOAD_ID}`)
 }
 
