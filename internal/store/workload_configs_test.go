@@ -60,8 +60,8 @@ func TestRecordWorkloadConfig_WithPushedByAndError(t *testing.T) {
 	if len(hist) != 1 || hist[0].PushedBy != "admin@magnify.dev" {
 		t.Fatalf("unexpected history: %+v", hist)
 	}
-	if hist[0].Content != "receivers: {}" {
-		t.Fatalf("expected JOINed content, got %q", hist[0].Content)
+	if hist[0].Content != "" {
+		t.Fatalf("expected metadata-only history, got content %q", hist[0].Content)
 	}
 }
 

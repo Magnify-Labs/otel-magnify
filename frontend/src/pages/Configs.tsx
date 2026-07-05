@@ -93,7 +93,7 @@ export default function Configs() {
 
   const applyTemplate = (template: NormalizedConfig) => {
     setName(`${t('configs.form.draft_from')} ${template.name}`)
-    setContent(template.content)
+    setContent(template.content ?? '')
     setSelectedTemplateId(template.id)
     setShowForm(true)
   }

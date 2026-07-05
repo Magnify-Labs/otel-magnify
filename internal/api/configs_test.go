@@ -571,7 +571,7 @@ service:
 	}
 }
 
-func TestListConfigs_OperatorsAndAdminsRetainContentAccess(t *testing.T) {
+func TestListConfigs_OperatorsAndAdminsReceiveMetadataOnly(t *testing.T) {
 	for _, role := range []string{"editor", "administrator"} {
 		t.Run(role, func(t *testing.T) {
 			db, router, _ := newTestAPI(t)
@@ -599,8 +599,19 @@ func TestListConfigs_OperatorsAndAdminsRetainContentAccess(t *testing.T) {
 			}
 			for _, cfg := range configs {
 				if cfg.ID == "hash-a" {
-					if cfg.Content != content {
-						t.Fatalf("Content = %q, want unredacted config content", cfg.Content)
+					if cfg.Content != "" {
+						t.Fatalf("Content = %q, want metadata-only list payload", cfg.Content)
+					}
+
+					detailReq := authedJSONRequest(t, http.MethodGet, "/api/configs/hash-a", "", []string{role})
+					detailRec := httptest.NewRecorder()
+					router.ServeHTTP(detailRec, detailReq)
+					var detail models.Config
+					if err := json.NewDecoder(detailRec.Body).Decode(&detail); err != nil {
+						t.Fatal(err)
+					}
+					if detailRec.Code != http.StatusOK || detail.Content != content {
+						t.Fatalf("detail status=%d content=%q, want explicit detail content", detailRec.Code, detail.Content)
 					}
 					return
 				}
@@ -671,6 +682,59 @@ func assertResponseDoesNotContainConfigYAML(t *testing.T, body string) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("response leaked config marker %q: %s", forbidden, body)
 		}
+	}
+}
+
+func TestListConfigsOmitsYAMLContent(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	content := "receivers:\n  otlp:\n    protocols:\n      grpc: {}"
+	if err := db.CreateConfig(models.Config{
+		ID: "cfg-large", Name: "collector-large", Content: content,
+		CreatedAt: time.Now().UTC(), CreatedBy: "admin@test.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := authedRequest(t, "GET", "/api/configs")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("list status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte(content)) || bytes.Contains(rec.Body.Bytes(), []byte(`"content"`)) {
+		t.Fatalf("list payload leaked config content: %s", rec.Body.String())
+	}
+
+	var configs []struct {
+		ID        string    `json:"id"`
+		Name      string    `json:"name"`
+		CreatedAt time.Time `json:"created_at"`
+		CreatedBy string    `json:"created_by"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &configs); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, cfg := range configs {
+		if cfg.ID == "cfg-large" && cfg.Name == "collector-large" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("metadata shape = %+v", configs)
+	}
+
+	detailReq := authedRequest(t, "GET", "/api/configs/cfg-large")
+	detailRec := httptest.NewRecorder()
+	router.ServeHTTP(detailRec, detailReq)
+	var detail models.Config
+	if err := json.Unmarshal(detailRec.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detailRec.Code != 200 || detail.Content != content {
+		t.Fatalf("detail payload should include config content, status=%d body=%s", detailRec.Code, detailRec.Body.String())
 	}
 }
 

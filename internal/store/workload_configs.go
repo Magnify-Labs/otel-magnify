@@ -204,14 +204,17 @@ func (d *DB) GetLatestPendingOrApplyingWorkloadConfig(workloadID string) (*model
 	return &wc, nil
 }
 
-// GetWorkloadConfigHistory returns the full push history for a workload, joined with the config content, ordered newest first.
+// GetWorkloadConfigHistory returns push history metadata for a workload,
+// ordered newest first. Use GetWorkloadConfigByHash when YAML content is
+// explicitly needed.
 func (d *DB) GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfig, error) {
 	rows, err := d.Query(`
 		SELECT wc.workload_id, wc.config_id, wc.applied_at, wc.status,
 		       COALESCE(wc.error_message, ''), COALESCE(wc.pushed_by, ''),
-		       COALESCE(c.content, ''), wc.label,
+		       '' AS content, wc.label,
 		       COALESCE(wc.push_id, ''), COALESCE(wc.submitted_at, wc.applied_at), wc.sent_at, wc.opamp_status_timeout_at,
-		       COALESCE(wc.rollback_of_push_id, ''), COALESCE(wc.instance_statuses, '[]')
+		       COALESCE(wc.rollback_of_push_id, ''), COALESCE(wc.instance_statuses, '[]'),
+		       CASE WHEN COALESCE(c.content, '') <> '' THEN '1' ELSE '' END
 		FROM workload_configs wc
 		LEFT JOIN configs c ON c.id = wc.config_id
 		WHERE wc.workload_id = ?
@@ -223,7 +226,7 @@ func (d *DB) GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfi
 
 	var history []models.WorkloadConfig
 	for rows.Next() {
-		wc, err := scanWorkloadConfig(rows)
+		wc, err := scanWorkloadConfigHistoryMetadata(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -238,12 +241,55 @@ func (d *DB) GetWorkloadConfigHistory(workloadID string) ([]models.WorkloadConfi
 	return history, nil
 }
 
+func scanWorkloadConfigHistoryMetadata(row workloadConfigScanner) (models.WorkloadConfig, error) {
+	var (
+		wc                               models.WorkloadConfig
+		label                            sql.NullString
+		pushID, rollbackOf, instancesRaw string
+		contentAvailable                 string
+		submittedAt, sentAt, timeoutAt   nullableTime
+	)
+	if err := row.Scan(&wc.WorkloadID, &wc.ConfigID, &wc.AppliedAt, &wc.Status,
+		&wc.ErrorMessage, &wc.PushedBy, &wc.Content, &label,
+		&pushID, &submittedAt, &sentAt, &timeoutAt, &rollbackOf, &instancesRaw, &contentAvailable); err != nil {
+		return wc, err
+	}
+	if label.Valid {
+		v := label.String
+		wc.Label = &v
+	}
+	wc.PushID = pushID
+	if submittedAt.Valid {
+		wc.SubmittedAt = submittedAt.Time
+	}
+	if sentAt.Valid {
+		v := sentAt.Time
+		wc.SentAt = &v
+	}
+	if timeoutAt.Valid {
+		v := timeoutAt.Time
+		wc.OpAMPStatusTimeoutAt = &v
+	}
+	wc.RollbackOfPushID = rollbackOf
+	if instancesRaw != "" {
+		_ = json.Unmarshal([]byte(instancesRaw), &wc.InstanceStatuses)
+	}
+	wc.ContentAvailable = contentAvailable != ""
+	wc.UpdatedAt = wc.AppliedAt
+	for _, inst := range wc.InstanceStatuses {
+		if inst.UpdatedAt.After(wc.UpdatedAt) {
+			wc.UpdatedAt = inst.UpdatedAt
+		}
+	}
+	wc.HydratePushStatus(time.Now().UTC())
+	return wc, nil
+}
+
 func (d *DB) decorateWorkloadConfigHistory(workloadID string, history []models.WorkloadConfig) error {
 	if len(history) == 0 {
 		return nil
 	}
 	for i := range history {
-		history[i].ContentAvailable = history[i].Content != ""
 		history[i].IsFailedCandidate = history[i].Status == "failed"
 	}
 

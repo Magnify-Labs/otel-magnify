@@ -26,8 +26,3 @@ func (a *API) RequirePerm(p perm.Permission) func(http.Handler) http.Handler {
 		})
 	}
 }
-
-func requestHasPerm(r *http.Request, p perm.Permission) bool {
-	info := ext.UserInfoFromContext(r.Context())
-	return info != nil && perm.Has(*info, p)
-}

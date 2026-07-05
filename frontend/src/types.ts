@@ -250,7 +250,7 @@ export interface ConfigVariable {
 export interface Config {
   id: string
   name: string
-  content: string
+  content?: string
   created_at: string
   created_by: string
   kind?: ConfigKind | string

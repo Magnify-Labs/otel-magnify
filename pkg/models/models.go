@@ -146,7 +146,7 @@ type ConfigVariable struct {
 type Config struct {
 	ID          string           `json:"id"`
 	Name        string           `json:"name"`
-	Content     string           `json:"content"`
+	Content     string           `json:"content,omitempty"`
 	CreatedAt   time.Time        `json:"created_at"`
 	CreatedBy   string           `json:"created_by"`
 	Kind        string           `json:"kind"`

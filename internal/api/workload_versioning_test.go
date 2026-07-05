@@ -204,8 +204,8 @@ func TestGetWorkloadConfigHistory_RedactsContentForViewer(t *testing.T) {
 	if history[0].Content != "" {
 		t.Fatalf("Content = %q, want redacted empty content", history[0].Content)
 	}
-	if history[0].ContentAvailable {
-		t.Fatalf("ContentAvailable = true, want false for a viewer-redacted response")
+	if !history[0].ContentAvailable {
+		t.Fatalf("ContentAvailable = false, want metadata to signal content can be fetched by privileged detail requests")
 	}
 	if history[0].ConfigID != "hash-a" || history[0].Label == nil || *history[0].Label != "blessed" {
 		t.Fatalf("metadata was not preserved: %+v", history[0])
@@ -213,7 +213,7 @@ func TestGetWorkloadConfigHistory_RedactsContentForViewer(t *testing.T) {
 	assertResponseDoesNotContainConfigYAML(t, rec.Body.String())
 }
 
-func TestGetWorkloadConfigHistory_OperatorsAndAdminsRetainContentAccess(t *testing.T) {
+func TestGetWorkloadConfigHistory_OperatorsAndAdminsReceiveMetadataOnly(t *testing.T) {
 	for _, role := range []string{"editor", "administrator"} {
 		t.Run(role, func(t *testing.T) {
 			db, router, _, _ := newAuditTestAPI(t)
@@ -235,11 +235,22 @@ func TestGetWorkloadConfigHistory_OperatorsAndAdminsRetainContentAccess(t *testi
 			if len(history) != 1 {
 				t.Fatalf("len = %d, want 1", len(history))
 			}
-			if history[0].Content != content || !history[0].ContentAvailable {
-				t.Fatalf("history content = %q available=%v, want unredacted available content", history[0].Content, history[0].ContentAvailable)
+			if history[0].Content != "" || !history[0].ContentAvailable {
+				t.Fatalf("history content = %q available=%v, want metadata-only available content", history[0].Content, history[0].ContentAvailable)
 			}
 			if history[0].ConfigID != "hash-a" || history[0].Label == nil || *history[0].Label != "blessed" {
 				t.Fatalf("metadata was not preserved: %+v", history[0])
+			}
+
+			detailReq := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/configs/hash-a", "", []string{role})
+			detailRec := httptest.NewRecorder()
+			router.ServeHTTP(detailRec, detailReq)
+			var detail models.WorkloadConfig
+			if err := json.Unmarshal(detailRec.Body.Bytes(), &detail); err != nil {
+				t.Fatal(err)
+			}
+			if detailRec.Code != http.StatusOK || detail.Content != content {
+				t.Fatalf("detail status=%d content=%q, want explicit detail content", detailRec.Code, detail.Content)
 			}
 		})
 	}

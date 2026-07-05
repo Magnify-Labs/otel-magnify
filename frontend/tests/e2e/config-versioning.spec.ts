@@ -295,7 +295,6 @@ function mockConfigsList(page: Page) {
         {
           id: ACTIVE_CONFIG_ID,
           name: 'current',
-          content: YAML_NEW,
           created_at: new Date().toISOString(),
           created_by: 'test',
         },
@@ -357,7 +356,7 @@ const BASE_HISTORY = [
     applied_at: '2026-05-08T12:00:00Z',
     status: 'applied',
     pushed_by: 'admin@e2e.local',
-    content: YAML_NEW,
+    content_available: true,
   },
   {
     workload_id: WORKLOAD_ID,
@@ -365,7 +364,7 @@ const BASE_HISTORY = [
     applied_at: '2026-05-01T09:00:00Z',
     status: 'applied',
     pushed_by: 'admin@e2e.local',
-    content: YAML_OLD,
+    content_available: true,
     label: 'stable-2026-04',
   },
 ]
@@ -561,6 +560,36 @@ test('community features keep shared config primitives but disable paid safety c
   await expect(page.getByRole('button', { name: 'Start canary' })).toBeDisabled()
   await expect(page.locator('.push-scope-panel')).toContainText('Scoped push is not enabled')
   expect(knownGoodHit).toBe(false)
+})
+
+test('viewing a history revision fetches YAML by hash on demand', async ({
+  loggedInPage: page,
+}) => {
+  await mockWorkload(page)
+  await mockActiveConfig(page)
+  await mockHistory(page, BASE_HISTORY)
+  await mockConfigsList(page)
+
+  let detailHit = false
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/${HASH_NEW}`, (route) => {
+    detailHit = true
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...BASE_HISTORY[0],
+        content: YAML_NEW,
+      }),
+    })
+  })
+
+  await gotoWorkloadDetail(page)
+  const newestRow = page.locator('.history-table tbody tr').first()
+  await newestRow.getByRole('button', { name: 'View' }).click()
+
+  await expect.poll(() => detailHit).toBe(true)
+  await expect(page.locator('.modal')).toContainText(HASH_NEW.substring(0, 12))
+  await expect(page.locator('.modal .cm-content')).toContainText('revision-new')
 })
 
 test('label can be set inline via double-click', async ({ loggedInPage: page }) => {
