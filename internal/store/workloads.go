@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/magnify-labs/otel-magnify/pkg/models"
@@ -39,7 +40,13 @@ func (d *DB) UpsertWorkload(w models.Workload) error {
 	if fingerprintSource == "" {
 		fingerprintSource = "uid"
 	}
-	_, err = d.Exec(`
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.Exec(`
 		INSERT INTO workloads (
 			id, fingerprint_source, fingerprint_keys, display_name, type, version, status,
 			last_seen_at, labels, active_config_id, active_config_hash,
@@ -68,7 +75,50 @@ func (d *DB) UpsertWorkload(w models.Workload) error {
 		statusJSON, componentsJSON, w.AcceptsRemoteConfig,
 		w.RetentionUntil, w.ArchivedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if err := replaceWorkloadAttributes(tx, w.ID, w.FingerprintKeys, w.Labels); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+type workloadAttributeExec interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func replaceWorkloadAttributes(exec workloadAttributeExec, workloadID string, fingerprintKeys models.FingerprintKeys, labels models.Labels) error {
+	if _, err := exec.Exec(`DELETE FROM workload_attributes WHERE workload_id = ?`, workloadID); err != nil {
+		return fmt.Errorf("delete workload_attributes: %w", err)
+	}
+	if err := insertWorkloadAttributes(exec, workloadID, "fingerprint", map[string]string(fingerprintKeys)); err != nil {
+		return err
+	}
+	if err := insertWorkloadAttributes(exec, workloadID, "label", map[string]string(labels)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func insertWorkloadAttributes(exec workloadAttributeExec, workloadID, source string, attrs map[string]string) error {
+	keys := make([]string, 0, len(attrs))
+	for key := range attrs {
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, err := exec.Exec(
+			`INSERT INTO workload_attributes (workload_id, source, key, value) VALUES (?, ?, ?, ?)`,
+			workloadID, source, key, attrs[key],
+		); err != nil {
+			return fmt.Errorf("insert workload_attribute %s/%s/%s: %w", workloadID, source, key, err)
+		}
+	}
+	return nil
 }
 
 // GetWorkload fetches a workload by id, decoding the JSON-stored labels, fingerprint keys, remote config status, and available components.

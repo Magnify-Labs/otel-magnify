@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -290,6 +291,63 @@ func TestListWorkloadsExcludesArchived(t *testing.T) {
 	}
 }
 
+func TestUpsertWorkloadProjectsQueryableAttributes(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now().UTC()
+	w := models.Workload{
+		ID:                "wl1",
+		FingerprintSource: "k8s",
+		FingerprintKeys: models.FingerprintKeys{
+			"cluster":   "prod-eu",
+			"namespace": "observability",
+			"kind":      "deployment",
+			"name":      "otel-collector",
+		},
+		DisplayName: "otel-collector",
+		Type:        "collector",
+		Status:      "connected",
+		LastSeenAt:  now,
+		Labels: models.Labels{
+			"cloud.region": "eu-west-3",
+			"env":          "prod",
+			"team":         "platform",
+		},
+	}
+	if err := db.UpsertWorkload(w); err != nil {
+		t.Fatalf("UpsertWorkload: %v", err)
+	}
+
+	got := queryWorkloadAttributes(t, db, "wl1")
+	want := []string{
+		"fingerprint:cluster=prod-eu",
+		"fingerprint:kind=deployment",
+		"fingerprint:name=otel-collector",
+		"fingerprint:namespace=observability",
+		"label:cloud.region=eu-west-3",
+		"label:env=prod",
+		"label:team=platform",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("queryable attributes = %#v, want %#v", got, want)
+	}
+
+	w.Labels = models.Labels{"env": "staging"}
+	if err := db.UpsertWorkload(w); err != nil {
+		t.Fatalf("UpsertWorkload update: %v", err)
+	}
+	got = queryWorkloadAttributes(t, db, "wl1")
+	want = []string{
+		"fingerprint:cluster=prod-eu",
+		"fingerprint:kind=deployment",
+		"fingerprint:name=otel-collector",
+		"fingerprint:namespace=observability",
+		"label:env=staging",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("queryable attributes after update = %#v, want %#v", got, want)
+	}
+}
+
 func TestMarkWorkloadDisconnectedSetsRetention(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now().UTC()
@@ -369,4 +427,26 @@ func TestDeleteWorkload(t *testing.T) {
 	if _, err := db.GetWorkload("w1"); err == nil {
 		t.Fatalf("expected not-found error after delete")
 	}
+}
+
+func queryWorkloadAttributes(t *testing.T, db *DB, workloadID string) []string {
+	t.Helper()
+	rows, err := db.Query(`SELECT source, key, value FROM workload_attributes WHERE workload_id = ? ORDER BY source, key`, workloadID)
+	if err != nil {
+		t.Fatalf("query workload_attributes: %v", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var source, key, value string
+		if err := rows.Scan(&source, &key, &value); err != nil {
+			t.Fatalf("scan workload_attributes: %v", err)
+		}
+		out = append(out, source+":"+key+"="+value)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate workload_attributes: %v", err)
+	}
+	return out
 }
