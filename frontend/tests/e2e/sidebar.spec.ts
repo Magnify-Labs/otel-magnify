@@ -61,6 +61,7 @@ test.describe('Sidebar', () => {
   })
 
   test('alert badge appears when alerts > 0', async ({ loggedInPage: page }) => {
+    await page.unroute('**/api/alerts*')
     await page.route('**/api/alerts*', (route) => route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify([
@@ -69,6 +70,21 @@ test.describe('Sidebar', () => {
       ]),
     }))
     await page.goto('/')
+    await expect(page.locator('.sidebar-badge')).toHaveText('2')
+  })
+
+  test('alert badge is hydrated outside the dashboard route', async ({ loggedInPage: page }) => {
+    await page.unroute('**/api/alerts*')
+    await page.route('**/api/alerts*', (route) => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify([
+        { id: 'a1', workload_id: 'w1', rule: 'workload_down', severity: 'critical', message: 'down', fired_at: new Date().toISOString() },
+        { id: 'a2', workload_id: 'w1', rule: 'config_drift',  severity: 'warning',  message: 'drift', fired_at: new Date().toISOString() },
+      ]),
+    }))
+
+    await page.goto('/inventory')
+
     await expect(page.locator('.sidebar-badge')).toHaveText('2')
   })
 

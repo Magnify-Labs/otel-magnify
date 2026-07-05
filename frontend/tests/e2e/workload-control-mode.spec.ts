@@ -130,7 +130,10 @@ async function mockWorkload(page: Page, id: string, acceptsRemoteConfig: boolean
   )
 }
 
-function mockConfig(page: Page) {
+async function mockConfig(page: Page) {
+  await page.route('**/api/configs', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
   return page.route(`**/api/configs/${CONFIG_ID}`, (route) =>
     route.fulfill({
       status: 200,
@@ -157,6 +160,16 @@ function mockAlerts(page: Page) {
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   )
 }
+
+function mockPushActivity(page: Page) {
+  return page.route('**/api/pushes/activity*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+}
+
+test.beforeEach(async ({ loggedInPage: page }) => {
+  await mockAlerts(page)
+})
 
 test('Inventory shows supervised pill only on supervised collectors', async ({ loggedInPage: page }) => {
   await mockList(page)
@@ -247,6 +260,7 @@ test('Inventory control filter excludes SDK workloads entirely', async ({ logged
 test('Dashboard Supervised stat card links to filtered Inventory', async ({ loggedInPage: page }) => {
   await mockList(page)
   await mockAlerts(page)
+  await mockPushActivity(page)
 
   await page.goto('/')
   const supervisedCard = page.locator('.stat-card', { hasText: 'Supervised' })

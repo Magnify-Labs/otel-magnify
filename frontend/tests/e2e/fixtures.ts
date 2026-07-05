@@ -300,6 +300,12 @@ export const test = base.extend<{ loggedInPage: Page }>({
         body: JSON.stringify([]),
       }),
     )
+    await page.route('**/api/alerts*', (route) => route.fulfill({
+      status: 200, contentType: 'application/json', body: '[]',
+    }))
+    await page.route('**/api/configs', (route) => route.fulfill({
+      status: 200, contentType: 'application/json', body: '[]',
+    }))
     await use(page)
   },
 })

@@ -11,6 +11,10 @@ const RECONNECT_BASE_MS = 1_000
 const RECONNECT_CAP_MS = 30_000
 const RECONNECT_JITTER_RATIO = 0.2
 
+interface TestWindowFlags {
+  __OTEL_MAGNIFY_E2E_DISABLE_WS__?: boolean
+}
+
 interface WsMessage {
   type: string
   workload?: Workload
@@ -25,13 +29,44 @@ interface WsMessage {
   reason?: string
 }
 
+function mergeWorkload(current: Workload | undefined, update: Workload): Workload {
+  return current ? { ...current, ...update } : update
+}
+
+function upsertWorkloadList(current: Workload[] | undefined, update: Workload) {
+  if (!current) return [update]
+  const idx = current.findIndex((w) => w.id === update.id)
+  if (idx === -1) return [update, ...current]
+
+  const next = [...current]
+  next[idx] = mergeWorkload(next[idx], update)
+  return next
+}
+
+function upsertAlertList(current: Alert[] | undefined, update: Alert) {
+  if (!current) return update.resolved_at ? current : [update]
+  if (update.resolved_at) return current.filter((a) => a.id !== update.id)
+
+  const idx = current.findIndex((a) => a.id === update.id)
+  if (idx === -1) return [update, ...current]
+
+  const next = [...current]
+  next[idx] = { ...next[idx], ...update }
+  return next
+}
+
 function dispatch(data: WsMessage) {
   const store = useStore.getState()
 
   switch (data.type) {
     case 'workload_update': {
       if (!data.workload) break
-      store.updateWorkload(data.workload)
+      queryClient.setQueryData<Workload[]>(['workloads'], (current) =>
+        upsertWorkloadList(current, data.workload!),
+      )
+      queryClient.setQueryData<Workload>(['workload', data.workload.id], (current) =>
+        mergeWorkload(current, data.workload!),
+      )
       if (
         typeof data.connected_instance_count === 'number' &&
         typeof data.drifted_instance_count === 'number'
@@ -42,8 +77,11 @@ function dispatch(data: WsMessage) {
           data.drifted_instance_count,
         )
       }
-      queryClient.invalidateQueries({ queryKey: ['workloads'] })
-      queryClient.invalidateQueries({ queryKey: ['workload', data.workload.id] })
+      queryClient.invalidateQueries({ queryKey: ['workloads'], refetchType: 'none' })
+      queryClient.invalidateQueries({
+        queryKey: ['workload', data.workload.id],
+        refetchType: 'none',
+      })
       break
     }
     case 'workload_event': {
@@ -61,8 +99,12 @@ function dispatch(data: WsMessage) {
       break
     }
     case 'alert_update':
-      if (data.alert) store.addAlert(data.alert)
-      queryClient.invalidateQueries({ queryKey: ['alerts'] })
+      if (data.alert) {
+        queryClient.setQueryData<Alert[]>(['alerts'], (current) =>
+          upsertAlertList(current, data.alert!),
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['alerts'], refetchType: 'none' })
       break
     case 'auto_rollback_applied':
       if (!data.workload_id || !data.from_hash || !data.to_hash) break
@@ -125,12 +167,7 @@ function scheduleReconnect() {
 }
 
 export function connectWS() {
-  if (
-    (window as unknown as { __OTEL_MAGNIFY_E2E_DISABLE_WS__?: boolean })
-      .__OTEL_MAGNIFY_E2E_DISABLE_WS__
-  ) {
-    return
-  }
+  if ((window as unknown as TestWindowFlags).__OTEL_MAGNIFY_E2E_DISABLE_WS__) return
   if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return
 
   const token = localStorage.getItem('token')

@@ -1,8 +1,10 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import type React from 'react'
 import { useStore } from '../../store'
+import { alertsAPI } from '../../api/client'
 import { hasPerm, type Permission } from '../../lib/perm'
 import { useFeatures } from '../../hooks/useFeature'
 import '../../styles/sidebar.css'
@@ -218,7 +220,8 @@ function IdentityCard() {
 
 export default function Layout() {
   const { t } = useTranslation()
-  const alertCount = useStore((s) => s.alerts.length)
+  const { data: alerts } = useQuery({ queryKey: ['alerts'], queryFn: () => alertsAPI.list(false) })
+  const alertCount = alerts?.length ?? 0
   const me = useStore((s) => s.me)
 
   const canAdmin = hasPerm(me?.groups, 'users:manage')

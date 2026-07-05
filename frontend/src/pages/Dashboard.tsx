@@ -1,8 +1,7 @@
-import { useEffect, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { workloadsAPI, alertsAPI } from '../api/client'
-import { useStore } from '../store'
 import { isSupervised } from '../lib/workloadCapabilities'
 import { useFeature } from '../hooks/useFeature'
 import StatCard from '../components/dashboard/StatCard'
@@ -34,16 +33,6 @@ export default function Dashboard() {
     queryFn: () => workloadsAPI.versionIntelligence(DEFAULT_RECOMMENDED_COLLECTOR_VERSION),
     enabled: versionIntelligenceEnabled,
   })
-
-  const setWorkloads = useStore((s) => s.setWorkloads)
-  const setAlerts = useStore((s) => s.setAlerts)
-
-  useEffect(() => {
-    if (workloadsQuery.data) setWorkloads(workloadsQuery.data)
-  }, [workloadsQuery.data, setWorkloads])
-  useEffect(() => {
-    if (alerts) setAlerts(alerts)
-  }, [alerts, setAlerts])
 
   const isDashboardLoading = workloadsQuery.isLoading || alertsQuery.isLoading
   const isDashboardError = workloadsQuery.isError || alertsQuery.isError
