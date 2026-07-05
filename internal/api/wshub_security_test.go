@@ -135,6 +135,53 @@ func TestWebSocketAcceptsSessionCookieWithoutQueryToken(t *testing.T) {
 	defer conn.Close()
 }
 
+// Guards against the old query-token-only WebSocket path accepting anonymous
+// upgrades when no browser session or legacy token is supplied.
+func TestWebSocketRejectsMissingCredentials(t *testing.T) {
+	server, _ := newWSTestServer(t, "http://app.example.com", map[string]time.Time{
+		"valid": time.Now().Add(time.Hour),
+	})
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURLWithoutToken(server.URL), http.Header{"Origin": []string{"http://app.example.com"}})
+	defer closeWSHandshakeResponse(t, resp)
+	if err == nil {
+		conn.Close()
+		t.Fatal("expected WebSocket handshake without credentials to be rejected")
+	}
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		status := "no response"
+		if resp != nil {
+			status = resp.Status
+		}
+		t.Fatalf("expected 401 for missing WebSocket credentials, got %s (err=%v)", status, err)
+	}
+}
+
+// Guards against query-token exposure mitigation regressions: once a browser
+// sends a session cookie, an attacker-controlled query token must not override it.
+func TestWebSocketRejectsInvalidSessionCookieEvenWithLegacyQueryToken(t *testing.T) {
+	server, _ := newWSTestServer(t, "http://app.example.com", map[string]time.Time{
+		"valid-query-token": time.Now().Add(time.Hour),
+	})
+	header := http.Header{}
+	header.Set("Origin", "http://app.example.com")
+	header.Add("Cookie", (&http.Cookie{Name: "om_session", Value: "not-a-valid-token"}).String())
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL(server.URL, "valid-query-token"), header)
+	defer closeWSHandshakeResponse(t, resp)
+	if err == nil {
+		conn.Close()
+		t.Fatal("expected invalid session cookie to reject WebSocket before legacy query-token fallback")
+	}
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		status := "no response"
+		if resp != nil {
+			status = resp.Status
+		}
+		t.Fatalf("expected 401 for invalid session cookie, got %s (err=%v)", status, err)
+	}
+}
+
 func TestWebSocketRejectsUnconfiguredCrossOrigin(t *testing.T) {
 	server, _ := newWSTestServer(t, "http://app.example.com", map[string]time.Time{
 		"valid": time.Now().Add(time.Hour),
