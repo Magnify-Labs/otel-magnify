@@ -83,6 +83,24 @@ func dialWS(t *testing.T, serverURL, token, origin string) (*websocket.Conn, *ht
 	return websocket.DefaultDialer.Dial(wsURL(serverURL, token), header)
 }
 
+func wsURLWithoutToken(serverURL string) string {
+	u, _ := url.Parse(serverURL)
+	u.Scheme = "ws"
+	u.Path = "/ws"
+	u.RawQuery = ""
+	return u.String()
+}
+
+func dialWSWithCookie(t *testing.T, serverURL, cookieToken, origin string) (*websocket.Conn, *http.Response, error) {
+	t.Helper()
+	header := http.Header{}
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
+	header.Add("Cookie", (&http.Cookie{Name: "om_session", Value: cookieToken}).String())
+	return websocket.DefaultDialer.Dial(wsURLWithoutToken(serverURL), header)
+}
+
 func TestWebSocketAcceptsConfiguredCORSOrigin(t *testing.T) {
 	server, _ := newWSTestServer(t, "http://app.example.com", map[string]time.Time{
 		"valid": time.Now().Add(time.Hour),
@@ -96,6 +114,23 @@ func TestWebSocketAcceptsConfiguredCORSOrigin(t *testing.T) {
 			status = resp.Status
 		}
 		t.Fatalf("dial configured origin failed with %s: %v", status, err)
+	}
+	defer conn.Close()
+}
+
+func TestWebSocketAcceptsSessionCookieWithoutQueryToken(t *testing.T) {
+	server, _ := newWSTestServer(t, "http://app.example.com", map[string]time.Time{
+		"valid-cookie": time.Now().Add(time.Hour),
+	})
+
+	conn, resp, err := dialWSWithCookie(t, server.URL, "valid-cookie", "http://app.example.com")
+	defer closeWSHandshakeResponse(t, resp)
+	if err != nil {
+		status := "no response"
+		if resp != nil {
+			status = resp.Status
+		}
+		t.Fatalf("dial with session cookie failed with %s: %v", status, err)
 	}
 	defer conn.Close()
 }

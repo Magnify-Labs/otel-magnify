@@ -11,5 +11,5 @@
 - Workload stays `connected` after the pods are gone — normal for up to `WORKLOAD_DISCONNECT_GRACE_SECONDS` (default 120 s); flips to `disconnected` afterwards.
 - A workload disappeared from the inventory — check `WORKLOAD_RETENTION_DAYS` (default 30); archived workloads are kept in the database but hidden by default.
 - The Activity tab shows heavy churn — high connect/disconnect rate is a K8s symptom (CrashLoopBackOff, OOMKill, eviction storms), not an otel-magnify problem.
-- WebSocket disconnects in the UI — check the JWT `?token=` query parameter and its expiry.
+- WebSocket disconnects in the UI — check whether the browser still has a valid `om_session` cookie; legacy clients using `/ws?token=` should check that token and its expiry.
 - SQLite "database is locked" under load — switch to PostgreSQL.

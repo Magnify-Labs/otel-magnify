@@ -274,13 +274,12 @@ export async function mockMe(page: Page, stub: MeStub) {
   return me
 }
 
-// Logged-in page fixture: stubs a JWT in localStorage and installs a default
-// /api/me mock so that AppShell's boot-time hydration doesn't hit the backend
-// (which would 401 and trigger the axios interceptor's redirect to /login).
+// Logged-in page fixture: installs a default /api/me mock so that AppShell's
+// boot-time hydration succeeds without hitting the backend (which would 401 and
+// trigger the axios interceptor's redirect to /login).
 export const test = base.extend<{ loggedInPage: Page }>({
   loggedInPage: async ({ page }, use) => {
     await page.addInitScript(() => {
-      localStorage.setItem('token', 'test.token.stub')
       const e2eWindow = window as unknown as { __OTEL_MAGNIFY_E2E_DISABLE_WS__?: boolean }
       e2eWindow.__OTEL_MAGNIFY_E2E_DISABLE_WS__ = true
     })

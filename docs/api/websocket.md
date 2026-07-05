@@ -1,6 +1,6 @@
 # WebSocket
 
-The WebSocket hub at `/ws` streams real-time events to browsers and backend integrations. Auth is via a query-string JWT: `/ws?token=<jwt>`. Browsers cannot set custom headers on WebSocket handshakes, so the token-in-query pattern is required.
+The WebSocket hub at `/ws` streams real-time events to browsers and backend integrations. Browser clients authenticate with the `om_session` HttpOnly session cookie set by `/api/auth/login`, so the JWT is not placed in the WebSocket URL. The legacy `/ws?token=<jwt>` form remains available for non-browser or older clients that cannot send the session cookie.
 
 ## Message envelope
 

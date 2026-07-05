@@ -64,7 +64,7 @@ func WithStaticFS(fsys fs.FS) Option {
 // the server starts. Use this to add middleware (RBAC, audit) or extra routes.
 //
 // Routes added by this hook are attached to the outer router and DO NOT
-// pass through the Bearer-token auth middleware — use it only for
+// pass through the authenticated API middleware — use it only for
 // genuinely public endpoints (SSO ACS callbacks, login, public metadata).
 // For routes that must run with an authenticated UserInfo in context,
 // use WithProtectedRouterHook instead.
