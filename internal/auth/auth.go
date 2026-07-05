@@ -72,6 +72,28 @@ func (a *Auth) ValidateToken(tokenStr string) (*ext.UserInfo, error) {
 	return &ext.UserInfo{UserID: c.UserID, Email: c.Email, Groups: groups}, nil
 }
 
+// TokenExpiresAt returns the JWT exp claim after verifying the token signature.
+// The second return value is false only for legacy tokens that omit exp.
+func (a *Auth) TokenExpiresAt(tokenStr string) (time.Time, bool, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &claims{}, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return a.secret, nil
+	})
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	c, ok := token.Claims.(*claims)
+	if !ok || !token.Valid {
+		return time.Time{}, false, fmt.Errorf("invalid token claims")
+	}
+	if c.ExpiresAt == nil {
+		return time.Time{}, false, nil
+	}
+	return c.ExpiresAt.Time, true, nil
+}
+
 func legacyRoleToGroupName(role string) string {
 	if role == "admin" {
 		return "administrator"

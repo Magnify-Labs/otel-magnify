@@ -37,6 +37,27 @@ func TestGenerateAndValidateToken(t *testing.T) {
 	}
 }
 
+func TestTokenExpiresAtReturnsJWTExpiration(t *testing.T) {
+	a := New("test-secret-key-at-least-32-bytes!")
+
+	token, err := a.GenerateToken("user-001", "admin@test.com", []string{"administrator"})
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+
+	expiresAt, ok, err := a.TokenExpiresAt(token)
+	if err != nil {
+		t.Fatalf("TokenExpiresAt: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected token to carry an expiration")
+	}
+	remaining := time.Until(expiresAt)
+	if remaining < 23*time.Hour || remaining > 25*time.Hour {
+		t.Fatalf("expiration = %s from now, want roughly 24h", remaining)
+	}
+}
+
 func TestValidateToken_Invalid(t *testing.T) {
 	a := New("test-secret-key-at-least-32-bytes!")
 	_, err := a.ValidateToken("garbage.token.here")

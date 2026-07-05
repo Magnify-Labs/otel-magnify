@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -40,6 +39,10 @@ type API struct {
 	reportSigner      ext.ReportSigner
 }
 
+type tokenExpirationProvider interface {
+	TokenExpiresAt(token string) (time.Time, bool, error)
+}
+
 // NewRouter constructs the chi-based HTTP handler that wires together public
 // routes (health, auth, features), protected REST endpoints, the WebSocket hub,
 // and the embedded SPA catch-all. It is the single composition root shared by
@@ -70,10 +73,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	r.Use(middleware.Recoverer)
 
 	// CORS middleware
-	allowedOrigins := []string{"http://localhost:5173"}
-	if corsOrigins != "" {
-		allowedOrigins = strings.Split(corsOrigins, ",")
-	}
+	allowedOrigins := parseAllowedOrigins(corsOrigins)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -109,7 +109,22 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		hub.HandleWS(w, r)
+
+		var expiresAt time.Time
+		if expProvider, ok := a.(tokenExpirationProvider); ok {
+			var hasExpiry bool
+			var err error
+			expiresAt, hasExpiry, err = expProvider.TokenExpiresAt(token)
+			if err != nil || (hasExpiry && !time.Now().Before(expiresAt)) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if !hasExpiry {
+				expiresAt = time.Time{}
+			}
+		}
+
+		hub.HandleWS(w, r, allowedOrigins, expiresAt)
 	})
 
 	// Protected routes
