@@ -21,6 +21,8 @@ func hashPassword(password string) (string, error) {
 }
 
 func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
+	setNoStoreAuthHeaders(w)
+
 	var req loginRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -95,6 +97,13 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
+	setNoStoreAuthHeaders(w)
 	clearSessionCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func setNoStoreAuthHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Cache-Control", "no-store")
+	h.Set("Pragma", "no-cache")
 }

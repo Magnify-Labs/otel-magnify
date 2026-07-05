@@ -34,6 +34,47 @@ func TestRouterSetsSecurityHeaders(t *testing.T) {
 	}
 }
 
+// Guards against regressions where authenticated failures bypass middleware and
+// return without the hardening headers browsers rely on.
+func TestRouterSetsStrictSecurityHeaderValuesOnSecureRequests(t *testing.T) {
+	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s, want protected route to reject unauthenticated request", rec.Code, rec.Body.String())
+	}
+	for name, want := range map[string]string{
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "DENY",
+		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"Content-Security-Policy":   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+		"Permissions-Policy":        "camera=(), microphone=(), geolocation=()",
+		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+	} {
+		if got := rec.Header().Get(name); got != want {
+			t.Fatalf("%s=%q, want %q", name, got, want)
+		}
+	}
+}
+
+// Guards against accidentally advertising HSTS on plain HTTP development
+// requests, where browsers would pin an unreachable HTTPS origin.
+func TestRouterOmitsHSTSOnPlainHTTPRequests(t *testing.T) {
+	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("Strict-Transport-Security=%q, want empty for non-secure requests", got)
+	}
+}
+
 func TestRequestLoggerRedactsSensitiveQueryValues(t *testing.T) {
 	var logs bytes.Buffer
 	originalOutput := log.Writer()
