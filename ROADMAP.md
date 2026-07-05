@@ -2,26 +2,30 @@
 
 This roadmap is indicative. Priorities may evolve based on community feedback.
 
-## Now — in progress
+## Recently shipped
 
-- Core stabilization (agent inventory, config push, basic alerts)
-- Docker Compose and Kubernetes (Helm) support
-- JWT authentication
+- Agent and workload inventory with OpAMP status, remote config push, and real-time dashboard updates.
+- Saved configuration history, labels, comparisons, and rollback / auto-rollback workflows.
+- Built-in alerts for workload downtime, config drift, and outdated versions, with webhook delivery.
+- Authentication and access-control foundations: JWT auth, SSO / SAML extension hooks, RBAC groups and roles, and audit-log hooks for security-relevant actions.
+- Docker Compose, single-binary, and Kubernetes Helm deployment paths.
 
-## Next — planned
+## Current focus
 
-- SSO / SAML 2.0
-- Granular RBAC (roles and permissions)
-- Audit log
-- Config rollback & versioning
-- Multi-tenant
+- Reliability and security hardening for OpAMP config workflows, alerting, and auth/audit side effects.
+- Fleet intelligence: clearer workload health, version posture, and upgrade guidance.
+- Documentation and operational ergonomics for self-hosted deployments.
+
+## Planned next
+
+- Advanced alert routing and escalation integrations.
+- Deeper fleet metrics, including CPU, memory, and throughput per workload.
+- Multi-instance and high-availability deployment guidance.
 
 ## Later — on the radar
 
-- Clustering / high availability
-- Advanced alerting (custom rules, escalation, PagerDuty/Slack/Teams integrations)
-- Detailed fleet metrics (CPU, memory, throughput per agent)
-- Managed cloud offering
+- Managed cloud offering.
+- Larger-scale organization and tenancy controls.
 
 ---
 

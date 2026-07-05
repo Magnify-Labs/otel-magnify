@@ -71,14 +71,14 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.25.11+
 - Node.js 20+
 
 ### Development
 
 ```bash
 # Backend
-JWT_SECRET=local-dev-secret-at-least-32-chars!! go run ./cmd/server/
+JWT_SECRET=dev-secret go run ./cmd/server/
 
 # Frontend (separate terminal)
 cd frontend
@@ -86,36 +86,28 @@ npm install
 npm run dev
 ```
 
-The API runs on `:8080`, OpAMP on `:4320`, frontend dev server on `:5173` (proxied to backend). OpAMP authentication is intentionally off in this local command because `OPAMP_SHARED_SECRET` is unset.
+The API runs on `:8080`, OpAMP on `:4320`, frontend dev server on `:5173` (proxied to backend).
 
 ### Seed an admin user
 
 ```bash
-SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=changeme JWT_SECRET=local-dev-secret-at-least-32-chars!! go run ./cmd/server/
+SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=changeme JWT_SECRET=dev-secret go run ./cmd/server/
 ```
 
 ### Docker Compose
 
 ```bash
-JWT_SECRET=$(openssl rand -base64 32) docker compose up --build
+JWT_SECRET=mysecret docker compose up --build
 ```
 
 App available at `http://localhost:8080`.
-
-For any run where port `4320` crosses a production, shared, or exposed network boundary, set an OpAMP shared secret and configure agents to send it as a bearer token:
-
-```bash
-export OPAMP_SHARED_SECRET="replace-with-a-random-opamp-token"
-JWT_SECRET=$(openssl rand -base64 32) docker compose up --build
-```
 
 ### Kubernetes (Helm)
 
 ```bash
 helm install magnify helm/otel-magnify/ \
   --set jwtSecret=your-secret \
-  --set opampSharedSecret=replace-with-a-random-opamp-token \
-  --set config.dbDSN="postgres://user:***@host:5432/magnify?sslmode=require"
+  --set config.dbDSN="postgres://user:pass@host:5432/magnify?sslmode=require"
 ```
 
 ## Configuration
@@ -128,8 +120,7 @@ All configuration via environment variables:
 | `DB_DSN` | `otel-magnify.db` | Database connection string |
 | `LISTEN_ADDR` | `:8080` | API server listen address |
 | `OPAMP_ADDR` | `:4320` | OpAMP server listen address |
-| `OPAMP_SHARED_SECRET` | *(empty)* | Optional bearer token required from OpAMP clients. Empty allows unauthenticated local/demo connections; set it for production or exposed OpAMP boundaries. |
-| `JWT_SECRET` | *(required)* | Secret key for JWT signing; must be at least 32 characters and not the placeholder value |
+| `JWT_SECRET` | *(required)* | Secret key for JWT signing |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `SEED_ADMIN_EMAIL` | *(optional)* | Create admin user on startup |
 | `SEED_ADMIN_PASSWORD` | *(optional)* | Password for seed admin user |
@@ -148,8 +139,6 @@ extensions:
     server:
       ws:
         endpoint: ws://<magnify-host>:4320/v1/opamp
-        headers:
-          Authorization: "Bearer ${env:OPAMP_SHARED_SECRET}"
         tls:
           insecure: true   # set to false with a valid certificate in production
 
@@ -195,7 +184,6 @@ import "github.com/open-telemetry/opamp-go/client"
 c := client.NewWebSocket(nil)
 err := c.Start(context.Background(), client.StartSettings{
     OpAMPServerURL: "ws://<magnify-host>:4320/v1/opamp",
-    Header: http.Header{"Authorization": []string{"Bearer " + os.Getenv("OPAMP_SHARED_SECRET")}},
 })
 ```
 
@@ -219,7 +207,6 @@ Once connected, agents are grouped into workloads and appear automatically in th
 | `GET` | `/api/workloads` | Yes | List all workloads |
 | `GET` | `/api/workloads/:id` | Yes | Get workload details |
 | `GET` | `/api/workloads/:id/instances` | Yes | Live OpAMP-connected pods for the workload |
-| `GET` | `/api/workloads/:id/topology` | Yes | Live instances plus workload topology/heterogeneity summary |
 | `GET` | `/api/workloads/:id/events` | Yes | Append-only pod-lifecycle log (Activity tab) |
 | `GET` | `/api/workloads/:id/configs` | Yes | Workload config push history |
 | `POST` | `/api/workloads/:id/config` | Yes | Push config to workload |

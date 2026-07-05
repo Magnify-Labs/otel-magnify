@@ -2,8 +2,6 @@
 
 Agents connect to otel-magnify over [OpAMP](https://opentelemetry.io/docs/specs/opamp/) on port `:4320` (configurable via `OPAMP_ADDR`).
 
-For local development, `OPAMP_SHARED_SECRET` can stay empty and the OpAMP boundary accepts clients without an `Authorization` header. For production, shared environments, or any exposed `:4320` boundary, set `OPAMP_SHARED_SECRET` on the otel-magnify server and configure every OpAMP client to send the same value with the `Authorization` bearer scheme during the HTTP/WebSocket handshake. When the secret is set, clients without the matching bearer token are rejected with `401 Unauthorized` before any OpAMP message is processed.
-
 Two agent types are supported:
 
 - **OTel Collectors** — the standard `otelcol*` binaries.
@@ -36,7 +34,7 @@ The first strategy that can be satisfied is used. For a Kubernetes collector, en
 
 ## Configuring an OTel Collector
 
-Add an `opamp` extension to your Collector configuration and reference it in `service::extensions`. If the server has `OPAMP_SHARED_SECRET` set, add the `headers` block shown below and provide the same value to the collector environment. If the server leaves `OPAMP_SHARED_SECRET` empty for a local demo, omit the `headers` block.
+Add an `opamp` extension to your Collector configuration and reference it in `service::extensions`:
 
 ```yaml
 extensions:
@@ -44,8 +42,6 @@ extensions:
     server:
       ws:
         endpoint: ws://magnify.example.com:4320/v1/opamp
-        headers:
-          Authorization: "Bearer ${env:OPAMP_SHARED_SECRET}"
     instance_uid: collector-prod-eu-01
     capabilities:
       reports_effective_config: true
@@ -59,21 +55,12 @@ service:
     # ...
 ```
 
-Sample configs are available in the repo under `agents/collector-*.yaml` — they ship with the `resourcedetection` and `resource` processors pre-wired so the collector is fingerprinted correctly out of the box. The sample files default to unauthenticated local/demo OpAMP connections and include commented bearer-header lines you can enable for secure runs.
+Sample configs are available in the repo under `agents/collector-*.yaml` — they ship with the `resourcedetection` and `resource` processors pre-wired so the collector is fingerprinted correctly out of the box.
 
 ## Running a demo Collector alongside otel-magnify
 
 ```bash
 docker run -d --name collector-prod-eu --network otel-magnify_default \
-  -v $(pwd)/agents/collector-prod-eu.yaml:/etc/otelcol-contrib/config.yaml \
-  otel/opentelemetry-collector-contrib:0.98.0
-```
-
-For a secure run, first uncomment the `headers.Authorization` lines in the sample config, then pass the token as an environment variable:
-
-```bash
-docker run -d --name collector-prod-eu --network otel-magnify_default \
-  -e OPAMP_SHARED_SECRET="replace-with-the-server-opamp-token" \
   -v $(pwd)/agents/collector-prod-eu.yaml:/etc/otelcol-contrib/config.yaml \
   otel/opentelemetry-collector-contrib:0.98.0
 ```
@@ -88,7 +75,7 @@ The supervisor is not shipped as an official Docker image, so you build it
 yourself. Minimal recipe:
 
 ```dockerfile
-FROM golang:1.25 AS build
+FROM golang:1.25.11 AS build
 WORKDIR /src
 RUN git clone --depth=1 --branch=v0.150.0 \
     https://github.com/open-telemetry/opentelemetry-collector-contrib.git
@@ -106,8 +93,6 @@ Supervisor configuration (`supervisor.yaml`):
 ```yaml
 server:
   endpoint: ws://otel-magnify:4320/v1/opamp
-  headers:
-    Authorization: "Bearer ${env:OPAMP_SHARED_SECRET}"
   tls:
     insecure: true
 
@@ -150,8 +135,6 @@ For development and testing, the repo ships a small simulator at `cmd/sdkagent/`
 ```bash
 go run ./cmd/sdkagent/ --endpoint ws://localhost:4320/v1/opamp --name demo-sdk-agent
 ```
-
-The simulator is intended for unauthenticated local runs. If the server has `OPAMP_SHARED_SECRET` set, use an SDK OpAMP client that can send an `Authorization` header using `Bearer REPLACE_WITH_OPAMP_SHARED_SECRET` on the WebSocket handshake.
 
 ## What otel-magnify captures from an agent
 

@@ -25,7 +25,7 @@ brew install lefthook golangci-lint gitleaks hadolint
 # Linux (Debian/Ubuntu) — install via each tool's release page
 ```
 
-This project does **not** require a local Go toolchain. Tests and Go-only tools that need it (e.g. `govulncheck`) run inside a `golang:1.25` Docker container at pre-push time.
+This project does **not** require a local Go toolchain. Tests and Go-only tools that need it (e.g. `govulncheck`) run inside a `golang:1.25.11` Docker container at pre-push time.
 
 ### Activate hooks (once per clone)
 
