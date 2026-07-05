@@ -36,6 +36,10 @@
       "deployed_versions": "Versions déployées",
       "recent_alerts": "Alertes récentes"
     },
+    "state": {
+      "loading": "Chargement du tableau de bord…",
+      "error": "Impossible de charger le tableau de bord. Les statistiques existantes sont masquées pour éviter d'afficher un échec comme un zéro."
+    },
     "fleet": {
       "connected": "Connectés",
       "degraded": "Dégradés",

@@ -36,6 +36,10 @@
       "deployed_versions": "Deployed versions",
       "recent_alerts": "Recent alerts"
     },
+    "state": {
+      "loading": "Loading dashboard data…",
+      "error": "Unable to load dashboard data. Existing stats are hidden so stale failures are not shown as zero."
+    },
     "fleet": {
       "connected": "Connected",
       "degraded": "Degraded",

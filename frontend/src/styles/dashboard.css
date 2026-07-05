@@ -51,6 +51,35 @@
   min-width: 0;
 }
 
+.dashboard-state {
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dashboard-retry {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+
+.dashboard-retry:hover,
+.dashboard-retry:focus-visible {
+  border-color: var(--red);
+  outline: none;
+}
+
 /* Delta chip on stat cards (hidden unless a delta is provided). */
 .delta-chip {
   position: absolute;
