@@ -96,9 +96,8 @@ func TestWebhookNotifierSend_PostsAlertPayloadOn2xx(t *testing.T) {
 
 func TestWebhookNotifierSend_LogsServerErrorsFor4xxAnd5xx(t *testing.T) {
 	for _, status := range []int{http.StatusBadRequest, http.StatusInternalServerError} {
-		status := status
 		t.Run(fmt.Sprintf("status_%d", status), func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(status)
 			}))
 			defer server.Close()
@@ -124,7 +123,7 @@ func TestWebhookNotifierSend_LogsMalformedURLError(t *testing.T) {
 }
 
 func TestWebhookNotifierSend_LogsClientTimeout(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusNoContent)
 	}))
