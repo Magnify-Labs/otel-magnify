@@ -37,6 +37,7 @@ type API struct {
 	features          map[string]bool
 	licenseChecker    ext.LicenseChecker
 	reportSigner      ext.ReportSigner
+	loginLimiter      *loginRateLimiter
 }
 
 type tokenExpirationProvider interface {
@@ -60,7 +61,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	if auditLogger == nil {
 		auditLogger = ext.NopAuditLogger{}
 	}
-	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features, licenseChecker: licenseChecker, reportSigner: ext.NopReportSigner{}}
+	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features, licenseChecker: licenseChecker, reportSigner: ext.NopReportSigner{}, loginLimiter: newLoginRateLimiter()}
 	if len(reportSigner) > 0 && reportSigner[0] != nil {
 		api.reportSigner = reportSigner[0]
 	}

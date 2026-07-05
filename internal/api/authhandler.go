@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
@@ -22,12 +21,16 @@ func hashPassword(password string) (string, error) {
 
 func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, 400, "invalid JSON")
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Email == "" || req.Password == "" {
 		respondError(w, 400, "email and password are required")
+		return
+	}
+	limitKey := loginRateLimitKey(r)
+	if a.loginLimiter != nil && !a.loginLimiter.allow(limitKey) {
+		respondError(w, http.StatusTooManyRequests, "too many login attempts")
 		return
 	}
 
@@ -37,6 +40,9 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 			respondAuditUnavailable(w, sideEffectNone)
 			return
 		}
+		if a.loginLimiter != nil {
+			a.loginLimiter.recordFailure(limitKey)
+		}
 		respondError(w, 401, "invalid credentials")
 		return
 	}
@@ -45,8 +51,14 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 			respondAuditUnavailable(w, sideEffectNone)
 			return
 		}
+		if a.loginLimiter != nil {
+			a.loginLimiter.recordFailure(limitKey)
+		}
 		respondError(w, 401, "invalid credentials")
 		return
+	}
+	if a.loginLimiter != nil {
+		a.loginLimiter.reset(limitKey)
 	}
 
 	groups, err := a.db.GetUserGroups(user.ID)

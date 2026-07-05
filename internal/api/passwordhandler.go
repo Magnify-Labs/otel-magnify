@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
@@ -25,8 +24,7 @@ func (a *API) handlePutPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req changePasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON")
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.CurrentPassword == "" || req.NewPassword == "" {

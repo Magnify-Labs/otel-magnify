@@ -222,8 +222,7 @@ func redactConfigContent(configs []models.Config) {
 
 func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 	var req createConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, 400, "invalid JSON")
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Name == "" || req.Content == "" {
