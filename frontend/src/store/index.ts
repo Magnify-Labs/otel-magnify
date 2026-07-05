@@ -1,28 +1,13 @@
 import { create } from 'zustand'
-import type {
-  Workload,
-  Alert,
-  RemoteConfigStatus,
-  AutoRollbackEvent,
-  MeResponse,
-  UserPreferences,
-} from '../types'
+import type { RemoteConfigStatus, AutoRollbackEvent, MeResponse, UserPreferences } from '../types'
 
 interface AppState {
-  workloads: Workload[]
-  alerts: Alert[]
   configStatus: Record<string, RemoteConfigStatus | undefined>
   lastRollback: Record<string, AutoRollbackEvent | undefined>
   connectedInstanceCounts: Record<string, number | undefined>
   driftedInstanceCounts: Record<string, number | undefined>
 
   me: MeResponse | null
-
-  setWorkloads: (workloads: Workload[]) => void
-  updateWorkload: (workload: Workload) => void
-  setAlerts: (alerts: Alert[]) => void
-  addAlert: (alert: Alert) => void
-  resolveAlert: (id: string) => void
 
   setConfigStatus: (workloadId: string, status: RemoteConfigStatus) => void
   setAutoRollback: (ev: AutoRollbackEvent) => void
@@ -35,31 +20,12 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set) => ({
-  workloads: [],
-  alerts: [],
   configStatus: {},
   lastRollback: {},
   connectedInstanceCounts: {},
   driftedInstanceCounts: {},
 
   me: null,
-
-  setWorkloads: (workloads) => set({ workloads }),
-
-  updateWorkload: (workload) =>
-    set((state) => {
-      const idx = state.workloads.findIndex((w) => w.id === workload.id)
-      if (idx >= 0) {
-        const updated = [...state.workloads]
-        updated[idx] = { ...updated[idx], ...workload }
-        return { workloads: updated }
-      }
-      return { workloads: [...state.workloads, workload] }
-    }),
-
-  setAlerts: (alerts) => set({ alerts }),
-  addAlert: (alert) => set((state) => ({ alerts: [alert, ...state.alerts] })),
-  resolveAlert: (id) => set((state) => ({ alerts: state.alerts.filter((a) => a.id !== id) })),
 
   setConfigStatus: (workloadId, status) =>
     set((state) => ({ configStatus: { ...state.configStatus, [workloadId]: status } })),
