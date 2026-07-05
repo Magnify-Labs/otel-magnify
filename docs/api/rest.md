@@ -7,7 +7,7 @@ All endpoints return JSON. Most expect JSON request bodies; `POST /api/workloads
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `POST` | `/api/auth/login` | No | Log in, returns a JWT. |
-| `GET` | `/api/workloads` | Yes | List all workloads. |
+| `GET` | `/api/workloads` | Yes | List active workloads; pass `?include_archived=true` to include archived rows. |
 | `GET` | `/api/workloads/{id}` | Yes | Get workload details. |
 | `GET` | `/api/workloads/{id}/instances` | Yes | Live OpAMP-connected pods for the workload (in-memory, not persisted). |
 | `GET` | `/api/workloads/{id}/topology` | Yes | Live instance topology plus workload-level heterogeneity summary. |
@@ -20,7 +20,8 @@ All endpoints return JSON. Most expect JSON request bodies; `POST /api/workloads
 | `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/approve` | Yes + `PushConfig` | Approve a pending config approval draft. |
 | `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/push` | Yes + `PushConfig` | Push an approved draft, or an audited break-glass draft. |
 | `POST` | `/api/workloads/{id}/config/validate` | Yes + `ValidateConfig` | Lightweight server-side validation of a config. |
-| `DELETE` | `/api/workloads/{id}` | Yes | Archive a workload (admin only). |
+| `POST` | `/api/workloads/{id}/archive` | Yes + `ArchiveWorkload` | Archive a disconnected workload; hidden from default inventory, retained for audit/history. |
+| `DELETE` | `/api/workloads/{id}` | Yes + `DeleteWorkload` | Permanently delete a workload row (admin only). |
 | `GET` | `/api/configs` | Yes | List all configs. |
 | `POST` | `/api/configs` | Yes | Create a new config. |
 | `GET` | `/api/configs/{id}` | Yes | Fetch a config by ID. |
@@ -58,7 +59,13 @@ Response:
 
 ### `GET /api/workloads`
 
-Response is an array of workload summaries. The exact fields are defined by `models.Workload` in `pkg/models/models.go`. Treat it as the source of truth; do not hand-maintain the shape here — link to the file from the rendered doc instead.
+Response is an array of workload summaries. Archived workloads are excluded by default; add `?include_archived=true` to render an audit/history view that includes rows with `archived_at` set. The exact fields are defined by `models.Workload` in `pkg/models/models.go`. Treat it as the source of truth; do not hand-maintain the shape here — link to the file from the rendered doc instead.
+
+### `POST /api/workloads/{id}/archive`
+
+Manual archive is an operational cleanup action for stale workloads only: the workload must be `disconnected`, and callers need `workload:archive`. A successful archive returns `204 No Content`, stamps `archived_at`, keeps the row available for direct detail/audit/history views, and hides it from `GET /api/workloads` unless `include_archived=true` is set. If the workload reconnects through OpAMP, the normal upsert path clears `archived_at` and it reappears in the default inventory.
+
+Connected or degraded workloads return `409 Conflict` with `code=workload_not_disconnected`; use the detail page state instead of forcing an archive for live fleet members.
 
 ### `GET /api/workloads/{id}/instances`
 

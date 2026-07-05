@@ -287,6 +287,7 @@ export const workloadsAPI = {
         params: recommendedVersion ? { recommended_version: recommendedVersion } : undefined,
       })
       .then((r) => r.data),
+  archive: (id: string) => api.post(`/workloads/${id}/archive`),
   delete: (id: string) => api.delete(`/workloads/${id}`),
 }
 
@@ -497,10 +498,6 @@ export const meAPI = {
     ),
   updatePreferences: (prefs: Pick<UserPreferences, 'theme' | 'language'>) =>
     api.put<UserPreferences>('/me/preferences', prefs).then((r) => r.data),
-}
-
-export const workloadsArchiveAPI = {
-  archive: (id: string) => api.post(`/workloads/${id}/archive`),
 }
 
 export default api

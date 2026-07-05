@@ -55,6 +55,8 @@ Use placeholders in examples and store the real value in your deployment secret 
 | `WORKLOAD_RETENTION_DAYS` | `30` | After flipping to `disconnected`, a workload is archived if it has not reconnected within this window. |
 | `WORKLOAD_EVENT_RETENTION_DAYS` | `30` | How long the append-only `workload_events` log is kept before the janitor trims it. |
 
+Archived workloads are hidden from the default inventory but remain available for direct detail, audit, and history views. Operators with archive permission can manually archive a `disconnected` workload from its detail page; connected/degraded workloads stay visible to avoid hiding active fleet members. Use the inventory's "Show archived" filter to include archived rows, and use hard delete only for permanent removal.
+
 ## SQLite vs PostgreSQL
 
 SQLite is sufficient for single-instance deployments and demos. PostgreSQL is required when:

@@ -17,6 +17,28 @@
   flex-wrap: wrap;
 }
 
+.filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.filter-check input {
+  accent-color: var(--accent);
+}
+
+.filter-check-count {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
 .search-input {
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -119,6 +141,17 @@
 
 .workload-card-meta-sep {
   opacity: 0.5;
+}
+
+.agent-archived-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .agent-type-collector,

@@ -61,8 +61,8 @@ function dispatch(data: WsMessage) {
   switch (data.type) {
     case 'workload_update': {
       if (!data.workload) break
-      queryClient.setQueryData<Workload[]>(['workloads'], (current) =>
-        upsertWorkloadList(current, data.workload!),
+      queryClient.setQueriesData<Workload[]>({ queryKey: ['workloads'] }, (current) =>
+        Array.isArray(current) ? upsertWorkloadList(current, data.workload!) : current,
       )
       queryClient.setQueryData<Workload>(['workload', data.workload.id], (current) =>
         mergeWorkload(current, data.workload!),

@@ -281,6 +281,13 @@
       },
       "drift": "Dérive"
     },
+    "archive": {
+      "button": "Archiver le workload",
+      "confirm": "Archiver {{name}} ? Il sera masqué de l'inventaire par défaut, mais conservé pour l'audit/l'historique et pourra réapparaître s'il se reconnecte.",
+      "in_flight": "Archivage…",
+      "notice": "Archivé le {{date}}. Ce workload est masqué de l'inventaire par défaut.",
+      "error": "Impossible d'archiver le workload."
+    },
     "config": {
       "versioning": {
         "history_title": "Historique des pushes",
@@ -998,11 +1005,14 @@
         "all": "Tous les modes",
         "supervised": "Supervisé",
         "readonly": "Lecture seule"
-      }
+      },
+      "include_archived": "Afficher les archivés"
     },
     "card": {
       "supervised": "SUPERVISÉ",
-      "readonly": "RO"
+      "readonly": "RO",
+      "archived": "ARCHIVÉ",
+      "archived_title": "Les workloads archivés sont masqués par défaut"
     },
     "empty": "Aucun workload ne correspond aux filtres"
   },

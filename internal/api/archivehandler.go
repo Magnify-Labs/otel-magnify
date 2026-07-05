@@ -11,11 +11,13 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/audit"
 )
 
-// handleArchiveWorkload marks a workload as archived immediately. An
-// administrator can later hard-delete it via DELETE /api/workloads/{id}.
+// handleArchiveWorkload hides a stale workload from the default inventory
+// immediately. An administrator can later hard-delete it via
+// DELETE /api/workloads/{id}.
 func (a *API) handleArchiveWorkload(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if _, err := a.db.GetWorkload(id); err != nil {
+	wl, err := a.db.GetWorkload(id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respondError(w, http.StatusNotFound, "workload not found")
 			return
@@ -23,8 +25,11 @@ func (a *API) handleArchiveWorkload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to load workload")
 		return
 	}
-	retentionUntil := time.Now().UTC().Add(a.workloadRetention)
-	if err := a.db.MarkWorkloadDisconnected(id, retentionUntil); err != nil {
+	if wl.Status != "disconnected" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "only disconnected workloads can be archived", "code": "workload_not_disconnected"})
+		return
+	}
+	if err := a.db.ArchiveWorkload(id, time.Now().UTC()); err != nil {
 		respondError(w, 500, "failed to archive workload")
 		return
 	}
