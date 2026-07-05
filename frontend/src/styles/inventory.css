@@ -17,6 +17,17 @@
   flex-wrap: wrap;
 }
 
+.inventory-virtual-list {
+  overflow: auto;
+  padding-right: 0.25rem;
+  border-radius: var(--radius);
+  outline: none;
+}
+
+.inventory-virtual-list:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
 .search-input {
   background: var(--surface-2);
   border: 1px solid var(--border);

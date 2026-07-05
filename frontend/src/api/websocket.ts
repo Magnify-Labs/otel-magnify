@@ -1,6 +1,7 @@
 import { useStore } from '../store'
 import { queryClient } from './queryClient'
-import type { Workload, Alert, RemoteConfigStatus, WorkloadEvent } from '../types'
+import type { QueryKey } from '@tanstack/react-query'
+import type { Workload, Alert, RemoteConfigStatus, WorkloadEvent, EventsStats } from '../types'
 
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -29,6 +30,19 @@ interface WsMessage {
   reason?: string
 }
 
+type WorkloadEventType = WorkloadEvent['event_type']
+
+function isWorkloadEventType(value: string): value is WorkloadEventType {
+  return value === 'connected' || value === 'disconnected' || value === 'version_changed'
+}
+
+function patchCachedQuery<T>(queryKey: QueryKey, updater: (old: T) => T) {
+  queryClient.setQueryData<T | undefined>(queryKey, (current) => {
+    if (current === undefined) return current
+    return updater(current)
+  })
+}
+
 function mergeWorkload(current: Workload | undefined, update: Workload): Workload {
   return current ? { ...current, ...update } : update
 }
@@ -43,16 +57,55 @@ function upsertWorkloadList(current: Workload[] | undefined, update: Workload) {
   return next
 }
 
-function upsertAlertList(current: Alert[] | undefined, update: Alert) {
-  if (!current) return update.resolved_at ? current : [update]
-  if (update.resolved_at) return current.filter((a) => a.id !== update.id)
+function patchWorkloadLists(workloadId: string, updater: (workload: Workload) => Workload) {
+  patchCachedQuery<Workload[]>(['workloads'], (workloads) =>
+    workloads.map((workload) => (workload.id === workloadId ? updater(workload) : workload)),
+  )
+}
 
-  const idx = current.findIndex((a) => a.id === update.id)
-  if (idx === -1) return [update, ...current]
+function patchWorkloadCaches(workload: Workload) {
+  queryClient.setQueryData<Workload[]>(['workloads'], (current) =>
+    upsertWorkloadList(current, workload),
+  )
+  queryClient.setQueryData<Workload>(['workload', workload.id], (current) =>
+    mergeWorkload(current, workload),
+  )
+  queryClient.invalidateQueries({ queryKey: ['workloads'], refetchType: 'none' })
+  queryClient.invalidateQueries({ queryKey: ['workload', workload.id], refetchType: 'none' })
+}
 
-  const next = [...current]
-  next[idx] = { ...next[idx], ...update }
-  return next
+function patchWorkloadEvents(event: WorkloadEvent) {
+  if (!isWorkloadEventType(event.event_type)) return
+
+  patchCachedQuery<WorkloadEvent[]>(['workload-events', event.workload_id], (events) =>
+    [event, ...events.filter((existing) => existing.id !== event.id)].slice(0, 100),
+  )
+
+  patchCachedQuery<EventsStats>(['workload-events-stats', event.workload_id], (stats) => {
+    const next = { ...stats }
+    switch (event.event_type) {
+      case 'connected':
+        next.connected += 1
+        break
+      case 'disconnected':
+        next.disconnected += 1
+        next.churn_rate_per_hour = next.disconnected / 24
+        break
+      case 'version_changed':
+        next.version_changed += 1
+        break
+    }
+    return next
+  })
+}
+
+function patchAlertCaches(alert: Alert) {
+  queryClient.setQueryData<Alert[]>(['alerts'], (current) => {
+    if (!current) return alert.resolved_at ? current : [alert]
+    if (alert.resolved_at) return current.filter((existing) => existing.id !== alert.id)
+    return [alert, ...current.filter((existing) => existing.id !== alert.id)]
+  })
+  queryClient.invalidateQueries({ queryKey: ['alerts'], refetchType: 'none' })
 }
 
 function dispatch(data: WsMessage) {
@@ -61,12 +114,7 @@ function dispatch(data: WsMessage) {
   switch (data.type) {
     case 'workload_update': {
       if (!data.workload) break
-      queryClient.setQueryData<Workload[]>(['workloads'], (current) =>
-        upsertWorkloadList(current, data.workload!),
-      )
-      queryClient.setQueryData<Workload>(['workload', data.workload.id], (current) =>
-        mergeWorkload(current, data.workload!),
-      )
+      patchWorkloadCaches(data.workload)
       if (
         typeof data.connected_instance_count === 'number' &&
         typeof data.drifted_instance_count === 'number'
@@ -77,34 +125,31 @@ function dispatch(data: WsMessage) {
           data.drifted_instance_count,
         )
       }
-      queryClient.invalidateQueries({ queryKey: ['workloads'], refetchType: 'none' })
-      queryClient.invalidateQueries({
-        queryKey: ['workload', data.workload.id],
-        refetchType: 'none',
-      })
       break
     }
     case 'workload_event': {
       if (!data.event) break
-      const wid = data.event.workload_id
-      queryClient.invalidateQueries({ queryKey: ['workload-events', wid] })
-      queryClient.invalidateQueries({ queryKey: ['workload-events-stats', wid] })
+      patchWorkloadEvents(data.event)
       break
     }
     case 'workload_config_status': {
       if (!data.workload_id || !data.status) break
       store.setConfigStatus(data.workload_id, data.status)
-      queryClient.invalidateQueries({ queryKey: ['workload', data.workload_id] })
+      patchWorkloadLists(data.workload_id, (workload) => ({
+        ...workload,
+        remote_config_status: data.status,
+      }))
+      patchCachedQuery<Workload>(['workload', data.workload_id], (workload) => ({
+        ...workload,
+        remote_config_status: data.status,
+      }))
       queryClient.invalidateQueries({ queryKey: ['workload-config-history', data.workload_id] })
       break
     }
     case 'alert_update':
       if (data.alert) {
-        queryClient.setQueryData<Alert[]>(['alerts'], (current) =>
-          upsertAlertList(current, data.alert!),
-        )
+        patchAlertCaches(data.alert)
       }
-      queryClient.invalidateQueries({ queryKey: ['alerts'], refetchType: 'none' })
       break
     case 'auto_rollback_applied':
       if (!data.workload_id || !data.from_hash || !data.to_hash) break
@@ -114,7 +159,14 @@ function dispatch(data: WsMessage) {
         to_hash: data.to_hash,
         reason: data.reason ?? '',
       })
-      queryClient.invalidateQueries({ queryKey: ['workload', data.workload_id] })
+      patchWorkloadLists(data.workload_id, (workload) => ({
+        ...workload,
+        active_config_hash: data.to_hash,
+      }))
+      patchCachedQuery<Workload>(['workload', data.workload_id], (workload) => ({
+        ...workload,
+        active_config_hash: data.to_hash,
+      }))
       queryClient.invalidateQueries({ queryKey: ['workload-config-history', data.workload_id] })
       break
   }
@@ -205,9 +257,9 @@ export function disconnectWS() {
   ws = null
 }
 
-// Test-only hook exposed on window to let Playwright simulate WS events
-// without a live backend. No-op in production when nothing calls it.
-if (typeof window !== 'undefined') {
+// Test-only hook exposed in dev builds to let Playwright simulate WS events
+// without a live backend. Production bundles do not expose this helper.
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
   interface TestWindow {
     __testWsInject?: (ev: unknown) => void
   }
