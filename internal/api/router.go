@@ -159,7 +159,9 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		r.With(api.RequireFeature(FeatureConfigSafetyCanaryRollout), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/config/canary/{canary_id}/rollback", api.handleRollbackCanary)
 		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback), api.RequirePerm(perm.PushConfig)).Post("/api/workloads/{id}/rollback", api.handleRollbackWorkloadDefault)
 		r.Get("/api/workloads/{id}/configs", api.handleGetWorkloadConfigHistory)
-		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/rollback/prepare", api.handlePrepareRollback)
+		// Rollback prepare returns current/target config snapshots and diffs, so
+		// gate it with the same content-read permission as config detail routes.
+		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback), api.RequirePerm(perm.ReadConfigContent)).Get("/api/workloads/{id}/rollback/prepare", api.handlePrepareRollback)
 		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/rollback/status", api.handleRollbackStatus)
 		r.With(api.RequirePerm(perm.ReadConfigContent)).Get("/api/workloads/{id}/configs/{hash}", api.handleGetWorkloadConfigByHash)
 		r.With(api.RequireFeature(FeatureConfigSafetyGuidedRollback)).Get("/api/workloads/{id}/known-good", api.handleGetWorkloadKnownGood)

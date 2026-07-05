@@ -1587,6 +1587,33 @@ service:
 	}
 }
 
+func TestRollbackPrepare_403ForViewer(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	target := `receivers:
+  otlp: {}
+exporters:
+  logging: {}
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging]
+`
+	targetHash := seedRollbackConfig(t, db, "w1", target, "applied", "", time.Now().UTC(), nil)
+	_ = db.UpsertWorkload(models.Workload{ID: "w1", Type: "collector", Status: "connected", LastSeenAt: time.Now().UTC(), Labels: models.Labels{}, AcceptsRemoteConfig: true})
+
+	req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/rollback/prepare?target_hash="+targetHash, "", []string{"viewer"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), target) {
+		t.Fatalf("viewer response leaked rollback target content: %s", rec.Body.String())
+	}
+}
+
 func TestRollbackPrepareUnavailableComponentBlocksConfirm(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 	target := `receivers:
