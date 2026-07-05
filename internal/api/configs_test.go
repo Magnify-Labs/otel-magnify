@@ -519,6 +519,67 @@ func assertPolicyAPIFinding(t *testing.T, resp models.ConfigPolicyEvaluation, ru
 	t.Fatalf("finding %s not found in %+v", ruleID, resp.Findings)
 }
 
+func TestListConfigs_RedactsContentForViewer(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	if err := db.CreateConfig(models.Config{
+		ID:        "hash-a",
+		Name:      "collector-base",
+		Content:   "exporters:\n  otlphttp:\n    headers:\n      api-key: secret",
+		CreatedAt: time.Now().UTC(),
+		CreatedBy: "admin@test.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := authedJSONRequest(t, http.MethodGet, "/api/configs", "", []string{"viewer"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var configs []models.Config
+	if err := json.NewDecoder(rec.Body).Decode(&configs); err != nil {
+		t.Fatal(err)
+	}
+	var saved *models.Config
+	for i := range configs {
+		if configs[i].ID == "hash-a" {
+			saved = &configs[i]
+		}
+		if configs[i].Content != "" {
+			t.Fatalf("config %q Content = %q, want redacted empty content", configs[i].ID, configs[i].Content)
+		}
+	}
+	if saved == nil {
+		t.Fatalf("created config not listed: %+v", configs)
+	}
+	if saved.Name != "collector-base" {
+		t.Fatalf("metadata was not preserved: %+v", saved)
+	}
+}
+
+func TestGetConfig_403ForViewer(t *testing.T) {
+	db, router, _ := newTestAPI(t)
+	if err := db.CreateConfig(models.Config{
+		ID:        "hash-a",
+		Name:      "collector-base",
+		Content:   "secret-yaml",
+		CreatedAt: time.Now().UTC(),
+		CreatedBy: "admin@test.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := authedJSONRequest(t, http.MethodGet, "/api/configs/hash-a", "", []string{"viewer"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
 func TestLoginHandler(t *testing.T) {
 	db, router, _ := newTestAPI(t)
 

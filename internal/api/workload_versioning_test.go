@@ -181,6 +181,49 @@ func TestGetWorkloadConfigByHash_HappyPath(t *testing.T) {
 	}
 }
 
+func TestGetWorkloadConfigHistory_RedactsContentForViewer(t *testing.T) {
+	db, router, _, _ := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", "secret-yaml")
+	_ = db.SetWorkloadConfigLabel("w1", "hash-a", "blessed")
+
+	req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/configs", "", []string{"viewer"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var history []models.WorkloadConfig
+	if err := json.Unmarshal(rec.Body.Bytes(), &history); err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("len = %d, want 1", len(history))
+	}
+	if history[0].Content != "" {
+		t.Fatalf("Content = %q, want redacted empty content", history[0].Content)
+	}
+	if history[0].ContentAvailable {
+		t.Fatalf("ContentAvailable = true, want false for a viewer-redacted response")
+	}
+	if history[0].ConfigID != "hash-a" || history[0].Label == nil || *history[0].Label != "blessed" {
+		t.Fatalf("metadata was not preserved: %+v", history[0])
+	}
+}
+
+func TestGetWorkloadConfigByHash_403ForViewer(t *testing.T) {
+	db, router, _, _ := newAuditTestAPI(t)
+	seedHistory(t, db, "w1", "hash-a", "secret-yaml")
+
+	req := authedJSONRequest(t, http.MethodGet, "/api/workloads/w1/configs/hash-a", "", []string{"viewer"})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
 func TestGetWorkloadConfigByHash_404(t *testing.T) {
 	_, router, _, _ := newAuditTestAPI(t)
 

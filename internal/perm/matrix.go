@@ -6,27 +6,30 @@ package perm
 // Has() do not need to change when that indirection lands.
 var matrix = map[string]map[Permission]bool{
 	"viewer": {
-		// No write permissions. Read endpoints (GET) are not gated;
-		// any authenticated user can consume them.
+		// No privileged permissions. Authenticated viewers may still consume
+		// metadata-oriented GET endpoints, but full config content is gated
+		// separately because it can contain exporter secrets.
 	},
 	"editor": {
-		PushConfig:      true,
-		ValidateConfig:  true,
-		CreateConfigTpl: true,
-		ResolveAlert:    true,
-		ExportReports:   true,
-		ArchiveWorkload: true,
+		ReadConfigContent: true,
+		PushConfig:        true,
+		ValidateConfig:    true,
+		CreateConfigTpl:   true,
+		ResolveAlert:      true,
+		ExportReports:     true,
+		ArchiveWorkload:   true,
 	},
 	"administrator": {
-		PushConfig:      true,
-		ValidateConfig:  true,
-		CreateConfigTpl: true,
-		ResolveAlert:    true,
-		ExportReports:   true,
-		ArchiveWorkload: true,
-		DeleteWorkload:  true,
-		ViewAudit:       true,
-		ManageUsers:     true,
-		ManageSettings:  true,
+		ReadConfigContent: true,
+		PushConfig:        true,
+		ValidateConfig:    true,
+		CreateConfigTpl:   true,
+		ResolveAlert:      true,
+		ExportReports:     true,
+		ArchiveWorkload:   true,
+		DeleteWorkload:    true,
+		ViewAudit:         true,
+		ManageUsers:       true,
+		ManageSettings:    true,
 	},
 }

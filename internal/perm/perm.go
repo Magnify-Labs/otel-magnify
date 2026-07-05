@@ -11,16 +11,17 @@ type Permission string
 
 // Permissions enumerated below are the granular actions that handlers gate via api.RequirePerm.
 const (
-	PushConfig      Permission = "workload:push_config"
-	ValidateConfig  Permission = "workload:validate_config"
-	CreateConfigTpl Permission = "config:create"
-	ResolveAlert    Permission = "alert:resolve"
-	ExportReports   Permission = "reports:export"
-	ArchiveWorkload Permission = "workload:archive"
-	DeleteWorkload  Permission = "workload:delete"
-	ViewAudit       Permission = "audit:view"
-	ManageUsers     Permission = "users:manage"    // réservé Spec B
-	ManageSettings  Permission = "settings:manage" // réservé Spec C
+	PushConfig        Permission = "workload:push_config"
+	ReadConfigContent Permission = "config:read_content"
+	ValidateConfig    Permission = "workload:validate_config"
+	CreateConfigTpl   Permission = "config:create"
+	ResolveAlert      Permission = "alert:resolve"
+	ExportReports     Permission = "reports:export"
+	ArchiveWorkload   Permission = "workload:archive"
+	DeleteWorkload    Permission = "workload:delete"
+	ViewAudit         Permission = "audit:view"
+	ManageUsers       Permission = "users:manage"    // réservé Spec B
+	ManageSettings    Permission = "settings:manage" // réservé Spec C
 )
 
 // Has returns true when any of the user's groups grants p.

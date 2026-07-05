@@ -143,6 +143,8 @@ export default function PushHistoryTable({ workloadId }: Props) {
 
   if (history.length === 0) return null
 
+  const hasReadableContent = history.some((row) => Boolean(row.content))
+
   // Each (config_id, applied_at) pair is unique in history; the same hash
   // can appear multiple times (push then rollback). The label edit applies
   // to *every* row of a given hash, so the inline editor is keyed on hash.
@@ -198,11 +200,13 @@ export default function PushHistoryTable({ workloadId }: Props) {
         <button
           className="btn btn-small"
           onClick={() => setCompareOpen(true)}
-          disabled={history.length < 2}
+          disabled={history.length < 2 || !hasReadableContent}
           title={
             history.length < 2
               ? t('workloads.config.versioning.compare_needs_two')
-              : t('workloads.config.versioning.compare_button')
+              : !hasReadableContent
+                ? t('workloads.config.versioning.compare_error')
+                : t('workloads.config.versioning.compare_button')
           }
         >
           {t('workloads.config.versioning.compare_button')}
@@ -286,19 +290,23 @@ export default function PushHistoryTable({ workloadId }: Props) {
                 </td>
                 <td className="history-error">{row.error_message || ''}</td>
                 <td>
-                  <button className="btn btn-small" onClick={() => setViewing(row)}>
-                    {t('workloads.config.versioning.view_button')}
-                  </button>
-                  <button
-                    className="btn btn-small"
-                    onClick={() => setRollbackTarget(row)}
-                    disabled={rollbackDisabled}
-                    title={
-                      rollbackDisabledReason || t('workloads.config.versioning.rollback_button')
-                    }
-                  >
-                    {t('workloads.config.versioning.rollback_button')}
-                  </button>
+                  {row.content && (
+                    <button className="btn btn-small" onClick={() => setViewing(row)}>
+                      {t('workloads.config.versioning.view_button')}
+                    </button>
+                  )}
+                  {row.content && (
+                    <button
+                      className="btn btn-small"
+                      onClick={() => setRollbackTarget(row)}
+                      disabled={rollbackDisabled}
+                      title={
+                        rollbackDisabledReason || t('workloads.config.versioning.rollback_button')
+                      }
+                    >
+                      {t('workloads.config.versioning.rollback_button')}
+                    </button>
+                  )}
                   {isKnownGood ? (
                     <button
                       className="btn btn-small"
