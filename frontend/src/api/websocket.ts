@@ -170,12 +170,9 @@ export function connectWS() {
   if ((window as unknown as TestWindowFlags).__OTEL_MAGNIFY_E2E_DISABLE_WS__) return
   if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return
 
-  const token = localStorage.getItem('token')
-  if (!token) return
-
   shouldReconnect = true
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`)
+  ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
 
   ws.onopen = () => {
     reconnectAttempt = 0

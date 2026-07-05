@@ -28,7 +28,7 @@ All endpoints return JSON. Most expect JSON request bodies; `POST /api/workloads
 | `POST` | `/api/alerts/{id}/resolve` | Yes | Resolve an alert. |
 | `POST` | `/api/reports/evidence-pack` | Yes | Preview a deterministic evidence-pack JSON payload. |
 | `POST` | `/api/reports/evidence-pack/export` | Yes | Export an evidence pack as Markdown, CSV, or PDF (`?format=`). |
-| `GET` | `/ws?token={jwt}` | Yes | WebSocket hub (see [WebSocket](websocket.md)). |
+| `GET` | `/ws` | Yes | WebSocket hub. Browser clients use the HttpOnly session cookie; `?token={jwt}` is a legacy fallback (see [WebSocket](websocket.md)). |
 | `GET` | `/healthz` | No | Liveness probe. |
 
 !!! note "Legacy `/api/agents/*` compatibility"

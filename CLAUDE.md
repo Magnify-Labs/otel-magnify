@@ -57,7 +57,7 @@ docker run -d --name collector-prod-eu --network otel-magnify_default \
 - `pressly/goose` over `golang-migrate` — better `modernc.org/sqlite` support (pure Go, no CGO)
 - OpAMP server uses `Attach()` to mount on chi mux (not standalone)
 - Agent type detection via `isCollectorName()` — matches `otelcol*` prefix patterns
-- WebSocket auth via `?token=` query param (not header — browsers can't set WS headers)
+- WebSocket auth prefers the HttpOnly session cookie; `?token=` remains as a legacy fallback because browsers cannot set WS auth headers
 - Frontend embed.FS with SPA fallback for production single-binary deployment
 
 ## Release workflow

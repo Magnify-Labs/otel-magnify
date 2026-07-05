@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -76,6 +77,10 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to generate token")
 		return
 	}
+	var expiresAt time.Time
+	if expProvider, ok := a.auth.(extTokenExpirationProvider); ok {
+		expiresAt = tokenExpiresAt(expProvider, token)
+	}
 
 	// Login success: token is minted but not yet returned. If audit fails we
 	// 503 with side_effect_status=none — the user retries, gets a fresh
@@ -85,5 +90,11 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		respondAuditUnavailable(w, sideEffectNone)
 		return
 	}
+	setSessionCookie(w, r, token, expiresAt)
 	respondJSON(w, 200, map[string]string{"token": token})
+}
+
+func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
+	clearSessionCookie(w, r)
+	w.WriteHeader(http.StatusNoContent)
 }

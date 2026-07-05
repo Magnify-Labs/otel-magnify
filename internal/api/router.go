@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/magnify-labs/otel-magnify/internal/auth"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/perm"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
@@ -70,6 +71,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	}
 
 	r := chi.NewRouter()
+	r.Use(securityHeaders)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
@@ -93,15 +95,19 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 
 	// Public routes
 	r.Post("/api/auth/login", api.handleLogin)
+	r.Post("/api/auth/logout", api.handleLogout)
 	r.Get("/api/auth/methods", api.handleListAuthMethods)
 	r.Get("/api/features", api.handleListFeatures)
 	r.With(api.RequireFeature(FeatureConfigSafetyGitOpsExport)).Post("/api/gitops/webhooks/{provider}", api.handleGitOpsWebhook)
 
-	// WebSocket validates its own token via ?token= query param
-	// (browsers cannot set Authorization headers on WS handshakes, so it
-	// cannot live behind the Bearer-token middleware).
+	// WebSocket validates its own token because browsers cannot set custom
+	// Authorization headers on handshakes. Prefer the HttpOnly session cookie;
+	// keep ?token= as a legacy compatibility fallback.
 	r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
-		token := r.URL.Query().Get("token")
+		token, ok := auth.RequestToken(r)
+		if !ok {
+			token = r.URL.Query().Get("token")
+		}
 		if token == "" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return

@@ -9,4 +9,4 @@
 - Token lifetime and refresh strategy (currently: re-login on expiry).
 - Middleware in `internal/auth/` — how to use it in new handlers.
 - RBAC: `admin` and `viewer` roles, where enforcement happens.
-- WebSocket auth — token passed via `?token=` query parameter because browsers cannot set custom headers on the WS handshake.
+- WebSocket auth — browser clients use the `om_session` HttpOnly cookie on `/ws`; `?token=` remains a legacy fallback because browsers cannot set custom headers on the WS handshake.

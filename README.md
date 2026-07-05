@@ -215,7 +215,7 @@ Once connected, agents are grouped into workloads and appear automatically in th
 | `GET` | `/api/configs/:id` | Yes | Get config by ID |
 | `GET` | `/api/alerts` | Yes | List active alerts |
 | `POST` | `/api/alerts/:id/resolve` | Yes | Resolve an alert |
-| `GET` | `/ws?token=xxx` | Yes | Real-time WebSocket |
+| `GET` | `/ws` | Yes | Real-time WebSocket; browser sessions authenticate with the HttpOnly session cookie (`?token=` remains as a legacy compatibility fallback) |
 | `GET` | `/healthz` | No | Health check |
 
 > Legacy `/api/agents/*` paths still resolve — they reply with HTTP `307 Temporary Redirect` to the matching `/api/workloads/*` endpoint for backwards compatibility.

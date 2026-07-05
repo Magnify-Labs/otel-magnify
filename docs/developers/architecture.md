@@ -53,5 +53,5 @@ go.mod               # module root (github.com/magnify-labs/otel-magnify)
 - **OpAMP server runs on a dedicated `http.ServeMux` on `:4320`**, separate from the chi-based API mux on `:8080`. `Attach()` returns the handler and `ConnContext` hook, which are wired into the OpAMP-only mux at `/v1/opamp`. Keeping them on different listeners avoids the OpAMP protocol leaking into the user-facing router.
 - **Workload-centric data model** — persistence is keyed by workload (a K8s Deployment/DaemonSet/StatefulSet/Job/CronJob, or host+service). Individual pods are tracked as instances in an in-memory registry and are not persisted. See [OpAMP flow](opamp-flow.md) and [Connecting agents / Workload identity](../users/connecting-agents.md#workload-identity).
 - **Agent type detection via `isCollectorName()`** — matches the `otelcol*` prefix patterns; determines the collector vs SDK agent category shown in the UI.
-- **WebSocket auth via `?token=` query parameter** — browsers cannot set custom headers on WS handshakes.
+- **WebSocket auth via HttpOnly session cookie** — browser clients connect to `/ws` without putting JWTs in URLs; `?token=` remains as a legacy compatibility fallback because browsers cannot set custom headers on WS handshakes.
 - **Frontend served via `embed.FS` with SPA fallback** for the single-binary deployment model.
