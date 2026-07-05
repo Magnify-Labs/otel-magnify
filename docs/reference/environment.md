@@ -4,7 +4,7 @@ Exhaustive reference. See [Configuration](../users/configuration.md) for a user-
 
 | Variable | Required | Default | Scope | Description |
 |----------|----------|---------|-------|-------------|
-| `JWT_SECRET` | Yes | — | Auth | HS256 signing key for JWT tokens. |
+| `JWT_SECRET` | Yes | — | Auth | HS256 signing key for JWT tokens; must be at least 32 characters and must not use the placeholder value. |
 | `LISTEN_ADDR` | No | `:8080` | API | HTTP listen address for the API and embedded frontend. |
 | `OPAMP_ADDR` | No | `:4320` | OpAMP | WebSocket listen address for the OpAMP server. |
 | `CORS_ORIGINS` | No | `http://localhost:5173` | API | Comma-separated list of allowed origins. |

@@ -7,7 +7,7 @@ services:
     environment:
       DB_DRIVER: ${DB_DRIVER:-sqlite}
       DB_DSN: ${DB_DSN:-/data/otel-magnify.db}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value of at least 32 characters}
       LISTEN_ADDR: ":8080"
       OPAMP_ADDR: ":4320"
       CORS_ORIGINS: "http://localhost:8080"
