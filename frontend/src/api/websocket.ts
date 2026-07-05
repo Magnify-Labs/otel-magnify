@@ -97,7 +97,11 @@ function parseWsMessage(frame: unknown): WsMessage | null {
     return null
   }
 
-  if (!parsed || typeof parsed !== 'object' || typeof (parsed as { type?: unknown }).type !== 'string') {
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    typeof (parsed as { type?: unknown }).type !== 'string'
+  ) {
     warnMalformedFrame('missing message type', frame)
     return null
   }
