@@ -12,10 +12,11 @@ import (
 
 // Config holds the server's listen addresses and feature flags.
 type Config struct {
-	ListenAddr      string // default ":8080"
-	OpAMPAddr       string // default ":4320"
-	CORSOrigins     string
-	MinAgentVersion string
+	ListenAddr        string // default ":8080"
+	OpAMPAddr         string // default ":4320"
+	OpAMPSharedSecret string // empty disables OpAMP bearer authentication for local/dev
+	CORSOrigins       string
+	MinAgentVersion   string
 
 	// Workload lifecycle tuning. Zero values let the downstream subsystems
 	// apply their own defaults (2-minute grace, 30-day retention, 5-minute

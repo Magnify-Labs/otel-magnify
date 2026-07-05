@@ -21,6 +21,7 @@ otel-magnify is configured entirely via environment variables. See the [referenc
 |----------|---------|-------------|
 | `LISTEN_ADDR` | `:8080` | API + frontend listen address. |
 | `OPAMP_ADDR` | `:4320` | OpAMP WebSocket listen address. |
+| `OPAMP_SHARED_SECRET` | *(empty)* | Optional bearer token required from OpAMP clients. Set in production and configure agents to send the same value with the `Authorization` bearer scheme. Leave empty only for local/dev demos. |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins for the API. |
 
 ## Bootstrap

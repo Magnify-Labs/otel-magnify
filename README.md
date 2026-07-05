@@ -120,6 +120,7 @@ All configuration via environment variables:
 | `DB_DSN` | `otel-magnify.db` | Database connection string |
 | `LISTEN_ADDR` | `:8080` | API server listen address |
 | `OPAMP_ADDR` | `:4320` | OpAMP server listen address |
+| `OPAMP_SHARED_SECRET` | *(empty)* | Optional bearer token required from OpAMP clients in production |
 | `JWT_SECRET` | *(required)* | Secret key for JWT signing; must be at least 32 characters and not the placeholder value |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `SEED_ADMIN_EMAIL` | *(optional)* | Create admin user on startup |
@@ -139,6 +140,8 @@ extensions:
     server:
       ws:
         endpoint: ws://<magnify-host>:4320/v1/opamp
+        headers:
+          Authorization: "Bearer ${env:OPAMP_SHARED_SECRET}"
         tls:
           insecure: true   # set to false with a valid certificate in production
 
@@ -184,6 +187,7 @@ import "github.com/open-telemetry/opamp-go/client"
 c := client.NewWebSocket(nil)
 err := c.Start(context.Background(), client.StartSettings{
     OpAMPServerURL: "ws://<magnify-host>:4320/v1/opamp",
+    Header: http.Header{"Authorization": []string{"Bearer " + os.Getenv("OPAMP_SHARED_SECRET")}},
 })
 ```
 

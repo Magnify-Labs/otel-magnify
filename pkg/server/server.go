@@ -97,6 +97,7 @@ func (s *Server) Run(ctx context.Context) error {
 	opampSrv := opamp.New(s.store, hub, opamp.Options{
 		DisconnectGrace:   s.cfg.WorkloadDisconnectGrace,
 		RetentionDuration: s.cfg.WorkloadRetention,
+		SharedSecret:      s.cfg.OpAMPSharedSecret,
 	})
 	opampHandler, connCtx, err := opampSrv.Attach()
 	if err != nil {
@@ -209,6 +210,7 @@ func (s *Server) Handler() http.Handler {
 	opampSrv := opamp.New(s.store, hub, opamp.Options{
 		DisconnectGrace:   s.cfg.WorkloadDisconnectGrace,
 		RetentionDuration: s.cfg.WorkloadRetention,
+		SharedSecret:      s.cfg.OpAMPSharedSecret,
 	})
 	return api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.features, s.licenseChecker, s.protectedRouterHooks, s.reportSigner)
 }
