@@ -2,6 +2,8 @@
 
 Agents connect to otel-magnify over [OpAMP](https://opentelemetry.io/docs/specs/opamp/) on port `:4320` (configurable via `OPAMP_ADDR`).
 
+For production, set `OPAMP_SHARED_SECRET` on the otel-magnify server and configure every OpAMP client to send the same value with the `Authorization` bearer scheme during the HTTP/WebSocket handshake. When `OPAMP_SHARED_SECRET` is empty, the OpAMP boundary stays open for local development and demo collectors; when it is set, clients without the matching bearer token are rejected with `401 Unauthorized` before any OpAMP message is processed.
+
 Two agent types are supported:
 
 - **OTel Collectors** — the standard `otelcol*` binaries.
@@ -42,6 +44,8 @@ extensions:
     server:
       ws:
         endpoint: ws://magnify.example.com:4320/v1/opamp
+        headers:
+          Authorization: "Bearer ${env:OPAMP_SHARED_SECRET}"
     instance_uid: collector-prod-eu-01
     capabilities:
       reports_effective_config: true
@@ -93,6 +97,8 @@ Supervisor configuration (`supervisor.yaml`):
 ```yaml
 server:
   endpoint: ws://otel-magnify:4320/v1/opamp
+  headers:
+    Authorization: "Bearer ${env:OPAMP_SHARED_SECRET}"
   tls:
     insecure: true
 

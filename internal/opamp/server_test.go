@@ -3,6 +3,8 @@ package opamp
 import (
 	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 
@@ -172,6 +174,58 @@ func TestPushConfig_TargetInstanceRejectsCrossWorkloadBinding(t *testing.T) {
 
 	if got := connOther.sentCount(); got != 0 {
 		t.Fatalf("cross-workload target received %d messages, want 0", got)
+	}
+}
+
+func TestOpAMPAuthRejectsMissingBearerWhenSharedSecretConfigured(t *testing.T) {
+	srv := New(nil, nil, Options{SharedSecret: "expected-token"})
+	req := httptest.NewRequest(http.MethodGet, "/v1/opamp", nil)
+
+	resp := srv.authenticateRequest(req)
+
+	if resp.Accept {
+		t.Fatal("missing bearer token was accepted")
+	}
+	if resp.HTTPStatusCode != http.StatusUnauthorized {
+		t.Fatalf("HTTPStatusCode = %d, want %d", resp.HTTPStatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestOpAMPAuthAcceptsMatchingBearerWhenSharedSecretConfigured(t *testing.T) {
+	srv := New(nil, nil, Options{SharedSecret: "expected-token"})
+	req := httptest.NewRequest(http.MethodGet, "/v1/opamp", nil)
+	req.Header.Set("Authorization", "Bearer expected-token")
+
+	resp := srv.authenticateRequest(req)
+
+	if !resp.Accept {
+		t.Fatalf("matching bearer token was rejected with status %d", resp.HTTPStatusCode)
+	}
+}
+
+func TestOpAMPAuthRejectsWrongBearerWhenSharedSecretConfigured(t *testing.T) {
+	srv := New(nil, nil, Options{SharedSecret: "expected-token"})
+	req := httptest.NewRequest(http.MethodGet, "/v1/opamp", nil)
+	req.Header.Set("Authorization", "Bearer wrong-token")
+
+	resp := srv.authenticateRequest(req)
+
+	if resp.Accept {
+		t.Fatal("wrong bearer token was accepted")
+	}
+	if resp.HTTPStatusCode != http.StatusUnauthorized {
+		t.Fatalf("HTTPStatusCode = %d, want %d", resp.HTTPStatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestOpAMPAuthAllowsConnectionsWhenSharedSecretUnset(t *testing.T) {
+	srv := New(nil, nil, Options{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/opamp", nil)
+
+	resp := srv.authenticateRequest(req)
+
+	if !resp.Accept {
+		t.Fatalf("dev-mode OpAMP connection was rejected with status %d", resp.HTTPStatusCode)
 	}
 }
 

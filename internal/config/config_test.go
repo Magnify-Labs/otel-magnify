@@ -57,3 +57,13 @@ func TestLoadInvalidValuesFallBackToDefault(t *testing.T) {
 		t.Errorf("got %v", c.WorkloadRetention)
 	}
 }
+
+func TestLoadOpAMPSharedSecret(t *testing.T) {
+	t.Setenv("OPAMP_SHARED_SECRET", "opamp-psk")
+
+	c := Load()
+
+	if c.OpAMPSharedSecret != "opamp-psk" {
+		t.Fatalf("OpAMPSharedSecret = %q, want %q", c.OpAMPSharedSecret, "opamp-psk")
+	}
+}

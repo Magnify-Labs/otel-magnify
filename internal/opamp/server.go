@@ -3,6 +3,7 @@ package opamp
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -70,6 +71,9 @@ type Options struct {
 	// RetentionDuration is how long a disconnected workload stays around
 	// before it becomes eligible for archival.
 	RetentionDuration time.Duration
+	// SharedSecret, when set, requires OpAMP clients to authenticate with an
+	// Authorization bearer token during HTTP/WebSocket connection setup.
+	SharedSecret string
 }
 
 // Server wraps the opamp-go server and manages workload state.
@@ -81,6 +85,7 @@ type Server struct {
 	registry  *InstanceRegistry
 	grace     *GraceController
 	retention time.Duration
+	secret    string
 
 	mu        sync.RWMutex
 	conns     map[string]types.Connection // instanceUID hex -> connection
@@ -108,6 +113,7 @@ func New(db Store, notifier Notifier, opts Options) *Server {
 		registry:  NewInstanceRegistry(),
 		grace:     NewGraceController(opts.DisconnectGrace),
 		retention: opts.RetentionDuration,
+		secret:    opts.SharedSecret,
 		conns:     make(map[string]types.Connection),
 		connToUID: make(map[types.Connection]string),
 	}
@@ -205,16 +211,44 @@ func (s *Server) Attach() (opampServer.HTTPHandlerFunc, opampServer.ConnContext,
 
 	settings := opampServer.Settings{
 		Callbacks: types.Callbacks{
-			OnConnecting: func(_ *http.Request) types.ConnectionResponse {
-				return types.ConnectionResponse{
-					Accept:              true,
-					ConnectionCallbacks: connCallbacks,
+			OnConnecting: func(req *http.Request) types.ConnectionResponse {
+				resp := s.authenticateRequest(req)
+				if !resp.Accept {
+					return resp
 				}
+				resp.ConnectionCallbacks = connCallbacks
+				return resp
 			},
 		},
 	}
 
 	return s.opamp.Attach(settings)
+}
+
+func (s *Server) authenticateRequest(req *http.Request) types.ConnectionResponse {
+	if s.secret == "" {
+		return types.ConnectionResponse{Accept: true}
+	}
+
+	const prefix = "Bearer "
+	auth := req.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, prefix) {
+		return unauthorizedConnectionResponse()
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(auth, prefix))
+	if subtle.ConstantTimeCompare([]byte(token), []byte(s.secret)) != 1 {
+		return unauthorizedConnectionResponse()
+	}
+
+	return types.ConnectionResponse{Accept: true}
+}
+
+func unauthorizedConnectionResponse() types.ConnectionResponse {
+	return types.ConnectionResponse{
+		Accept:             false,
+		HTTPStatusCode:     http.StatusUnauthorized,
+		HTTPResponseHeader: map[string]string{"WWW-Authenticate": `Bearer realm="opamp"`},
+	}
 }
 
 // Stop gracefully shuts down the OpAMP server.
