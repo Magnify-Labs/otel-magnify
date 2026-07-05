@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authAPI, meAPI, type AuthMethod } from '../api/client'
+import { startClientSession } from '../api/session'
 import { useStore } from '../store'
 
 const PASSWORD_METHOD: AuthMethod = {
@@ -45,7 +46,7 @@ export default function Login() {
     setLoading(true)
     try {
       const { token } = await authAPI.login(email, password)
-      localStorage.setItem('token', token)
+      startClientSession(token)
       // AppShell's boot effect already ran with no token; hydrate `me` here
       // so the SPA navigate to '/' lands on a screen with the user available.
       const me = await meAPI.get()

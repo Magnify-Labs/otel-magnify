@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { endClientSession } from './session'
 import type {
   APIErrorDetails,
   APIErrorResponse,
@@ -115,7 +116,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401 && !err.config?.skipAuthRedirect) {
-      localStorage.removeItem('token')
+      endClientSession()
       window.location.href = '/login'
     }
     return Promise.reject(err)

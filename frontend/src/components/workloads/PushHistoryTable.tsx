@@ -43,10 +43,12 @@ function knownGoodDisableReason(
 function rollbackDisableReason(
   row: WorkloadConfig,
   canRollback: boolean,
+  canReadConfigContent: boolean,
   t: ReturnType<typeof useTranslation>['t'],
   featureDisabledReason = '',
 ) {
   if (featureDisabledReason) return featureDisabledReason
+  if (!canReadConfigContent) return t('workloads.config.permission.content_restricted')
   if (!canRollback) return t('workloads.config.versioning.requires_push_permission')
   if (row.status !== 'applied') {
     return t('workloads.config.versioning.rollback_only_applied')
@@ -198,20 +200,22 @@ export default function PushHistoryTable({ workloadId }: Props) {
         <p className="section-title section-title-flex">
           {t('workloads.config.versioning.history_title')}
         </p>
-        <button
-          className="btn btn-small"
-          onClick={() => setCompareOpen(true)}
-          disabled={history.length < 2 || !hasReadableContent}
-          title={
-            history.length < 2
-              ? t('workloads.config.versioning.compare_needs_two')
-              : !hasReadableContent
-                ? t('workloads.config.permission.content_restricted')
-                : t('workloads.config.versioning.compare_button')
-          }
-        >
-          {t('workloads.config.versioning.compare_button')}
-        </button>
+        {canReadConfigContent && (
+          <button
+            className="btn btn-small"
+            onClick={() => setCompareOpen(true)}
+            disabled={history.length < 2 || !hasReadableContent}
+            title={
+              history.length < 2
+                ? t('workloads.config.versioning.compare_needs_two')
+                : !hasReadableContent
+                  ? t('workloads.config.permission.content_restricted')
+                  : t('workloads.config.versioning.compare_button')
+            }
+          >
+            {t('workloads.config.versioning.compare_button')}
+          </button>
+        )}
       </div>
       {knownGoodError && <div className="error-text error-text-push">{knownGoodError}</div>}
       {knownGoodQueryError && !isNotFoundError(knownGoodQueryError) && (
@@ -245,6 +249,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
             const rollbackDisabledReason = rollbackDisableReason(
               row,
               canPushConfig,
+              canReadConfigContent,
               t,
               guidedRollbackDisabledReason,
             )
@@ -291,12 +296,12 @@ export default function PushHistoryTable({ workloadId }: Props) {
                 </td>
                 <td className="history-error">{row.error_message || ''}</td>
                 <td>
-                  {row.content && (
+                  {canReadConfigContent && row.content && (
                     <button className="btn btn-small" onClick={() => setViewing(row)}>
                       {t('workloads.config.versioning.view_button')}
                     </button>
                   )}
-                  {row.content && (
+                  {canReadConfigContent && row.content && (
                     <button
                       className="btn btn-small"
                       onClick={() => setRollbackTarget(row)}
@@ -343,7 +348,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
         </tbody>
       </table>
 
-      {viewing && (
+      {canReadConfigContent && viewing && (
         <div className="modal-backdrop" onClick={() => setViewing(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -361,7 +366,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
         </div>
       )}
 
-      {rollbackTarget && (
+      {canReadConfigContent && rollbackTarget && (
         <GuidedRollbackDialog
           workloadId={workloadId}
           target={rollbackTarget}
@@ -413,7 +418,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
         </div>
       )}
 
-      {compareOpen && (
+      {canReadConfigContent && compareOpen && (
         <ConfigCompareDialog
           workloadId={workloadId}
           history={history}

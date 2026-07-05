@@ -1,5 +1,5 @@
 import { test, expect, mockFeatures, mockMe } from './fixtures'
-import type { Page } from '@playwright/test'
+import type { Page, Route } from '@playwright/test'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const ACTIVE_CONFIG_ID = 'hash-current'
@@ -370,6 +370,169 @@ const BASE_HISTORY = [
   },
 ]
 
+test('viewer login after editor cache does not expose cached config content actions', async ({
+  loggedInPage: page,
+}) => {
+  let viewerSession = false
+  const fulfillWorkloadsList = (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: WORKLOAD_ID,
+          fingerprint_source: 'k8s',
+          fingerprint_keys: { cluster: 'prod', namespace: 'obs', kind: 'deployment', name: 'otel' },
+          display_name: 'test-collector',
+          type: 'collector',
+          version: '0.98.0',
+          status: 'connected',
+          last_seen_at: new Date().toISOString(),
+          labels: {},
+          active_config_id: ACTIVE_CONFIG_ID,
+          accepts_remote_config: true,
+          available_components: { components: { receivers: ['otlp'], exporters: ['logging'] } },
+        },
+      ]),
+    })
+  const mockWorkloadsListForSession = async () => {
+    await page.route('**/api/workloads', fulfillWorkloadsList)
+    await page.route('**/api/workloads?*', fulfillWorkloadsList)
+  }
+  await mockWorkloadsListForSession()
+  await mockWorkload(page)
+  await page.route(`**/api/configs/${ACTIVE_CONFIG_ID}`, (route) => {
+    if (viewerSession) {
+      return route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'config content restricted' }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: ACTIVE_CONFIG_ID,
+        name: 'current',
+        content: YAML_NEW,
+        created_at: new Date().toISOString(),
+        created_by: 'test',
+      }),
+    })
+  })
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/configs`, (route) => {
+    if (viewerSession) {
+      return route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'config content restricted' }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(BASE_HISTORY),
+    })
+  })
+  await mockConfigsList(page)
+  await gotoWorkloadDetail(page, 'editor')
+  await expect(page.getByRole('button', { name: 'View' }).first()).toBeVisible()
+  await expect(page.getByText('# revision-new')).toBeVisible()
+
+  await page.locator('.identity-trigger').click()
+  await page.getByRole('button', { name: 'Sign out' }).click()
+  await expect(page).toHaveURL(/\/login$/)
+
+  await page.route('**/api/auth/methods', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        methods: [
+          {
+            id: 'password',
+            type: 'password',
+            display_name: 'Email + password',
+            login_url: '/api/auth/login',
+          },
+        ],
+      }),
+    }),
+  )
+  await mockFeatures(page, {})
+  await mockWorkloadsListForSession()
+  await mockWorkload(page)
+  await page.route(`**/api/configs/${ACTIVE_CONFIG_ID}`, (route) => {
+    if (viewerSession) {
+      return route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'config content restricted' }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: ACTIVE_CONFIG_ID,
+        name: 'current',
+        content: YAML_NEW,
+        created_at: new Date().toISOString(),
+        created_by: 'test',
+      }),
+    })
+  })
+  await page.route(`**/api/workloads/${WORKLOAD_ID}/configs`, (route) => {
+    if (viewerSession) {
+      return route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'config content restricted' }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(BASE_HISTORY),
+    })
+  })
+  await mockConfigsList(page)
+  await page.route('**/api/auth/login', (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ token: 'viewer-token' }),
+    })
+  })
+  await mockMe(page, {
+    id: 'viewer-user',
+    email: 'viewer@e2e.local',
+    groups: [
+      {
+        id: 'grp_system_viewer',
+        name: 'viewer',
+        role: 'viewer',
+        is_system: true,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  })
+
+  await page.locator('#login-email').fill('viewer@e2e.local')
+  await page.locator('#login-password').fill('password')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.locator('.sidebar-logo-name')).toBeVisible()
+
+  viewerSession = true
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  await expect(page.getByText('Config content is restricted by role.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'View', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Compare revisions' })).toHaveCount(0)
+  await expect(page.getByText('# revision-new')).toHaveCount(0)
+})
+
 test('community features keep shared config primitives but disable paid safety controls', async ({
   loggedInPage: page,
 }) => {
@@ -513,10 +676,9 @@ test('viewer cannot initiate rollback or known-good history actions', async ({
 
   await gotoWorkloadDetail(page, 'viewer')
   const olderRow = page.locator('.history-table tbody tr').nth(1)
-  const rollbackButton = olderRow.getByRole('button', { name: 'Rollback' })
 
-  await expect(rollbackButton).toBeDisabled()
-  await expect(rollbackButton).toHaveAttribute('title', 'Requires workload:push_config permission')
+  await expect(olderRow.getByRole('button', { name: 'View', exact: true })).toHaveCount(0)
+  await expect(olderRow.getByRole('button', { name: 'Rollback' })).toHaveCount(0)
   const knownGoodButton = olderRow.getByRole('button', {
     name: /Mark as known-good|Clear known-good/,
   })
