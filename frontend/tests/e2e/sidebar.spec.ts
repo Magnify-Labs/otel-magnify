@@ -35,7 +35,7 @@ test.describe('Sidebar', () => {
     await page.goto('/')
     await expect(page.locator('.sidebar-section-label').filter({ hasText: /FLEET|FLOTTE/ })).toBeVisible()
     await expect(page.locator('.sidebar-section-label').filter({ hasText: /ENTERPRISE/i })).toHaveCount(0)
-    await expect(page.locator('.sidebar-nav').first().locator('.sidebar-nav-item a')).toHaveCount(5)
+    await expect(page.locator('.sidebar-nav').first().locator('.sidebar-nav-item a')).toHaveCount(4)
     await expect(page.locator('.sidebar-nav').last().locator('.sidebar-nav-item a')).toHaveCount(1)
   })
 

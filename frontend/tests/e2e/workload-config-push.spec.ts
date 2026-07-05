@@ -56,6 +56,69 @@ function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
   )
 }
 
+function mockWorkloadsList(page: Page) {
+  return page.route(/\/api\/workloads(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([buildCollectorWorkload({ id: WORKLOAD_ID })]),
+    }),
+  )
+}
+
+function mockConfigDiff(page: Page) {
+  return page.route('**/api/configs/diff', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: 'otel-config-diff.v1',
+        valid: true,
+        summary: {
+          overall_risk: 'low',
+          headline: 'No risky changes detected',
+          counts: {
+            components_added: 0,
+            components_removed: 0,
+            components_modified: 0,
+            pipelines_added: 0,
+            pipelines_removed: 0,
+            pipelines_modified: 0,
+            endpoints_added: 0,
+            endpoints_removed: 0,
+            endpoints_modified: 0,
+            high_risk: 0,
+            medium_risk: 0,
+            low_risk: 0,
+          },
+        },
+        blast_radius: {
+          schema_version: 'otel-config-blast-radius.v1',
+          affected_signals: [],
+          touched_exporters: [],
+          impacted_services: [],
+          impacted_clusters: [],
+          critical_collectors: [],
+        },
+        components: [],
+        pipelines: [],
+        endpoints: [],
+        security: [],
+        risk_items: [],
+        diagnostics: [],
+        normalized: {
+          base_hash: 'base',
+          target_hash: 'target',
+          base_component_count: 0,
+          target_component_count: 0,
+          base_pipeline_count: 0,
+          target_pipeline_count: 0,
+        },
+      }),
+    }),
+  )
+}
+
 function mockConfig(page: Page, content: string, overrides: Record<string, unknown> = {}) {
   return page.route(`**/api/configs/${ACTIVE_CONFIG_ID}`, (route) =>
     route.fulfill({
@@ -253,7 +316,9 @@ const VALIDATION_CHECKS_SUCCESS = [
 
 test.beforeEach(async ({ loggedInPage: page }) => {
   await mockMe(page, { groups: [editorGroup] })
+  await mockWorkloadsList(page)
   await mockConfigsList(page, [])
+  await mockConfigDiff(page)
   await mockKnownGoodMissing(page)
   await mockApprovalList(page)
 })
