@@ -78,7 +78,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 
 ```bash
 # Backend
-JWT_SECRET=dev-secret go run ./cmd/server/
+JWT_SECRET=local-dev-secret-at-least-32-chars!! go run ./cmd/server/
 
 # Frontend (separate terminal)
 cd frontend
@@ -91,13 +91,13 @@ The API runs on `:8080`, OpAMP on `:4320`, frontend dev server on `:5173` (proxi
 ### Seed an admin user
 
 ```bash
-SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=changeme JWT_SECRET=dev-secret go run ./cmd/server/
+SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=changeme JWT_SECRET=local-dev-secret-at-least-32-chars!! go run ./cmd/server/
 ```
 
 ### Docker Compose
 
 ```bash
-JWT_SECRET=mysecret docker compose up --build
+JWT_SECRET=$(openssl rand -base64 32) docker compose up --build
 ```
 
 App available at `http://localhost:8080`.
@@ -120,7 +120,7 @@ All configuration via environment variables:
 | `DB_DSN` | `otel-magnify.db` | Database connection string |
 | `LISTEN_ADDR` | `:8080` | API server listen address |
 | `OPAMP_ADDR` | `:4320` | OpAMP server listen address |
-| `JWT_SECRET` | *(required)* | Secret key for JWT signing |
+| `JWT_SECRET` | *(required)* | Secret key for JWT signing; must be at least 32 characters and not the placeholder value |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `SEED_ADMIN_EMAIL` | *(optional)* | Create admin user on startup |
 | `SEED_ADMIN_PASSWORD` | *(optional)* | Password for seed admin user |

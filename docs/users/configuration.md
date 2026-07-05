@@ -6,7 +6,7 @@ otel-magnify is configured entirely via environment variables. See the [referenc
 
 | Variable | Description |
 |----------|-------------|
-| `JWT_SECRET` | HS256 signing key for the JWT issued at login. Must be a strong random value in production. |
+| `JWT_SECRET` | HS256 signing key for the JWT issued at login. Must be at least 32 characters, must not be the placeholder value, and should be a strong random value in production. |
 
 ## Persistence
 

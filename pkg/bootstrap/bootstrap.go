@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"golang.org/x/crypto/bcrypt"
@@ -63,8 +64,8 @@ type Options struct {
 // directly; Run installs its own SIGINT/SIGTERM handler on top.
 func Run(ctx context.Context, opts Options) error {
 	cfg := config.Load()
-	if cfg.JWTSecret == "" {
-		return errors.New("JWT_SECRET environment variable is required")
+	if err := validateJWTSecret(cfg.JWTSecret); err != nil {
+		return err
 	}
 
 	db, err := store.Open(cfg.DBDriver, cfg.DBDSN)
@@ -133,6 +134,19 @@ func Run(ctx context.Context, opts Options) error {
 	}()
 
 	return srv.Run(runCtx)
+}
+
+func validateJWTSecret(secret string) error {
+	if strings.TrimSpace(secret) == "" {
+		return errors.New("JWT_SECRET environment variable is required")
+	}
+	if secret == "change-me-in-production" {
+		return errors.New("JWT_SECRET must not use the placeholder value")
+	}
+	if len(secret) < 32 {
+		return errors.New("JWT_SECRET must be at least 32 characters")
+	}
+	return nil
 }
 
 // seedAdmin creates an administrator user on startup when SEED_ADMIN_EMAIL

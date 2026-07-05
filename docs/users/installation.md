@@ -7,7 +7,7 @@ otel-magnify ships as a single binary that embeds the frontend. Three supported 
 The simplest way to run otel-magnify locally or on a single host.
 
 ```bash
-JWT_SECRET=change-me docker compose up --build
+JWT_SECRET=$(openssl rand -base64 32) docker compose up --build
 ```
 
 The API and embedded frontend are served at `http://localhost:8080`. The OpAMP endpoint listens on `:4320`.
@@ -36,7 +36,7 @@ Build from source:
 
 ```bash
 go build -o otel-magnify ./cmd/server/
-JWT_SECRET=change-me ./otel-magnify
+JWT_SECRET=$(openssl rand -base64 32) ./otel-magnify
 ```
 
 ## Seed an admin user on first start
@@ -44,7 +44,7 @@ JWT_SECRET=change-me ./otel-magnify
 ```bash
 SEED_ADMIN_EMAIL=admin@local \
   SEED_ADMIN_PASSWORD=changeme \
-  JWT_SECRET=dev-secret \
+  JWT_SECRET=local-dev-secret-at-least-32-chars!! \
   ./otel-magnify
 ```
 

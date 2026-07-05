@@ -9,4 +9,4 @@
 - Migration strategy with `pressly/goose` — why it was chosen over `golang-migrate`.
 - The OpAMP server's use of `Attach()` on the chi mux.
 - `pkg/models` as the shared type boundary between packages.
-- Local dev loop: `JWT_SECRET=dev-secret go run ./cmd/server/`.
+- Local dev loop: `JWT_SECRET=local-dev-secret-at-least-32-chars!! go run ./cmd/server/`.

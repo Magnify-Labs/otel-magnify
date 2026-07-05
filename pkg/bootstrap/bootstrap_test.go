@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,6 +49,69 @@ func TestRun_FailsWithoutJWTSecret(t *testing.T) {
 	err := bootstrap.Run(context.Background(), bootstrap.Options{})
 	if err == nil {
 		t.Fatal("expected error when JWT_SECRET is unset, got nil")
+	}
+}
+
+func TestRun_RejectsWeakJWTSecretsBeforeOpeningDatabase(t *testing.T) {
+	tests := []struct {
+		name      string
+		secret    string
+		wantError string
+	}{
+		{
+			name:      "missing",
+			secret:    "",
+			wantError: "JWT_SECRET environment variable is required",
+		},
+		{
+			name:      "placeholder",
+			secret:    "change-me-in-production",
+			wantError: "JWT_SECRET must not use the placeholder value",
+		},
+		{
+			name:      "too_short",
+			secret:    "short-secret",
+			wantError: "JWT_SECRET must be at least 32 characters",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("JWT_SECRET", tt.secret)
+			t.Setenv("DB_DRIVER", "sqlite")
+			t.Setenv("DB_DSN", "/definitely/not/a/writable/path/otel-magnify.db")
+
+			err := bootstrap.Run(context.Background(), bootstrap.Options{})
+			if err == nil {
+				t.Fatal("expected weak JWT_SECRET to fail bootstrap, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tt.wantError)
+			}
+		})
+	}
+}
+
+func TestRun_AcceptsValidJWTSecret(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret-at-least-32-bytes-long-for-hmac")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_DSN", ":memory:")
+	t.Setenv("LISTEN_ADDR", ":0")
+	t.Setenv("OPAMP_ADDR", ":0")
+
+	preRunCalled := false
+	opts := bootstrap.Options{
+		PreRun: func(_ ext.Store, _ ext.AuthProvider) ([]server.Option, error) {
+			preRunCalled = true
+			return nil, errors.New("stop after secret validation")
+		},
+	}
+	err := bootstrap.Run(context.Background(), opts)
+	if err == nil || !strings.Contains(err.Error(), "stop after secret validation") {
+		t.Fatalf("Run error = %v, want PreRun sentinel", err)
+	}
+	if !preRunCalled {
+		t.Fatal("PreRun was not called for a valid JWT_SECRET")
 	}
 }
 
