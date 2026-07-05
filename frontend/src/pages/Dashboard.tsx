@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { workloadsAPI, alertsAPI } from '../api/client'
@@ -23,7 +23,8 @@ export default function Dashboard() {
     queryKey: ['workloads'],
     queryFn: () => workloadsAPI.list(),
   })
-  const { data: alerts } = useQuery({ queryKey: ['alerts'], queryFn: () => alertsAPI.list(false) })
+  const alertsQuery = useQuery({ queryKey: ['alerts'], queryFn: () => alertsAPI.list(false) })
+  const { data: alerts } = alertsQuery
   const {
     data: versionIntelligence,
     isLoading: isVersionIntelligenceLoading,
@@ -44,6 +45,39 @@ export default function Dashboard() {
     if (alerts) setAlerts(alerts)
   }, [alerts, setAlerts])
 
+  const isDashboardLoading = workloadsQuery.isLoading || alertsQuery.isLoading
+  const isDashboardError = workloadsQuery.isError || alertsQuery.isError
+
+  if (isDashboardLoading) {
+    return (
+      <DashboardFrame>
+        <div className="loading dashboard-state" role="status" aria-live="polite">
+          {t('dashboard.state.loading')}
+        </div>
+      </DashboardFrame>
+    )
+  }
+
+  if (isDashboardError) {
+    return (
+      <DashboardFrame>
+        <div className="error-text dashboard-state dashboard-error" role="alert">
+          <span>{t('dashboard.state.error')}</span>
+          <button
+            type="button"
+            className="dashboard-retry"
+            onClick={() => {
+              void workloadsQuery.refetch()
+              void alertsQuery.refetch()
+            }}
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      </DashboardFrame>
+    )
+  }
+
   const ws = workloadsQuery.data ?? []
   const connected = ws.filter((w) => w.status === 'connected').length
   const degraded = ws.filter((w) => w.status === 'degraded').length
@@ -52,14 +86,7 @@ export default function Dashboard() {
   const supervised = ws.filter(isSupervised).length
 
   return (
-    <div>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">{t('dashboard.title')}</h1>
-          <p className="page-subtitle">{t('dashboard.subtitle')}</p>
-        </div>
-      </header>
-
+    <DashboardFrame>
       <section className="stat-grid">
         <StatCard
           label={t('dashboard.stat.collectors')}
@@ -103,6 +130,23 @@ export default function Dashboard() {
           )}
         </aside>
       </section>
+    </DashboardFrame>
+  )
+}
+
+function DashboardFrame({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
+
+  return (
+    <div>
+      <header className="page-header">
+        <div>
+          <h1 className="page-title">{t('dashboard.title')}</h1>
+          <p className="page-subtitle">{t('dashboard.subtitle')}</p>
+        </div>
+      </header>
+
+      {children}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { test, expect, mockFeatures, mockMe } from './fixtures'
+import type { Page } from '@playwright/test'
 
 const mockWorkloads = [
   {
@@ -986,4 +987,177 @@ test.describe('Dashboard', () => {
     await page.locator('.stat-card', { hasText: /Collectors|Collecteurs/ }).click()
     await expect(page).toHaveURL(/\/inventory\?type=collector/)
   })
+
+  test('shows a loading state instead of zero stats while primary queries are pending', async ({ loggedInPage: page }) => {
+    await page.unroute('**/api/workloads*')
+    await page.unroute('**/api/alerts*')
+    await page.route('**/api/workloads*', () => new Promise(() => {}))
+    await page.route('**/api/alerts*', () => new Promise(() => {}))
+
+    await page.goto('/')
+
+    await expect(page.getByRole('status')).toContainText(
+      /Loading dashboard data|Chargement du tableau de bord/,
+    )
+    await expect(page.locator('.stat-grid .stat-card')).toHaveCount(0)
+  })
+
+  test('shows an error state instead of zero stats when primary queries fail', async ({ loggedInPage: page }) => {
+    await page.unroute('**/api/workloads*')
+    await page.route('**/api/workloads*', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' }),
+    )
+
+    await page.goto('/')
+
+    await expect(page.getByRole('alert')).toContainText(
+      /Unable to load dashboard data|Impossible de charger le tableau de bord/,
+    )
+    await expect(page.locator('.stat-grid .stat-card')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Retry|Réessayer/ })).toBeVisible()
+  })
+
+  test('ignores malformed websocket frames with safe logging and no crash', async ({ loggedInPage: page }) => {
+    const pageErrors: string[] = []
+    const warnings: string[] = []
+    page.on('pageerror', (err) => pageErrors.push(err.message))
+    page.on('console', (msg) => {
+      if (msg.type() === 'warning') warnings.push(msg.text())
+    })
+
+    await installFakeWebSocket(page)
+    await page.goto('/')
+    await page.waitForFunction(() => {
+      const win = window as unknown as { __fakeSockets?: unknown[] }
+      return (win.__fakeSockets?.length ?? 0) > 0
+    })
+
+    await page.evaluate(() => {
+      const win = window as unknown as {
+        __fakeSockets: Array<{ onmessage: ((event: { data: string }) => void) | null }>
+      }
+      win.__fakeSockets.at(-1)?.onmessage?.({ data: 'not-json' })
+    })
+
+    await expect(page.locator('.stat-grid .stat-card')).toHaveCount(6)
+    expect(pageErrors).toEqual([])
+    expect(warnings.join('\n')).toContain('Ignoring malformed websocket frame')
+    expect(warnings.join('\n')).not.toContain('not-json')
+  })
+
+  test('reconnects websockets with increasing capped backoff', async ({ loggedInPage: page }) => {
+    await installFakeWebSocket(page, { captureTimeouts: true })
+    await page.goto('/')
+    await page.waitForFunction(() => {
+      const win = window as unknown as { __fakeSockets?: unknown[] }
+      return (win.__fakeSockets?.length ?? 0) > 0
+    })
+    await page.evaluate(() => {
+      const win = window as unknown as { __wsTimeouts?: unknown[] }
+      if (win.__wsTimeouts) win.__wsTimeouts.length = 0
+    })
+
+    await closeLatestFakeSocket(page)
+    const firstDelay = await latestReconnectDelay(page)
+    await page.evaluate(() => {
+      const win = window as unknown as { __wsTimeouts: Array<{ run: () => void }> }
+      win.__wsTimeouts.at(-1)?.run()
+    })
+    await page.waitForFunction(() => {
+      const win = window as unknown as { __fakeSockets?: unknown[] }
+      return (win.__fakeSockets?.length ?? 0) > 1
+    })
+
+    await closeLatestFakeSocket(page)
+    const secondDelay = await latestReconnectDelay(page)
+
+    expect(firstDelay).toBeGreaterThanOrEqual(500)
+    expect(secondDelay).toBeGreaterThan(firstDelay)
+    expect(secondDelay).toBeLessThanOrEqual(30_000)
+  })
 })
+
+async function installFakeWebSocket(page: Page, options: { captureTimeouts?: boolean } = {}) {
+  await page.addInitScript(({ captureTimeouts }) => {
+    type FakeSocket = {
+      readyState: number
+      onopen: (() => void) | null
+      onmessage: ((event: { data: string }) => void) | null
+      onclose: (() => void) | null
+      onerror: (() => void) | null
+      close: () => void
+    }
+
+    const sockets: FakeSocket[] = []
+    const timeouts: Array<{ delay: number; run: () => void }> = []
+
+    class FakeWebSocket implements FakeSocket {
+      static CONNECTING = 0
+      static OPEN = 1
+      static CLOSED = 3
+      readyState = FakeWebSocket.OPEN
+      onopen: (() => void) | null = null
+      onmessage: ((event: { data: string }) => void) | null = null
+      onclose: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      constructor(readonly url: string) {
+        sockets.push(this)
+      }
+
+      close() {
+        this.readyState = FakeWebSocket.CLOSED
+        this.onclose?.()
+      }
+    }
+
+    const win = window as unknown as {
+      WebSocket: unknown
+      __OTEL_MAGNIFY_E2E_DISABLE_WS__?: boolean
+      __fakeSockets: FakeSocket[]
+      __wsTimeouts: Array<{ delay: number; run: () => void }>
+      setTimeout: typeof window.setTimeout
+      clearTimeout: typeof window.clearTimeout
+    }
+    win.__OTEL_MAGNIFY_E2E_DISABLE_WS__ = false
+    win.WebSocket = FakeWebSocket
+    win.__fakeSockets = sockets
+    win.__wsTimeouts = timeouts
+
+    if (captureTimeouts) {
+      win.setTimeout = ((handler: TimerHandler, timeout?: number) => {
+        if (typeof handler === 'function') {
+          const runHandler = handler as () => void
+          timeouts.push({
+            delay: Number(timeout ?? 0),
+            run: runHandler,
+          })
+        }
+        return timeouts.length
+      }) as typeof window.setTimeout
+      win.clearTimeout = (() => undefined) as typeof window.clearTimeout
+    }
+  }, options)
+}
+
+async function closeLatestFakeSocket(page: Page) {
+  await page.evaluate(() => {
+    const win = window as unknown as {
+      __fakeSockets: Array<{ readyState: number; onclose: (() => void) | null }>
+      WebSocket: { CLOSED: number }
+    }
+    const socket = win.__fakeSockets.at(-1)
+    if (!socket) throw new Error('No fake websocket to close')
+    socket.readyState = win.WebSocket.CLOSED
+    socket.onclose?.()
+  })
+}
+
+async function latestReconnectDelay(page: Page) {
+  return page.evaluate(() => {
+    const win = window as unknown as { __wsTimeouts: Array<{ delay: number }> }
+    const timeout = win.__wsTimeouts.at(-1)
+    if (!timeout) throw new Error('No reconnect timeout captured')
+    return timeout.delay
+  })
+}

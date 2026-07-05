@@ -4,6 +4,12 @@ import type { Workload, Alert, RemoteConfigStatus, WorkloadEvent } from '../type
 
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let reconnectAttempt = 0
+let shouldReconnect = false
+
+const RECONNECT_BASE_MS = 1_000
+const RECONNECT_CAP_MS = 30_000
+const RECONNECT_JITTER_RATIO = 0.2
 
 interface WsMessage {
   type: string
@@ -72,6 +78,48 @@ function dispatch(data: WsMessage) {
   }
 }
 
+function warnMalformedFrame(reason: string, frame: unknown) {
+  const length = typeof frame === 'string' ? frame.length : undefined
+  console.warn('[otel-magnify] Ignoring malformed websocket frame', { reason, length })
+}
+
+function parseWsMessage(frame: unknown): WsMessage | null {
+  if (typeof frame !== 'string') {
+    warnMalformedFrame('non-string frame', frame)
+    return null
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(frame)
+  } catch {
+    warnMalformedFrame('invalid JSON', frame)
+    return null
+  }
+
+  if (!parsed || typeof parsed !== 'object' || typeof (parsed as { type?: unknown }).type !== 'string') {
+    warnMalformedFrame('missing message type', frame)
+    return null
+  }
+
+  return parsed as WsMessage
+}
+
+function nextReconnectDelay() {
+  const exponential = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttempt, RECONNECT_CAP_MS)
+  const jitter = exponential * RECONNECT_JITTER_RATIO * Math.random()
+  reconnectAttempt += 1
+  return Math.round(Math.min(exponential + jitter, RECONNECT_CAP_MS))
+}
+
+function scheduleReconnect() {
+  if (!shouldReconnect || reconnectTimer) return
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    connectWS()
+  }, nextReconnectDelay())
+}
+
 export function connectWS() {
   if (
     (window as unknown as { __OTEL_MAGNIFY_E2E_DISABLE_WS__?: boolean })
@@ -79,20 +127,26 @@ export function connectWS() {
   ) {
     return
   }
-  if (ws?.readyState === WebSocket.OPEN) return
+  if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return
 
   const token = localStorage.getItem('token')
   if (!token) return
 
+  shouldReconnect = true
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`)
 
+  ws.onopen = () => {
+    reconnectAttempt = 0
+  }
+
   ws.onmessage = (event) => {
-    dispatch(JSON.parse(event.data))
+    const message = parseWsMessage(event.data)
+    if (message) dispatch(message)
   }
 
   ws.onclose = () => {
-    reconnectTimer = setTimeout(connectWS, 3000)
+    scheduleReconnect()
   }
 
   ws.onerror = () => {
@@ -101,7 +155,11 @@ export function connectWS() {
 }
 
 export function disconnectWS() {
+  shouldReconnect = false
   if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = null
+  reconnectAttempt = 0
+  if (ws) ws.onclose = null
   ws?.close()
   ws = null
 }
