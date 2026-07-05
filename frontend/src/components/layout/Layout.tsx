@@ -5,6 +5,7 @@ import { useState } from 'react'
 import type React from 'react'
 import { useStore } from '../../store'
 import { alertsAPI } from '../../api/client'
+import { endClientSession } from '../../api/session'
 import { hasPerm, type Permission } from '../../lib/perm'
 import { useFeatures } from '../../hooks/useFeature'
 import '../../styles/sidebar.css'
@@ -182,7 +183,7 @@ function IdentityCard() {
   if (!me) return null
 
   const handleLogout = () => {
-    localStorage.removeItem('token')
+    endClientSession()
     navigate('/login')
   }
 

@@ -866,6 +866,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const rollback = useStore((s) => s.lastRollback[workload.id])
   const clearRollback = useStore((s) => s.clearAutoRollback)
   const me = useStore((s) => s.me)
+  const canReadConfigContent = hasPerm(me?.groups, 'config:read_content')
   const { enabled: guidedRollbackEnabled, isLoading: guidedRollbackLoading } = useFeature(
     'config_safety.guided_rollback',
   )
@@ -922,7 +923,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   } = useQuery({
     queryKey: ['workload-config', workload.active_config_id],
     queryFn: () => configsAPI.get(workload.active_config_id!),
-    enabled: workload.type === 'collector' && !!workload.active_config_id,
+    enabled: workload.type === 'collector' && !!workload.active_config_id && canReadConfigContent,
     retry: (failureCount, err) => !isForbiddenError(err) && failureCount < 3,
   })
 
@@ -973,9 +974,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
     retry: false,
   })
 
-  const activeConfigContentRestricted = isForbiddenError(configError)
+  const activeConfigContentRestricted = !canReadConfigContent || isForbiddenError(configError)
   const activeConfigLoadFailed = isError && !activeConfigContentRestricted
-  const activeContent = config?.content ?? ''
+  const activeContent = canReadConfigContent ? (config?.content ?? '') : ''
 
   const {
     data: otelDiff,
@@ -1567,7 +1568,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
             ? t('workloads.config.permission.validate_blocked')
             : ''
 
-  const canRollback = hasPushPermission && guidedRollbackEnabled
+  const canRollback = hasPushPermission && canReadConfigContent && guidedRollbackEnabled
   const scopeDisabled = !scopedPushEnabled || !hasPushPermission
   const scopePermissionDescription = scopeDisabled ? 'push-scope-permission-note' : undefined
   const scopePermissionTitle =
@@ -1594,7 +1595,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
   )
 
   const defaultRollbackDialog =
-    defaultRollbackTarget && guidedRollbackEnabled ? (
+    canReadConfigContent && defaultRollbackTarget && guidedRollbackEnabled ? (
       <GuidedRollbackDialog
         workloadId={workload.id}
         target={defaultRollbackTarget}
@@ -1857,6 +1858,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
     )
   }
 
+  const safeDraftYaml = canReadConfigContent ? draftYaml : ''
   const editorPanel = (
     <div>
       <div className="tabstrip">
@@ -1878,7 +1880,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
 
       {tab === 'edit' && (
         <YamlEditor
-          value={draftYaml}
+          value={safeDraftYaml}
           onChange={hasPushPermission ? onDraftChange : undefined}
           readOnly={!hasPushPermission}
         />
@@ -1886,7 +1888,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       {tab === 'diff' && (
         <ConfigDiffView
           oldYaml={activeContent}
-          newYaml={draftYaml}
+          newYaml={safeDraftYaml}
           otelDiff={otelDiff}
           otelDiffLoading={otelDiffLoading}
           otelDiffUnavailable={otelDiffUnavailable}
@@ -1910,7 +1912,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
 
       <ManualCanaryPanel
         workloadId={workload.id}
-        draftYaml={draftYaml}
+        draftYaml={safeDraftYaml}
         disabled={!!pendingHash || pushMutation.isPending || !canaryEnabled}
         disabledReason={canaryDisabledReason}
         canPush={hasPushPermission && canaryEnabled}
@@ -2241,7 +2243,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
         {applySelector}
         {permissionNote}
         {gitImportPanel}
-        {editMode ? (
+        {canReadConfigContent && editMode ? (
           editorPanel
         ) : (
           <button
@@ -2298,7 +2300,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       {permissionNote}
       {gitImportPanel}
 
-      {!editMode ? (
+      {!canReadConfigContent || !editMode ? (
         <div>
           {activeConfigContentRestricted ? (
             <div className="empty-state">{t('workloads.config.permission.content_restricted')}</div>
