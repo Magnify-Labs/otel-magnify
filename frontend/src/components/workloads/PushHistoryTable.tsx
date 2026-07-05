@@ -60,6 +60,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
   const queryClient = useQueryClient()
   const me = useStore((s) => s.me)
   const canPushConfig = hasPerm(me?.groups, 'workload:push_config')
+  const canReadConfigContent = hasPerm(me?.groups, 'config:read_content')
   const { enabled: guidedRollbackEnabled, isLoading: guidedRollbackLoading } = useFeature(
     'config_safety.guided_rollback',
   )
@@ -143,7 +144,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
 
   if (history.length === 0) return null
 
-  const hasReadableContent = history.some((row) => Boolean(row.content))
+  const hasReadableContent = canReadConfigContent && history.some((row) => Boolean(row.content))
 
   // Each (config_id, applied_at) pair is unique in history; the same hash
   // can appear multiple times (push then rollback). The label edit applies
@@ -205,7 +206,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
             history.length < 2
               ? t('workloads.config.versioning.compare_needs_two')
               : !hasReadableContent
-                ? t('workloads.config.versioning.compare_error')
+                ? t('workloads.config.permission.content_restricted')
                 : t('workloads.config.versioning.compare_button')
           }
         >

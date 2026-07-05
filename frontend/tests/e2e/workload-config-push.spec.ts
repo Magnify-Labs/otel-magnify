@@ -576,6 +576,46 @@ test('config safety explains the supervised collector flow before the editor', a
   expect(safetyTop?.y).toBeLessThan(configTop?.y ?? Number.POSITIVE_INFINITY)
 })
 
+test('viewer sees restricted config content while metadata and history remain available', async ({
+  loggedInPage: page,
+}) => {
+  await mockMe(page, { groups: [viewerGroup] })
+  await mockWorkload(page)
+  await page.route(`**/api/configs/${ACTIVE_CONFIG_ID}`, (route) =>
+    route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'forbidden: secret-yaml SECRET_TOKEN' }),
+    }),
+  )
+  await mockHistory(page, [
+    {
+      workload_id: WORKLOAD_ID,
+      config_id: 'hash-viewer-safe-metadata',
+      applied_at: '2026-07-04T12:00:00Z',
+      status: 'applied',
+      pushed_by: 'admin@example.com',
+      label: 'safe metadata',
+      content_available: false,
+    },
+  ])
+  await mockConfigsList(page, [{ id: 'cfg-safe', name: 'metadata-only saved config' }])
+
+  await page.goto(`/workloads/${WORKLOAD_ID}`)
+
+  await expect(
+    page.getByText('Config content is restricted by role. Metadata and history remain available.'),
+  ).toBeVisible()
+  await expect(page.getByText('Content restricted')).toBeVisible()
+  await expect(page.getByText('Push history', { exact: true })).toBeVisible()
+  await expect(page.getByText('safe metadata')).toBeVisible()
+  await expect(page.getByText('hash-vie')).toBeVisible()
+  await expect(page.locator('select.apply-config-select')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Compare revisions' })).toBeDisabled()
+  await expect(page.locator('body')).not.toContainText('secret-yaml')
+  await expect(page.locator('body')).not.toContainText('SECRET_TOKEN')
+})
+
 test('workload detail stays readable without horizontal overflow on mobile', async ({
   loggedInPage: page,
 }) => {

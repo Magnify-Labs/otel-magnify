@@ -133,6 +133,10 @@ function isNotFoundError(err: unknown) {
   return axios.isAxiosError(err) && err.response?.status === 404
 }
 
+function isForbiddenError(err: unknown) {
+  return axios.isAxiosError(err) && err.response?.status === 403
+}
+
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString() : '—'
 }
@@ -914,10 +918,12 @@ export default function WorkloadConfigSection({ workload }: Props) {
     data: config,
     isLoading,
     isError,
+    error: configError,
   } = useQuery({
     queryKey: ['workload-config', workload.active_config_id],
     queryFn: () => configsAPI.get(workload.active_config_id!),
     enabled: workload.type === 'collector' && !!workload.active_config_id,
+    retry: (failureCount, err) => !isForbiddenError(err) && failureCount < 3,
   })
 
   const { data: savedConfigs, isError: configsListError } = useQuery({
@@ -967,6 +973,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
     retry: false,
   })
 
+  const activeConfigContentRestricted = isForbiddenError(configError)
+  const activeConfigLoadFailed = isError && !activeConfigContentRestricted
   const activeContent = config?.content ?? ''
 
   const {
@@ -1170,6 +1178,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
       setSelectedConfigId('')
     },
     onError: (err: unknown) => {
+      if (isForbiddenError(err)) {
+        setPushError(t('workloads.config.permission.content_restricted'))
+        setSelectedConfigId('')
+        return
+      }
       const msg = axios.isAxiosError(err)
         ? (err.response?.data?.error ?? err.message)
         : 'Failed to load configuration'
@@ -1773,7 +1786,8 @@ export default function WorkloadConfigSection({ workload }: Props) {
       validation={validation}
       isValidating={validateMutation.isPending}
       activeConfigLoading={isLoading}
-      activeConfigError={isError}
+      activeConfigError={activeConfigLoadFailed}
+      activeConfigRestricted={activeConfigContentRestricted}
       pendingHash={pendingHash}
       timedOut={timedOut}
       configStatus={derivedStatus}
@@ -1815,7 +1829,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
         <p className="section-title">{t('workloads.config.title')}</p>
         {hasConfig && isLoading ? (
           <div className="loading">{t('workloads.config.editor.loading')}</div>
-        ) : hasConfig && isError ? (
+        ) : hasConfig && activeConfigContentRestricted ? (
+          <div className="empty-state">{t('workloads.config.permission.content_restricted')}</div>
+        ) : hasConfig && activeConfigLoadFailed ? (
           <div className="error-text">{t('workloads.config.editor.load_failed')}</div>
         ) : hasConfig && isGitConfig(config) ? (
           <ReadOnlyGitComparison config={config} workload={workload} />
@@ -2260,7 +2276,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
       </>
     )
   }
-  if (isError) {
+  if (activeConfigLoadFailed) {
     return (
       <>
         {safetySection}
@@ -2284,19 +2300,25 @@ export default function WorkloadConfigSection({ workload }: Props) {
 
       {!editMode ? (
         <div>
-          <ConfigProvenanceCard config={config} />
-          <YamlEditor value={activeContent} readOnly />
-          <div className="btn-row btn-row-top">
-            <button
-              className="btn"
-              onClick={() => enterEditMode(activeContent)}
-              disabled={!hasPushPermission}
-              title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
-              aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
-            >
-              {t('common.edit')}
-            </button>
-          </div>
+          {activeConfigContentRestricted ? (
+            <div className="empty-state">{t('workloads.config.permission.content_restricted')}</div>
+          ) : (
+            <>
+              <ConfigProvenanceCard config={config} />
+              <YamlEditor value={activeContent} readOnly />
+              <div className="btn-row btn-row-top">
+                <button
+                  className="btn"
+                  onClick={() => enterEditMode(activeContent)}
+                  disabled={!hasPushPermission}
+                  title={!hasPushPermission ? t('workloads.config.permission.push_blocked') : ''}
+                  aria-describedby={!hasPushPermission ? 'config-permission-note' : undefined}
+                >
+                  {t('common.edit')}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       ) : (
         editorPanel
