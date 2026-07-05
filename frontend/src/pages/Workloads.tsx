@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { workloadsAPI } from '../api/client'
 import WorkloadCard from '../components/workloads/WorkloadCard'
 import { isSupervised, isReadOnlyCollector } from '../lib/workloadCapabilities'
+import { useVirtualWindow } from '../lib/virtualization'
 import '../styles/inventory.css'
 
 type ControlFilter = '' | 'supervised' | 'readonly'
@@ -55,6 +56,16 @@ export default function Inventory() {
       return true
     })
   }, [workloads, search, filterType, filterStatus, filterControl])
+  const shouldVirtualize = filtered.length > 80
+  const virtual = useVirtualWindow({
+    itemCount: filtered.length,
+    itemSize: 76,
+    viewportSize: 640,
+    overscan: 8,
+  })
+  const visibleWorkloads = shouldVirtualize
+    ? filtered.slice(virtual.startIndex, virtual.endIndex)
+    : filtered
 
   return (
     <div>
@@ -107,8 +118,23 @@ export default function Inventory() {
         <div className="loading">{t('common.loading')}</div>
       ) : filtered.length === 0 ? (
         <div className="empty-state">{t('inventory.empty')}</div>
+      ) : shouldVirtualize ? (
+        <div
+          className="inventory-virtual-list"
+          data-testid="inventory-virtual-list"
+          aria-label={t('inventory.title')}
+          tabIndex={0}
+          onScroll={virtual.onScroll}
+          style={{ height: virtual.viewportHeight }}
+        >
+          <div aria-hidden="true" style={{ height: virtual.beforeHeight }} />
+          {visibleWorkloads.map((w) => (
+            <WorkloadCard key={w.id} workload={w} />
+          ))}
+          <div aria-hidden="true" style={{ height: virtual.afterHeight }} />
+        </div>
       ) : (
-        filtered.map((w) => <WorkloadCard key={w.id} workload={w} />)
+        visibleWorkloads.map((w) => <WorkloadCard key={w.id} workload={w} />)
       )}
     </div>
   )

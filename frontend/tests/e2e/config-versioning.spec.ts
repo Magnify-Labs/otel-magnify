@@ -276,6 +276,12 @@ function mockActiveConfig(page: Page) {
   )
 }
 
+function mockSavedConfigs(page: Page) {
+  return page.route('**/api/configs', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+  )
+}
+
 function mockHistory(page: Page, rows: unknown[]) {
   return page.route(`**/api/workloads/${WORKLOAD_ID}/configs`, (route) =>
     route.fulfill({
@@ -566,6 +572,7 @@ test('community features keep shared config primitives but disable paid safety c
 test('label can be set inline via double-click', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockActiveConfig(page)
+  await mockSavedConfigs(page)
   await mockHistory(page, BASE_HISTORY)
   await mockConfigsList(page)
 
@@ -600,6 +607,7 @@ test('label can be set inline via double-click', async ({ loggedInPage: page }) 
 test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page }) => {
   await mockWorkload(page)
   await mockActiveConfig(page)
+  await mockSavedConfigs(page)
   await mockHistory(page, BASE_HISTORY)
   await mockConfigsList(page)
 
@@ -665,6 +673,7 @@ test('viewer cannot initiate rollback or known-good history actions', async ({
 }) => {
   await mockWorkload(page)
   await mockActiveConfig(page)
+  await mockSavedConfigs(page)
   await mockHistory(page, BASE_HISTORY)
   await mockConfigsList(page)
 
