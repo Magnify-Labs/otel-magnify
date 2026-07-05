@@ -10,6 +10,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value of at least 32 characters}
       LISTEN_ADDR: ":8080"
       OPAMP_ADDR: ":4320"
+      OPAMP_SHARED_SECRET: ${OPAMP_SHARED_SECRET:-}
       CORS_ORIGINS: "http://localhost:8080"
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
