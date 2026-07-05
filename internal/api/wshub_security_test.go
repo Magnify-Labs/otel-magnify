@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -64,6 +65,15 @@ func wsURL(serverURL, token string) string {
 	return u.String()
 }
 
+func closeWSHandshakeResponse(t *testing.T, resp *http.Response) {
+	t.Helper()
+	if resp != nil && resp.Body != nil {
+		if err := resp.Body.Close(); err != nil {
+			t.Fatalf("close handshake response body: %v", err)
+		}
+	}
+}
+
 func dialWS(t *testing.T, serverURL, token, origin string) (*websocket.Conn, *http.Response, error) {
 	t.Helper()
 	header := http.Header{}
@@ -79,6 +89,7 @@ func TestWebSocketAcceptsConfiguredCORSOrigin(t *testing.T) {
 	})
 
 	conn, resp, err := dialWS(t, server.URL, "valid", "http://app.example.com")
+	defer closeWSHandshakeResponse(t, resp)
 	if err != nil {
 		status := "no response"
 		if resp != nil {
@@ -95,6 +106,7 @@ func TestWebSocketRejectsUnconfiguredCrossOrigin(t *testing.T) {
 	})
 
 	conn, resp, err := dialWS(t, server.URL, "valid", "http://evil.example.com")
+	defer closeWSHandshakeResponse(t, resp)
 	if err == nil {
 		conn.Close()
 		t.Fatal("expected cross-origin WebSocket handshake to be rejected")
@@ -114,6 +126,7 @@ func TestWebSocketRejectsMalformedOriginWithPath(t *testing.T) {
 	})
 
 	conn, resp, err := dialWS(t, server.URL, "valid", "http://evil.test/path.example.com")
+	defer closeWSHandshakeResponse(t, resp)
 	if err == nil {
 		conn.Close()
 		t.Fatal("expected origin with path to be rejected")
@@ -137,6 +150,7 @@ func TestWebSocketAcceptsSameHostOriginWithoutConfiguredCORSOrigin(t *testing.T)
 	}
 
 	conn, resp, err := dialWS(t, server.URL, "valid", "http://"+u.Host)
+	defer closeWSHandshakeResponse(t, resp)
 	if err != nil {
 		status := "no response"
 		if resp != nil {
@@ -153,6 +167,7 @@ func TestWebSocketRejectsExpiredToken(t *testing.T) {
 	})
 
 	conn, resp, err := dialWS(t, server.URL, "expired", "")
+	defer closeWSHandshakeResponse(t, resp)
 	if err == nil {
 		conn.Close()
 		t.Fatal("expected expired token WebSocket handshake to be rejected")
@@ -173,6 +188,7 @@ func TestWebSocketClosesWhenTokenExpires(t *testing.T) {
 	})
 
 	conn, resp, err := dialWS(t, server.URL, "soon-expiring", "")
+	defer closeWSHandshakeResponse(t, resp)
 	if err != nil {
 		status := "no response"
 		if resp != nil {
@@ -192,7 +208,8 @@ func TestWebSocketClosesWhenTokenExpires(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected WebSocket to close after token expiration")
 	}
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		t.Fatalf("expected close frame/error after token expiration, got read timeout: %v", err)
 	}
 	if strings.Contains(err.Error(), "alert_update") {

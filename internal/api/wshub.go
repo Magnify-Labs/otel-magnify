@@ -272,10 +272,12 @@ func (c *wsClient) expirationPump() {
 		}
 	}
 	deadline := time.Now().Add(time.Second)
-	//nolint:errcheck // best-effort close frame before forcing the expired connection down
-	c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "token expired"), deadline)
-	//nolint:errcheck,gosec // token lifetime is over; force teardown regardless of close-frame success
-	c.conn.Close()
+	if err := c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "token expired"), deadline); err != nil {
+		log.Printf("websocket: send token-expired close frame: %v", err)
+	}
+	if err := c.conn.Close(); err != nil {
+		log.Printf("websocket: close expired token connection: %v", err)
+	}
 }
 
 func (c *wsClient) closeDone() {
