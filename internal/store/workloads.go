@@ -183,7 +183,39 @@ func (d *DB) ListWorkloads(includeArchived bool) ([]models.Workload, error) {
 	}
 	q += ` ORDER BY display_name`
 
-	rows, err := d.Query(q)
+	return d.listWorkloads(q)
+}
+
+// ListWorkloadsPage returns a deterministic keyset page of workloads ordered by id.
+// Archived rows are excluded unless includeArchived is true.
+func (d *DB) ListWorkloadsPage(includeArchived bool, afterID string, limit int) ([]models.Workload, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	q := `SELECT id, fingerprint_source, fingerprint_keys, display_name, type, version, status,
+	             last_seen_at, labels, active_config_id, active_config_hash,
+	             remote_config_status, available_components, accepts_remote_config,
+	             retention_until, archived_at
+	      FROM workloads`
+	args := []any{}
+	switch {
+	case !includeArchived && afterID != "":
+		q += ` WHERE archived_at IS NULL AND id > ?`
+		args = append(args, afterID)
+	case !includeArchived:
+		q += ` WHERE archived_at IS NULL`
+	case afterID != "":
+		q += ` WHERE id > ?`
+		args = append(args, afterID)
+	}
+	q += ` ORDER BY id LIMIT ?`
+	args = append(args, limit)
+
+	return d.listWorkloads(q, args...)
+}
+
+func (d *DB) listWorkloads(q string, args ...any) ([]models.Workload, error) {
+	rows, err := d.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

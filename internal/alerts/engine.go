@@ -28,6 +28,12 @@ type AlertStore interface {
 	GetLatestPendingWorkloadConfig(workloadID string) (*models.WorkloadConfig, error)
 }
 
+type pagedWorkloadStore interface {
+	ListWorkloadsPage(includeArchived bool, afterID string, limit int) ([]models.Workload, error)
+}
+
+const defaultWorkloadPageSize = 500
+
 // Engine periodically evaluates alert rules (workload_down, config_drift, version_outdated) and emits notifications via the configured AlertNotifiers.
 type Engine struct {
 	db          AlertStore
@@ -35,6 +41,7 @@ type Engine struct {
 	downTimeout time.Duration
 	minVersion  string
 	notifiers   []ext.AlertNotifier
+	pageSize    int
 }
 
 // New constructs an Engine with the given store, broadcaster, down-timeout, minimum version threshold, and zero or more notifiers.
@@ -45,6 +52,7 @@ func New(db AlertStore, hub Broadcaster, downTimeout time.Duration, minVersion s
 		downTimeout: downTimeout,
 		minVersion:  minVersion,
 		notifiers:   notifiers,
+		pageSize:    defaultWorkloadPageSize,
 	}
 }
 
@@ -64,6 +72,11 @@ func (e *Engine) Start(ctx context.Context, interval time.Duration) {
 
 // Evaluate runs all alert rules once across every non-archived workload.
 func (e *Engine) Evaluate() {
+	if pager, ok := e.db.(pagedWorkloadStore); ok {
+		e.evaluatePages(pager)
+		return
+	}
+
 	workloads, err := e.db.ListWorkloads(false)
 	if err != nil {
 		log.Printf("alert engine: list workloads: %v", err)
@@ -75,6 +88,37 @@ func (e *Engine) Evaluate() {
 		e.evaluateWorkloadDown(w, now)
 		e.evaluateConfigDrift(w, now)
 		e.evaluateVersionOutdated(w, now)
+	}
+}
+
+func (e *Engine) evaluatePages(pager pagedWorkloadStore) {
+	now := time.Now().UTC()
+	afterID := ""
+	pageSize := e.pageSize
+	if pageSize <= 0 {
+		pageSize = defaultWorkloadPageSize
+	}
+
+	for {
+		workloads, err := pager.ListWorkloadsPage(false, afterID, pageSize)
+		if err != nil {
+			log.Printf("alert engine: list workload page after %q: %v", afterID, err)
+			return
+		}
+		if len(workloads) == 0 {
+			return
+		}
+
+		for _, w := range workloads {
+			e.evaluateWorkloadDown(w, now)
+			e.evaluateConfigDrift(w, now)
+			e.evaluateVersionOutdated(w, now)
+		}
+
+		afterID = workloads[len(workloads)-1].ID
+		if len(workloads) < pageSize {
+			return
+		}
 	}
 }
 

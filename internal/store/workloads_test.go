@@ -348,6 +348,53 @@ func TestUpsertWorkloadProjectsQueryableAttributes(t *testing.T) {
 	}
 }
 
+func TestListWorkloadsPageReturnsStableIDPages(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now().UTC()
+	archivedAt := now.Add(-time.Hour)
+	workloads := []models.Workload{
+		{ID: "wl-003", DisplayName: "same", Type: "sdk", Status: "connected", LastSeenAt: now},
+		{ID: "wl-001", DisplayName: "same", Type: "sdk", Status: "connected", LastSeenAt: now},
+		{ID: "wl-004", DisplayName: "same", Type: "sdk", Status: "connected", LastSeenAt: now, ArchivedAt: &archivedAt},
+		{ID: "wl-002", DisplayName: "same", Type: "sdk", Status: "connected", LastSeenAt: now},
+	}
+	for _, workload := range workloads {
+		if err := db.UpsertWorkload(workload); err != nil {
+			t.Fatalf("UpsertWorkload(%s): %v", workload.ID, err)
+		}
+	}
+
+	page1, err := db.ListWorkloadsPage(false, "", 2)
+	if err != nil {
+		t.Fatalf("ListWorkloadsPage page1: %v", err)
+	}
+	assertWorkloadIDs(t, page1, []string{"wl-001", "wl-002"})
+
+	page2, err := db.ListWorkloadsPage(false, page1[len(page1)-1].ID, 2)
+	if err != nil {
+		t.Fatalf("ListWorkloadsPage page2: %v", err)
+	}
+	assertWorkloadIDs(t, page2, []string{"wl-003"})
+
+	withArchived, err := db.ListWorkloadsPage(true, "wl-003", 2)
+	if err != nil {
+		t.Fatalf("ListWorkloadsPage with archived: %v", err)
+	}
+	assertWorkloadIDs(t, withArchived, []string{"wl-004"})
+}
+
+func assertWorkloadIDs(t *testing.T, workloads []models.Workload, want []string) {
+	t.Helper()
+	if len(workloads) != len(want) {
+		t.Fatalf("len = %d, want %d: %+v", len(workloads), len(want), workloads)
+	}
+	for i := range want {
+		if workloads[i].ID != want[i] {
+			t.Fatalf("workloads[%d].ID = %q, want %q; all=%+v", i, workloads[i].ID, want[i], workloads)
+		}
+	}
+}
+
 func TestMarkWorkloadDisconnectedSetsRetention(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now().UTC()

@@ -1,6 +1,7 @@
 package alerts
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 
@@ -68,6 +69,82 @@ func TestEvaluate_WorkloadDown_NoDouble(t *testing.T) {
 	}
 	if len(alerts) != 1 {
 		t.Errorf("len = %d, want 1 (no duplicates)", len(alerts))
+	}
+}
+
+func TestEvaluateProcessesEveryWorkloadAcrossPages(t *testing.T) {
+	now := time.Now().UTC()
+	fake := &pagedAlertStore{
+		pages: [][]models.Workload{
+			{
+				{ID: "wl-001", LastSeenAt: now.Add(-10 * time.Minute)},
+				{ID: "wl-002", LastSeenAt: now.Add(-10 * time.Minute)},
+			},
+			{
+				{ID: "wl-003", LastSeenAt: now.Add(-10 * time.Minute)},
+			},
+		},
+	}
+
+	engine := New(fake, nil, 5*time.Minute, "")
+	engine.pageSize = 2
+	engine.Evaluate()
+
+	if fake.listWorkloadsCalled {
+		t.Fatalf("Evaluate called full ListWorkloads scan; want paged scans only")
+	}
+	assertStringSlicesEqual(t, fake.pageCursors, []string{"", "wl-002"})
+	assertStringSlicesEqual(t, fake.createdWorkloadIDs, []string{"wl-001", "wl-002", "wl-003"})
+}
+
+type pagedAlertStore struct {
+	pages               [][]models.Workload
+	pageCursors         []string
+	listWorkloadsCalled bool
+	createdWorkloadIDs  []string
+}
+
+func (s *pagedAlertStore) ListWorkloads(_ bool) ([]models.Workload, error) {
+	s.listWorkloadsCalled = true
+	return nil, nil
+}
+
+func (s *pagedAlertStore) ListWorkloadsPage(_ bool, afterID string, _ int) ([]models.Workload, error) {
+	s.pageCursors = append(s.pageCursors, afterID)
+	if len(s.pages) == 0 {
+		return nil, nil
+	}
+	page := s.pages[0]
+	s.pages = s.pages[1:]
+	return page, nil
+}
+
+func (s *pagedAlertStore) GetUnresolvedAlertByWorkloadAndRule(_, _ string) (*models.Alert, error) {
+	return nil, nil
+}
+
+func (s *pagedAlertStore) CreateAlert(a models.Alert) error {
+	s.createdWorkloadIDs = append(s.createdWorkloadIDs, a.WorkloadID)
+	return nil
+}
+
+func (s *pagedAlertStore) ResolveAlert(_ string) error {
+	return sql.ErrNoRows
+}
+
+func (s *pagedAlertStore) GetLatestPendingWorkloadConfig(_ string) (*models.WorkloadConfig, error) {
+	return nil, nil
+}
+
+func assertStringSlicesEqual(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("len = %d, want %d: got=%v want=%v", len(got), len(want), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got[%d] = %q, want %q; got=%v want=%v", i, got[i], want[i], got, want)
+		}
 	}
 }
 
