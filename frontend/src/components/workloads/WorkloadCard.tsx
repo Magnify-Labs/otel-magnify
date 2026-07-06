@@ -65,6 +65,11 @@ export default function WorkloadCard({ workload }: { workload: Workload }) {
                 {t('inventory.card.supervised')}
               </span>
             )}
+            {workload.archived_at && (
+              <span className="agent-archived-pill" title={t('inventory.card.archived_title')}>
+                {t('inventory.card.archived')}
+              </span>
+            )}
           </div>
           <div className="workload-card-meta">
             <span>v{workload.version || '—'}</span>

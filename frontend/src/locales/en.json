@@ -281,6 +281,13 @@
       },
       "drift": "Drift"
     },
+    "archive": {
+      "button": "Archive workload",
+      "confirm": "Archive {{name}}? It will be hidden from the default inventory, but preserved for audit/history and can reappear if it reconnects.",
+      "in_flight": "Archiving…",
+      "notice": "Archived on {{date}}. This workload is hidden from the default inventory.",
+      "error": "Failed to archive workload."
+    },
     "config": {
       "versioning": {
         "history_title": "Push history",
@@ -998,11 +1005,14 @@
         "all": "All control modes",
         "supervised": "Supervised",
         "readonly": "Read-only"
-      }
+      },
+      "include_archived": "Show archived"
     },
     "card": {
       "supervised": "SUPERVISED",
-      "readonly": "RO"
+      "readonly": "RO",
+      "archived": "ARCHIVED",
+      "archived_title": "Archived workloads are hidden by default"
     },
     "empty": "No workloads match the current filter"
   },

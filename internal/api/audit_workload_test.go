@@ -75,7 +75,7 @@ func TestAudit_WorkloadConfigPushTarget_EmitsTargetWithoutConfigBody(t *testing.
 func TestAudit_WorkloadArchive_Emits(t *testing.T) {
 	db, router, _, audit := newAuditTestAPI(t)
 	if err := db.UpsertWorkload(models.Workload{
-		ID: "w-archive", Type: "collector", Status: "connected",
+		ID: "w-archive", Type: "collector", Status: "disconnected",
 		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
 	}); err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestAudit_WorkloadPush_LegacyEndpointDoesNotDependOnAudit(t *testing.T) {
 func TestAudit_WorkloadArchive_503AppliedWhenAuditFails(t *testing.T) {
 	db, router, _, audit := newAuditTestAPI(t)
 	if err := db.UpsertWorkload(models.Workload{
-		ID: "w-arch-fail", Type: "collector", Status: "connected",
+		ID: "w-arch-fail", Type: "collector", Status: "disconnected",
 		LastSeenAt: time.Now().UTC(), Labels: models.Labels{},
 	}); err != nil {
 		t.Fatal(err)

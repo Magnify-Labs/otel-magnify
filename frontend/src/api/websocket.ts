@@ -61,14 +61,16 @@ function upsertWorkloadList(current: Workload[] | undefined, update: Workload) {
 }
 
 function patchWorkloadLists(workloadId: string, updater: (workload: Workload) => Workload) {
-  patchCachedQuery<Workload[]>(['workloads'], (workloads) =>
-    workloads.map((workload) => (workload.id === workloadId ? updater(workload) : workload)),
+  queryClient.setQueriesData<Workload[]>({ queryKey: ['workloads'] }, (current) =>
+    Array.isArray(current)
+      ? current.map((workload) => (workload.id === workloadId ? updater(workload) : workload))
+      : current,
   )
 }
 
 function patchWorkloadCaches(workload: Workload) {
-  queryClient.setQueryData<Workload[]>(['workloads'], (current) =>
-    upsertWorkloadList(current, workload),
+  queryClient.setQueriesData<Workload[]>({ queryKey: ['workloads'] }, (current) =>
+    Array.isArray(current) ? upsertWorkloadList(current, workload) : current,
   )
   queryClient.setQueryData<Workload>(['workload', workload.id], (current) =>
     mergeWorkload(current, workload),
