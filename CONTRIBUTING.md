@@ -25,7 +25,7 @@ brew install lefthook golangci-lint gitleaks hadolint
 # Linux (Debian/Ubuntu) — install via each tool's release page
 ```
 
-This project does **not** require a local Go toolchain. Tests and Go-only tools that need it (e.g. `govulncheck`) run inside a `golang:1.25.11` Docker container at pre-push time.
+Use the Go version declared in `go.mod` when running backend checks locally. CI and Go-only pre-push tools that need a fixed toolchain (for example `govulncheck`) run inside a `golang:1.25.11` Docker container.
 
 ### Activate hooks (once per clone)
 
@@ -45,10 +45,16 @@ Make sure the tests pass:
 # Backend
 # Run from the repository root; go.mod lives at the top level.
 go test ./...
+go build ./...
 
-# Frontend types
-cd frontend && npx tsc --noEmit
+# Frontend lint + build
+cd frontend
+npm ci
+npm run lint
+npm run build
 ```
+
+For documentation-only changes, also run `mkdocs build --strict` after installing `docs/requirements.txt` in a virtual environment.
 
 ## Commit conventions
 

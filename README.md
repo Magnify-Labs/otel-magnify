@@ -62,7 +62,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 | Layer | Technology |
 |-------|-----------|
 | Backend | Go, [chi](https://github.com/go-chi/chi), [opamp-go](https://github.com/open-telemetry/opamp-go), [goose](https://github.com/pressly/goose) |
-| Frontend | React 18, TypeScript, Vite, Zustand, TanStack Query, CodeMirror 6 |
+| Frontend | React 19, TypeScript, Vite, Zustand, TanStack Query, CodeMirror 6 |
 | Database | SQLite (dev) / PostgreSQL (prod) |
 | Auth | JWT (HS256), bcrypt |
 | Deployment | Docker, Docker Compose, Helm |
