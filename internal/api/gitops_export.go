@@ -20,7 +20,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/validator"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -141,8 +140,7 @@ func (a *API) handleExportConfigToGit(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadGateway, redactGitOpsText(err.Error()))
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "config.export_git", "config", cfg.ID, gitOpsExportAuditDetail(req, result, comment)); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "config.export_git", "config", cfg.ID, gitOpsExportAuditDetail(req, result, comment)) {
 		return
 	}
 	respondJSON(w, http.StatusCreated, map[string]any{"result": result, "comment": comment, "validation": validation})

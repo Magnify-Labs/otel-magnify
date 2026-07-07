@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/configpolicy"
 	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
 	"github.com/magnify-labs/otel-magnify/internal/validator"
@@ -252,8 +251,7 @@ func (a *API) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to create config")
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "config.create", "config", cfg.ID, ""); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "config.create", "config", cfg.ID, "") {
 		return
 	}
 	respondJSON(w, 201, cfg)
@@ -359,8 +357,7 @@ func (a *API) handleImportConfigFromGit(w http.ResponseWriter, r *http.Request) 
 		respondError(w, 500, "failed to create config")
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "config.import_git", "config", cfg.ID, cfg.CommitSHA); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "config.import_git", "config", cfg.ID, cfg.CommitSHA) {
 		return
 	}
 	respondJSON(w, 201, map[string]any{

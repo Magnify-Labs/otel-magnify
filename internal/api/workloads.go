@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/configpolicy"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/oteldiff"
@@ -755,8 +754,7 @@ func (a *API) handleSetWorkloadConfigLabel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := audit.Emit(r.Context(), a.audit, "config.label", "workload", id, label); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "config.label", "workload", id, label) {
 		return
 	}
 	respondJSON(w, 200, map[string]string{"label": label})
@@ -895,8 +893,7 @@ func (a *API) handleMarkWorkloadConfigKnownGood(w http.ResponseWriter, r *http.R
 			"source_applied_at":      wc.AppliedAt,
 			"source_content_present": wc.Content != "",
 		})
-		if err := audit.Emit(r.Context(), a.audit, "config.known_good.conflict", "workload", workloadID, detail); err != nil {
-			respondAuditUnavailable(w, sideEffectNone)
+		if !a.emitAudit(w, r, sideEffectNone, "config.known_good.conflict", "workload", workloadID, detail) {
 			return
 		}
 		respondJSON(w, http.StatusConflict, map[string]string{
@@ -918,8 +915,7 @@ func (a *API) handleMarkWorkloadConfigKnownGood(w http.ResponseWriter, r *http.R
 		"force":                 req.Force,
 		"side_effect":           "known_good_pointer_recorded",
 	})
-	if err := audit.Emit(r.Context(), a.audit, "config.known_good.mark", "workload", workloadID, detail); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "config.known_good.mark", "workload", workloadID, detail) {
 		return
 	}
 	status := http.StatusOK
@@ -966,8 +962,7 @@ func (a *API) handleClearWorkloadKnownGood(w http.ResponseWriter, r *http.Reques
 			"side_effect":       "known_good_pointer_deleted",
 		})
 	}
-	if err := audit.Emit(r.Context(), a.audit, "config.known_good.clear", "workload", workloadID, detail); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "config.known_good.clear", "workload", workloadID, detail) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -1060,8 +1055,7 @@ func (a *API) handleRollbackWorkloadDefault(w http.ResponseWriter, r *http.Reque
 		"side_effect":  "opamp_push_sent",
 		"submitted_at": submittedAt,
 	})
-	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, detail); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "config.rollback", "workload", workloadID, detail) {
 		return
 	}
 	respondJSON(w, 202, map[string]string{"status": "rollback initiated", "config_hash": target.Config.ConfigID, "target_kind": target.Kind})
@@ -1194,8 +1188,7 @@ func (a *API) handleRollbackWorkloadConfig(w http.ResponseWriter, r *http.Reques
 			currentHash = current.ConfigID
 		}
 	}
-	if err := audit.Emit(r.Context(), a.audit, "config.rollback", "workload", workloadID, rollbackAuditDetail("hash", requestID, currentHash, hash)); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "config.rollback", "workload", workloadID, rollbackAuditDetail("hash", requestID, currentHash, hash)) {
 		return
 	}
 	respondJSON(w, 202, map[string]any{
@@ -1225,8 +1218,7 @@ func (a *API) handleDeleteWorkload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to delete workload")
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "workload.delete", "workload", id, ""); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "workload.delete", "workload", id, "") {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
