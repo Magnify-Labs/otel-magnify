@@ -5,7 +5,6 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 )
 
@@ -63,8 +62,7 @@ func (a *API) handlePutPassword(w http.ResponseWriter, r *http.Request) {
 	// Password row is already updated. If audit fails we 503 with
 	// side_effect_status=applied so the caller knows the new password is
 	// active despite the error.
-	if err := audit.Emit(r.Context(), a.audit, "auth.password.change", "user", info.UserID, ""); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "auth.password.change", "user", info.UserID, "") {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

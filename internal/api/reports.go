@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/magnify-labs/otel-magnify/internal/audit"
 	"github.com/magnify-labs/otel-magnify/internal/reports"
 	"github.com/magnify-labs/otel-magnify/internal/version"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
@@ -34,8 +33,7 @@ func (a *API) handlePreviewEvidencePack(w http.ResponseWriter, r *http.Request) 
 		a.respondReportBuildError(w, err)
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "report.preview", "report", pack.InputsHash, fmt.Sprintf("report_type=%s workloads=%d", req.ReportType, len(pack.Scope.WorkloadIDs))); err != nil {
-		respondAuditUnavailable(w, sideEffectNone)
+	if !a.emitAudit(w, r, sideEffectNone, "report.preview", "report", pack.InputsHash, fmt.Sprintf("report_type=%s workloads=%d", req.ReportType, len(pack.Scope.WorkloadIDs))) {
 		return
 	}
 	respondJSON(w, http.StatusOK, pack)
@@ -62,8 +60,7 @@ func (a *API) handleExportEvidencePack(w http.ResponseWriter, r *http.Request) {
 		a.respondReportBuildError(w, err)
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "report.export", "report", pack.InputsHash, fmt.Sprintf("format=%s report_type=%s workloads=%d", format, req.ReportType, len(pack.Scope.WorkloadIDs))); err != nil {
-		respondAuditUnavailable(w, sideEffectNone)
+	if !a.emitAudit(w, r, sideEffectNone, "report.export", "report", pack.InputsHash, fmt.Sprintf("format=%s report_type=%s workloads=%d", format, req.ReportType, len(pack.Scope.WorkloadIDs))) {
 		return
 	}
 	var body []byte
@@ -165,8 +162,7 @@ func (a *API) handleConfigSafetyReport(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to build config safety report")
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, evidenceReportAuditAction, "report", report.ReportID, format); err != nil {
-		respondAuditUnavailable(w, sideEffectNone)
+	if !a.emitAudit(w, r, sideEffectNone, evidenceReportAuditAction, "report", report.ReportID, format) {
 		return
 	}
 
