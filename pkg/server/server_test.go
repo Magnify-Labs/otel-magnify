@@ -63,8 +63,7 @@ func TestServer_StartsAndStops(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Run(ctx) }()
 
-	// Give server time to start
-	time.Sleep(200 * time.Millisecond)
+	// Cancellation should stop Run without relying on a fixed startup sleep.
 	cancel()
 
 	select {

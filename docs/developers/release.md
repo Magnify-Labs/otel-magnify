@@ -4,6 +4,14 @@ Releases are cut manually from `main` using [git-cliff](https://git-cliff.org/) 
 
 ## Steps
 
+Before creating a tag, run the non-publishing pre-tag gate from the repository root:
+
+```bash
+bash scripts/pre-tag-gate.sh
+```
+
+The gate runs the Go test suite, a targeted benchmark smoke check, and the server build. It does not create tags, GitHub releases, container images, or deployment side effects.
+
 ```bash
 # 1. Tag the new version
 git tag v0.x.y -m "release: v0.x.y"

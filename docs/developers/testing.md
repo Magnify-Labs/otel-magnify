@@ -12,6 +12,16 @@ go test ./...
 
 Store tests use in-memory SQLite where possible.
 
+## Benchmarks
+
+Targeted benchmarks are used as performance guardrails for hot validation paths. They are not thresholded in CI, but the pre-tag gate runs a one-iteration smoke check so regressions that break benchmark execution are caught before release tagging.
+
+Run the config validation guardrail benchmark locally with:
+
+```bash
+go test -run '^$' -bench '^BenchmarkValidateMinimalConfig$' -benchmem ./internal/validator
+```
+
 ## Frontend
 
 Run the TypeScript check from the frontend workspace:

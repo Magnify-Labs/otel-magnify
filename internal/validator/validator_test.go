@@ -26,6 +26,8 @@ service:
 `
 
 func TestValidate_Valid(t *testing.T) {
+	t.Parallel()
+
 	r := Validate([]byte(validMinimal), nil)
 	if !r.Valid {
 		t.Fatalf("expected valid, got errors: %+v", r.Errors)
@@ -33,6 +35,8 @@ func TestValidate_Valid(t *testing.T) {
 }
 
 func TestValidate_InvalidYAML(t *testing.T) {
+	t.Parallel()
+
 	r := Validate([]byte("receivers: [oops\n"), nil)
 	if r.Valid || len(r.Errors) == 0 || r.Errors[0].Code != "yaml_parse" {
 		t.Fatalf("expected yaml_parse error, got %+v", r)
@@ -40,6 +44,8 @@ func TestValidate_InvalidYAML(t *testing.T) {
 }
 
 func TestValidate_MissingService(t *testing.T) {
+	t.Parallel()
+
 	r := Validate([]byte("receivers: {}\n"), nil)
 	if r.Valid {
 		t.Fatal("expected invalid")
@@ -50,6 +56,8 @@ func TestValidate_MissingService(t *testing.T) {
 }
 
 func TestValidate_UndefinedComponent(t *testing.T) {
+	t.Parallel()
+
 	yaml := `
 receivers:
   otlp: {}
@@ -78,6 +86,8 @@ service:
 }
 
 func TestValidate_MissingPipelineSection(t *testing.T) {
+	t.Parallel()
+
 	yaml := `
 receivers:
   otlp: {}
@@ -104,6 +114,8 @@ service:
 }
 
 func TestValidate_ComponentNotInstalled(t *testing.T) {
+	t.Parallel()
+
 	available := &models.AvailableComponents{
 		Components: map[string][]string{
 			"receivers":  {"otlp"},
@@ -221,6 +233,8 @@ func TestValidateWithRuntime_AvailableComponentsMissingIsWarningOnly(t *testing.
 }
 
 func TestValidate_NamedInstanceStripsSuffix(t *testing.T) {
+	t.Parallel()
+
 	available := &models.AvailableComponents{
 		Components: map[string][]string{
 			"receivers": {"otlp"},
@@ -245,6 +259,8 @@ service:
 }
 
 func TestValidate_SkipsCategoryNotReported(t *testing.T) {
+	t.Parallel()
+
 	// If AvailableComponents only reports receivers, we must not flag an
 	// unknown processor as not-installed — we just don't know.
 	available := &models.AvailableComponents{
@@ -256,5 +272,17 @@ func TestValidate_SkipsCategoryNotReported(t *testing.T) {
 	r := Validate([]byte(validMinimal), available)
 	if !r.Valid {
 		t.Fatalf("expected valid when processor category not reported, got %+v", r.Errors)
+	}
+}
+
+func BenchmarkValidateMinimalConfig(b *testing.B) {
+	yaml := []byte(validMinimal)
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		r := Validate(yaml, nil)
+		if !r.Valid {
+			b.Fatalf("expected valid, got errors: %+v", r.Errors)
+		}
 	}
 }
