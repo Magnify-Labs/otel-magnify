@@ -2,12 +2,16 @@ package alerts
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +22,34 @@ import (
 func TestNewWebhookNotifier_EmptyURLDisablesNotifier(t *testing.T) {
 	if got := NewWebhookNotifier(""); got != nil {
 		t.Fatalf("NewWebhookNotifier(empty) = %#v, want nil", got)
+	}
+}
+
+func TestNewWebhookNotifier_BlocksUnsafeTargets(t *testing.T) {
+	unsafeURLs := []string{
+		"http://hooks.example.com/webhook",
+		"ftp://hooks.example.com/webhook",
+		"https:///missing-host",
+		"https://user:pass@hooks.example.com/webhook",
+		"https://localhost/webhook",
+		"https://collector.localhost/webhook",
+		"https://127.0.0.1/webhook",
+		"https://[::1]/webhook",
+		"https://169.254.169.254/latest/meta-data/",
+		"https://10.0.0.5/webhook",
+		"https://172.16.0.5/webhook",
+		"https://192.168.1.10/webhook",
+		"https://[fc00::1]/webhook",
+		"https://[fe80::1]/webhook",
+		"https://192.0.2.1/webhook",
+	}
+
+	for _, rawURL := range unsafeURLs {
+		t.Run(rawURL, func(t *testing.T) {
+			if got := NewWebhookNotifier(rawURL); got != nil {
+				t.Fatalf("NewWebhookNotifier(%q) = %#v, want nil", rawURL, got)
+			}
+		})
 	}
 }
 
@@ -54,7 +86,7 @@ func TestWebhookNotifierSend_PostsAlertPayloadOn2xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	NewWebhookNotifier(server.URL).Send(alert)
+	(&WebhookNotifier{url: server.URL, client: server.Client()}).Send(alert)
 
 	var got webhookRequest
 	select {
@@ -103,7 +135,7 @@ func TestWebhookNotifierSend_LogsServerErrorsFor4xxAnd5xx(t *testing.T) {
 			defer server.Close()
 
 			logs := captureWebhookLogs(t, func() {
-				NewWebhookNotifier(server.URL).Send(testWebhookAlert())
+				(&WebhookNotifier{url: server.URL, client: server.Client()}).Send(testWebhookAlert())
 			})
 			want := fmt.Sprintf("webhook: server returned %d", status)
 			if !strings.Contains(logs, want) {
@@ -115,7 +147,7 @@ func TestWebhookNotifierSend_LogsServerErrorsFor4xxAnd5xx(t *testing.T) {
 
 func TestWebhookNotifierSend_LogsMalformedURLError(t *testing.T) {
 	logs := captureWebhookLogs(t, func() {
-		NewWebhookNotifier("://example.com/webhook").Send(testWebhookAlert())
+		(&WebhookNotifier{url: "://example.com/webhook", client: &http.Client{Timeout: 10 * time.Second}}).Send(testWebhookAlert())
 	})
 	if !strings.Contains(logs, "webhook: send error:") {
 		t.Fatalf("logs = %q, want send error", logs)
@@ -129,14 +161,40 @@ func TestWebhookNotifierSend_LogsClientTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	notifier := NewWebhookNotifier(server.URL)
-	notifier.client = &http.Client{Timeout: 10 * time.Millisecond}
+	notifier := &WebhookNotifier{url: server.URL, client: &http.Client{Timeout: 10 * time.Millisecond}}
 
 	logs := captureWebhookLogs(t, func() {
 		notifier.Send(testWebhookAlert())
 	})
 	if !strings.Contains(logs, "webhook: send error:") {
 		t.Fatalf("logs = %q, want timeout send error", logs)
+	}
+}
+
+func TestSafeWebhookClientRejectsUnsafeRedirectTargets(t *testing.T) {
+	client := newSafeWebhookHTTPClient()
+	redirectURL, err := url.Parse("https://169.254.169.254/latest/meta-data/")
+	if err != nil {
+		t.Fatalf("parse redirect URL: %v", err)
+	}
+
+	err = client.CheckRedirect(&http.Request{URL: redirectURL}, nil)
+	if !errors.Is(err, errUnsafeWebhookURL) {
+		t.Fatalf("CheckRedirect error = %v, want %v", err, errUnsafeWebhookURL)
+	}
+}
+
+func TestSafeWebhookDialAddressRejectsUnsafeDNSResults(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := safeWebhookDialAddress(ctx, "localhost", "443")
+	if !errors.Is(err, errUnsafeWebhookURL) {
+		t.Fatalf("safeWebhookDialAddress(localhost) error = %v, want %v", err, errUnsafeWebhookURL)
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		t.Fatalf("safeWebhookDialAddress(localhost) returned DNS error %v, want unsafe URL rejection", err)
 	}
 }
 
