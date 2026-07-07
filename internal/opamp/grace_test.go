@@ -1,40 +1,56 @@
 package opamp
 
 import (
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestGraceFiresAfterDelayIfNotCancelled(t *testing.T) {
+	t.Parallel()
+
 	gc := NewGraceController(20 * time.Millisecond)
-	var fired int32
-	gc.Schedule("wl", func() { atomic.AddInt32(&fired, 1) })
-	time.Sleep(60 * time.Millisecond)
-	if got := atomic.LoadInt32(&fired); got != 1 {
-		t.Fatalf("expected 1 firing, got %d", got)
+	fired := make(chan struct{}, 1)
+	gc.Schedule("wl", func() { fired <- struct{}{} })
+	select {
+	case <-fired:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected grace callback to fire")
 	}
 }
 
 func TestGraceCancellationPreventsFiring(t *testing.T) {
+	t.Parallel()
+
 	gc := NewGraceController(30 * time.Millisecond)
-	var fired int32
-	gc.Schedule("wl", func() { atomic.AddInt32(&fired, 1) })
+	fired := make(chan struct{}, 1)
+	gc.Schedule("wl", func() { fired <- struct{}{} })
 	gc.Cancel("wl")
-	time.Sleep(60 * time.Millisecond)
-	if got := atomic.LoadInt32(&fired); got != 0 {
-		t.Fatalf("unexpected firing: %d", got)
+	select {
+	case <-fired:
+		t.Fatal("unexpected grace callback after cancel")
+	case <-time.After(70 * time.Millisecond):
 	}
 }
 
 func TestGraceRescheduleReplacesExisting(t *testing.T) {
+	t.Parallel()
+
 	gc := NewGraceController(30 * time.Millisecond)
-	var fired int32
-	gc.Schedule("wl", func() { atomic.AddInt32(&fired, 1) })
-	gc.Schedule("wl", func() { atomic.AddInt32(&fired, 2) }) // should cancel the first
-	time.Sleep(80 * time.Millisecond)
-	if got := atomic.LoadInt32(&fired); got != 2 {
+	fired := make(chan int, 2)
+	gc.Schedule("wl", func() { fired <- 1 })
+	gc.Schedule("wl", func() { fired <- 2 }) // should cancel the first
+	select {
+	case got := <-fired:
+		if got != 2 {
+			t.Fatalf("expected 2 (second only), got %d", got)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected rescheduled grace callback to fire")
+	}
+	select {
+	case got := <-fired:
 		t.Fatalf("expected 2 (second only), got %d", got)
+	case <-time.After(70 * time.Millisecond):
 	}
 }
 
@@ -44,16 +60,22 @@ func TestGraceCancelOfUnknownIDIsNoop(_ *testing.T) {
 }
 
 func TestGraceMultipleWorkloadsIndependent(t *testing.T) {
+	t.Parallel()
+
 	gc := NewGraceController(20 * time.Millisecond)
-	var a, b int32
-	gc.Schedule("wl-a", func() { atomic.AddInt32(&a, 1) })
-	gc.Schedule("wl-b", func() { atomic.AddInt32(&b, 1) })
+	a := make(chan struct{}, 1)
+	b := make(chan struct{}, 1)
+	gc.Schedule("wl-a", func() { a <- struct{}{} })
+	gc.Schedule("wl-b", func() { b <- struct{}{} })
 	gc.Cancel("wl-a")
-	time.Sleep(60 * time.Millisecond)
-	if atomic.LoadInt32(&a) != 0 {
-		t.Fatalf("wl-a should have been cancelled, fired = %d", a)
+	select {
+	case <-b:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("wl-b should have fired once")
 	}
-	if atomic.LoadInt32(&b) != 1 {
-		t.Fatalf("wl-b should have fired once, got %d", b)
+	select {
+	case <-a:
+		t.Fatal("wl-a should have been cancelled")
+	case <-time.After(50 * time.Millisecond):
 	}
 }

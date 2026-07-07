@@ -12,9 +12,9 @@ import (
 // hookClient registers a receive-only ws client that captures broadcast frames.
 func hookClient(h *Hub) *wsClient {
 	c := &wsClient{send: make(chan []byte, 8)}
-	h.register <- c
-	// Give Run time to process the register before callers send broadcasts.
-	time.Sleep(10 * time.Millisecond)
+	h.mu.Lock()
+	h.clients[c] = true
+	h.mu.Unlock()
 	return c
 }
 

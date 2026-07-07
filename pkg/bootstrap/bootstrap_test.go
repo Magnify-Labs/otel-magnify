@@ -137,8 +137,11 @@ func TestPreRun_CalledAfterMigrations_BeforeServerStart(t *testing.T) {
 	t.Setenv("LISTEN_ADDR", ":0")
 	t.Setenv("OPAMP_ADDR", ":0")
 
-	gotGroups := false
-	gotAuth := false
+	type preRunObservation struct {
+		gotGroups bool
+		gotAuth   bool
+	}
+	observed := make(chan preRunObservation, 1)
 	opts := bootstrap.Options{
 		PreRun: func(store ext.Store, auth ext.AuthProvider) ([]server.Option, error) {
 			// Migrations already applied: seeded groups must exist.
@@ -146,15 +149,15 @@ func TestPreRun_CalledAfterMigrations_BeforeServerStart(t *testing.T) {
 			if err != nil {
 				return nil, fmt.Errorf("ListSystemGroups in PreRun: %w", err)
 			}
-			if len(groups) >= 3 {
-				gotGroups = true
-			}
+			gotGroups := len(groups) >= 3
 			// Auth provider must be non-nil and functional: minting should work.
+			gotAuth := false
 			if auth != nil {
 				if _, err := auth.GenerateToken("u1", "e@x", []string{"viewer"}); err == nil {
 					gotAuth = true
 				}
 			}
+			observed <- preRunObservation{gotGroups: gotGroups, gotAuth: gotAuth}
 			return nil, nil
 		},
 	}
@@ -163,7 +166,13 @@ func TestPreRun_CalledAfterMigrations_BeforeServerStart(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- bootstrap.Run(ctx, opts) }()
 
-	time.Sleep(500 * time.Millisecond)
+	var got preRunObservation
+	select {
+	case got = <-observed:
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("PreRun was not called")
+	}
 	cancel()
 	select {
 	case err := <-errCh:
@@ -174,10 +183,10 @@ func TestPreRun_CalledAfterMigrations_BeforeServerStart(t *testing.T) {
 		t.Fatal("bootstrap.Run did not return after cancel")
 	}
 
-	if !gotGroups {
+	if !got.gotGroups {
 		t.Fatal("PreRun did not see seeded system groups — ran before migrations?")
 	}
-	if !gotAuth {
+	if !got.gotAuth {
 		t.Fatal("PreRun did not receive a functional auth provider")
 	}
 }

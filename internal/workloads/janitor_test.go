@@ -34,6 +34,8 @@ func (f *fakeStore) PurgeOldWorkloadEvents(_ time.Time) (int64, error) {
 }
 
 func TestRunOnceArchivesExpiredAndPurgesEvents(t *testing.T) {
+	t.Parallel()
+
 	past := time.Now().Add(-time.Hour)
 	f := &fakeStore{workloads: map[string]models.Workload{
 		"old": {ID: "old", RetentionUntil: &past},
@@ -49,6 +51,8 @@ func TestRunOnceArchivesExpiredAndPurgesEvents(t *testing.T) {
 }
 
 func TestRunOnceSkipsWorkloadsWithFutureRetention(t *testing.T) {
+	t.Parallel()
+
 	future := time.Now().Add(time.Hour)
 	f := &fakeStore{workloads: map[string]models.Workload{
 		"young": {ID: "young", RetentionUntil: &future},
@@ -61,6 +65,8 @@ func TestRunOnceSkipsWorkloadsWithFutureRetention(t *testing.T) {
 }
 
 func TestRunOnceSkipsAlreadyArchived(t *testing.T) {
+	t.Parallel()
+
 	past := time.Now().Add(-time.Hour)
 	f := &fakeStore{workloads: map[string]models.Workload{
 		"already": {ID: "already", RetentionUntil: &past, ArchivedAt: &past},
@@ -73,12 +79,13 @@ func TestRunOnceSkipsAlreadyArchived(t *testing.T) {
 }
 
 func TestStartStopsOnContextCancel(t *testing.T) {
+	t.Parallel()
+
 	f := &fakeStore{workloads: map[string]models.Workload{}}
 	j := New(f, Options{Interval: 10 * time.Millisecond})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { j.Start(ctx); close(done) }()
-	time.Sleep(30 * time.Millisecond)
 	cancel()
 	select {
 	case <-done:
