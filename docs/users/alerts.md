@@ -33,6 +33,10 @@ Set `WEBHOOK_URL` to POST every newly fired alert to an external receiver. The n
 
 Webhook calls use a 10-second timeout. Delivery failures and HTTP 4xx/5xx responses are logged by the server; they do not block alert persistence.
 
+`WEBHOOK_URL` must point to an external HTTPS endpoint with a valid host. The built-in notifier rejects empty/invalid hosts, non-HTTPS schemes, local host names, loopback addresses, private RFC1918/RFC4193 ranges, link-local ranges, metadata-service addresses such as `169.254.169.254`, multicast, unspecified, benchmark, carrier-grade NAT, and documentation-only address ranges. Redirects are checked against the same policy, and DNS results are revalidated before the outbound connection is opened to reduce DNS-rebinding SSRF risk.
+
+Compatibility caveat: development webhooks such as `http://localhost:8080`, plain HTTP endpoints, and private-network receivers are intentionally not supported by this safety policy. Use a public HTTPS receiver or a controlled relay if alerts need to leave a private deployment.
+
 Treat `WEBHOOK_URL` as sensitive when it embeds credentials.
 
 ## Resolving alerts
