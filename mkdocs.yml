@@ -77,10 +77,14 @@ nav:
       - Overview: api/index.md
       - Authentication: api/authentication.md
       - REST: api/rest.md
+      - Report exports: api/report-exports.md
       - WebSocket: api/websocket.md
       - OpAMP: api/opamp.md
+  - Security:
+      - Remote config status redaction: security/remote-config-status-redaction.md
   - Reference:
       - Environment variables: reference/environment.md
       - P1 remediation gate: reference/p1-remediation-gate.md
+      - P2 remediation gate: reference/p2-remediation-gate.md
       - Glossary: reference/glossary.md
       - Changelog: reference/changelog.md

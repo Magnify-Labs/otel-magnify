@@ -1,28 +1,58 @@
 # Testing
 
-Use this page as the quick pre-PR checklist for local verification.
+Use this page as the quick pre-PR checklist for local verification. Run the smallest focused test first while iterating, then run the relevant CI-equivalent gate before opening a PR.
 
 ## Backend
 
-The Go module lives at the repository root, so run backend tests from the root directory:
+The Go module lives at the repository root and currently declares Go `1.25.11` in `go.mod`.
 
 ```bash
 go test ./...
+go build ./...
 ```
 
-Store tests use in-memory SQLite where possible.
+If your local Go version is older than `go.mod`, use the same container pattern as CI:
+
+```bash
+docker run --rm \
+  -v "$PWD:/app" \
+  -w /app \
+  -e GOFLAGS='-mod=mod -buildvcs=false' \
+  golang:1.25.11 sh -c 'go build ./... && go test ./...'
+```
+
+Store tests use in-memory SQLite where possible. PostgreSQL-specific behavior should be covered with a targeted integration setup or Docker Compose when needed.
 
 ## Frontend
 
-Run the TypeScript check from the frontend workspace:
+Run frontend checks from `frontend/`:
 
 ```bash
 cd frontend
-npx tsc --noEmit
+npm ci
+npm run lint
+npm run build
+npm run test:unit
 ```
+
+`npm run build` runs TypeScript project checking (`tsc -b`) and then Vite build, which matches the CI frontend gate.
 
 ## End-to-end and integration checks
 
-- Playwright E2E: `cd frontend && npm run test:e2e`.
+- Mocked Playwright E2E: `cd frontend && npm run test:e2e`.
+- Real-backend Playwright flow: `./scripts/e2e-real.sh` or `cd frontend && npm run test:e2e:real` when you intentionally want Docker-backed services.
 - SDK agent simulator: `cmd/sdkagent/` exercises the OpAMP pipeline without a real Collector.
 - Docker Compose can be used for integration tests against real PostgreSQL when needed.
+
+## Docs and hygiene checks
+
+Documentation-only PRs still trigger docs quality checks:
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -r docs/requirements.txt
+mkdocs build --strict
+```
+
+CI also runs markdownlint and a non-blocking lychee broken-link report for Markdown changes.

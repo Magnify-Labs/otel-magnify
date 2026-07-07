@@ -15,7 +15,7 @@ Go module `github.com/magnify-labs/otel-magnify` (lives at the repo root — `go
 - `internal/auth/` — JWT HS256, middleware
 - `internal/store/` — SQLite/Postgres via goose migrations
 - `pkg/models/` — shared structs
-- `frontend/` — React 18 + TypeScript + Vite
+- `frontend/` — React 19 + TypeScript + Vite
   - Zustand for state, TanStack Query for fetching, CodeMirror 6 for YAML editor
   - Design system: "Signal Deck" (warm gold accent, Plus Jakarta Sans + Fira Code)
 - `agents/` — sample OTel Collector configs for demo
@@ -29,7 +29,7 @@ go test ./...
 go build ./cmd/server/
 
 # Frontend
-cd frontend && npx tsc --noEmit
+cd frontend && npm run build
 cd frontend && npm run dev
 
 # Docker
