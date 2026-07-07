@@ -8,6 +8,7 @@ import { yaml } from '@codemirror/lang-yaml'
 import { signalDeckYaml } from '../config/yamlTheme'
 import ConfigPolicyPanel from './ConfigPolicyPanel'
 import { buildBlastRadiusDisplaySections } from '../../lib/blastRadiusDisplay'
+import { shouldUseMergeEditor } from '../../lib/diffPerformance'
 import type {
   ConfigPolicyEvaluation,
   OTelBlastRadius,
@@ -47,8 +48,10 @@ export default function ConfigDiffView({
   const ref = useRef<HTMLDivElement>(null)
   const viewRef = useRef<MergeView | null>(null)
   const { t } = useTranslation()
+  const useMergeEditor = shouldUseMergeEditor(oldYaml, newYaml)
 
   useEffect(() => {
+    if (!useMergeEditor) return
     if (!ref.current) return
     const extensions = [
       basicSetup,
@@ -67,7 +70,7 @@ export default function ConfigDiffView({
       mv.destroy()
       viewRef.current = null
     }
-  }, [oldYaml, newYaml])
+  }, [oldYaml, newYaml, useMergeEditor])
 
   return (
     <div className="config-diff-stack">
@@ -80,7 +83,18 @@ export default function ConfigDiffView({
       <div className="raw-diff-warning" role="note">
         {t('workloads.config.versioning.raw_diff_warning')}
       </div>
-      <div ref={ref} className="config-diff-view" />
+      {useMergeEditor ? (
+        <div ref={ref} className="config-diff-view" />
+      ) : (
+        <div className="config-diff-lightweight" role="note">
+          Large diff preview optimized for performance. Open the downloaded config versions for
+          full-editor review.
+          <div className="config-diff-lightweight-grid">
+            <pre>{oldYaml}</pre>
+            <pre>{newYaml}</pre>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

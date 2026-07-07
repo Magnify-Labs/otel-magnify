@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
+import { useLocation } from 'react-router-dom'
 import { workloadsAPI } from '../../api/client'
+import { routeAwarePollInterval } from '../../lib/queryPolling'
 import type { WorkloadEvent } from '../../types'
 
 interface Props {
@@ -16,15 +18,17 @@ function groupByDay(events: WorkloadEvent[]): Record<string, WorkloadEvent[]> {
 }
 
 export default function ActivityTab({ workloadId }: Props) {
+  const location = useLocation()
+  const activeRoute = `/workloads/${workloadId}`
   const { data: events } = useQuery({
     queryKey: ['workload-events', workloadId],
     queryFn: () => workloadsAPI.events(workloadId, { limit: 100 }),
-    refetchInterval: 10_000,
+    refetchInterval: () => routeAwarePollInterval(activeRoute, location.pathname, 10_000),
   })
   const { data: stats } = useQuery({
     queryKey: ['workload-events-stats', workloadId],
     queryFn: () => workloadsAPI.eventsStats(workloadId, '24h'),
-    refetchInterval: 30_000,
+    refetchInterval: () => routeAwarePollInterval(activeRoute, location.pathname, 30_000),
   })
 
   const grouped = groupByDay(events ?? [])

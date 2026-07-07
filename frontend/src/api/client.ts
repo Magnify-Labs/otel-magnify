@@ -109,7 +109,7 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401 && !err.config?.skipAuthRedirect) {
       endClientSession()
-      window.location.href = '/login'
+      window.location.href = '/login?expired=1'
     }
     return Promise.reject(err)
   },
