@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -41,6 +42,12 @@ func TestNewWebhookNotifier_BlocksUnsafeTargets(t *testing.T) {
 		"https://192.168.1.10/webhook",
 		"https://[fc00::1]/webhook",
 		"https://[fe80::1]/webhook",
+		"https://[64:ff9b::a9fe:a9fe]/webhook",
+		"https://[64:ff9b:1::a9fe:a9fe]/webhook",
+		"https://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/webhook",
+		"https://[2001:2::1]/webhook",
+		"https://[2001:20::1]/webhook",
+		"https://[2002:a9fe:a9fe::1]/webhook",
 		"https://192.0.2.1/webhook",
 	}
 
@@ -48,6 +55,26 @@ func TestNewWebhookNotifier_BlocksUnsafeTargets(t *testing.T) {
 		t.Run(rawURL, func(t *testing.T) {
 			if got := NewWebhookNotifier(rawURL); got != nil {
 				t.Fatalf("NewWebhookNotifier(%q) = %#v, want nil", rawURL, got)
+			}
+		})
+	}
+}
+
+func TestIsSafeWebhookIP_BlocksIPv6TransitionAndSpecialUseRanges(t *testing.T) {
+	unsafeIPs := []string{
+		"64:ff9b::a9fe:a9fe",
+		"64:ff9b:1::a9fe:a9fe",
+		"2001:0:4136:e378:8000:63bf:3fff:fdd2",
+		"2001:2::1",
+		"2001:20::1",
+		"2002:a9fe:a9fe::1",
+	}
+
+	for _, rawIP := range unsafeIPs {
+		t.Run(rawIP, func(t *testing.T) {
+			addr := netip.MustParseAddr(rawIP)
+			if isSafeWebhookIP(addr) {
+				t.Fatalf("isSafeWebhookIP(%q) = true, want false", rawIP)
 			}
 		})
 	}

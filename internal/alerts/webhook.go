@@ -155,7 +155,13 @@ func isSafeWebhookIP(addr netip.Addr) bool {
 		netip.MustParsePrefix("fc00::/7"),
 		netip.MustParsePrefix("fe80::/10"),
 		netip.MustParsePrefix("ff00::/8"),
+		netip.MustParsePrefix("64:ff9b::/96"),
+		netip.MustParsePrefix("64:ff9b:1::/48"),
+		netip.MustParsePrefix("2001::/32"),
+		netip.MustParsePrefix("2001:2::/48"),
+		netip.MustParsePrefix("2001:20::/28"),
 		netip.MustParsePrefix("2001:db8::/32"),
+		netip.MustParsePrefix("2002::/16"),
 	}
 	for _, prefix := range blockedPrefixes {
 		if prefix.Contains(addr) {
