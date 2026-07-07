@@ -1,65 +1,148 @@
 # REST API
 
-All endpoints return JSON. Most expect JSON request bodies; `POST /api/workloads/{id}/config/validate` is the raw-YAML validation exception. The legacy raw-YAML direct push endpoint `POST /api/workloads/{id}/config` remains registered for compatibility but now returns `410 Gone`. Authenticated endpoints require the header `Authorization: Bearer JWT`.
+All REST endpoints return JSON unless noted otherwise. Most request bodies are JSON; workload config validation takes raw YAML. The legacy raw-YAML direct push endpoint remains registered for compatibility but returns `410 Gone`; use config approval or rollback workflows instead.
+
+Protected endpoints require:
+
+```http
+Authorization: Bearer ***
+```
+
+See [Authentication](authentication.md) for login, token lifetime, WebSocket auth, and RBAC notes.
 
 ## Endpoint summary
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/api/auth/login` | No | Log in, returns a JWT. |
-| `GET` | `/api/workloads` | Yes | List active workloads; pass `?include_archived=true` to include archived rows. |
-| `GET` | `/api/workloads/{id}` | Yes | Get workload details. |
-| `GET` | `/api/workloads/{id}/instances` | Yes | Live OpAMP-connected pods for the workload (in-memory, not persisted). |
-| `GET` | `/api/workloads/{id}/topology` | Yes | Live instance topology plus workload-level heterogeneity summary. |
-| `GET` | `/api/workloads/{id}/events` | Yes | Append-only pod-lifecycle log (connect / disconnect / version change). |
-| `GET` | `/api/workloads/{id}/events/stats` | Yes | Event counts for the Activity tab sparkline (takes `?window=`). |
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| `POST` | `/api/auth/login` | No | Email/password login. Returns `{ "token": "..." }`. |
+| `GET` | `/api/auth/methods` | No | Lists available login methods. Community default is password login only. |
+| `GET` | `/api/features` | No | Returns `{ "features": { ... } }`. Feature names are not authorization. |
+| `GET` | `/healthz` | No | Plain `ok` liveness/readiness response. |
+| `GET` | `/api/workloads` | Yes | Lists active, non-archived workloads; pass `?include_archived=true` to include archived rows. |
+| `GET` | `/api/workloads/version-intelligence?recommended_version=...` | Yes + feature gate | Fleet version posture; gated by `config_safety.version_intelligence`. |
+| `GET` | `/api/workloads/{id}` | Yes | Fetches one workload. |
+| `GET` | `/api/workloads/{id}/instances` | Yes | Live OpAMP-connected instances for the workload; in-memory, not persisted. |
+| `GET` | `/api/workloads/{id}/topology` | Yes | Versioned live topology wrapper plus workload-level heterogeneity summary. |
+| `GET` | `/api/workloads/{id}/events` | Yes | Append-only lifecycle events for the workload. |
+| `GET` | `/api/workloads/{id}/events/stats?window=24h` | Yes | Event-count buckets for the Activity tab sparkline. |
 | `GET` | `/api/workloads/{id}/configs` | Yes | Config push history for the workload. |
-| `POST` | `/api/workloads/{id}/config` | Yes + `PushConfig` | Legacy direct push endpoint; now disabled and returns `410 Gone` with `code=config_approval_required`. |
-| `GET` | `/api/workloads/{id}/config/approvals` | Yes + `PushConfig` | List config approval requests for the workload. |
-| `POST` | `/api/workloads/{id}/config/approvals` | Yes + `PushConfig` | Create or update a validated config approval draft. |
-| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/approve` | Yes + `PushConfig` | Approve a pending config approval draft. |
-| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/push` | Yes + `PushConfig` | Push an approved draft, or an audited break-glass draft. |
-| `POST` | `/api/workloads/{id}/config/validate` | Yes + `ValidateConfig` | Lightweight server-side validation of a config. |
-| `POST` | `/api/workloads/{id}/archive` | Yes + `ArchiveWorkload` | Archive a disconnected workload; hidden from default inventory, retained for audit/history. |
-| `DELETE` | `/api/workloads/{id}` | Yes + `DeleteWorkload` | Permanently delete a workload row (admin only). |
-| `GET` | `/api/configs` | Yes | List all configs. |
-| `POST` | `/api/configs` | Yes | Create a new config. |
-| `GET` | `/api/configs/{id}` | Yes | Fetch a config by ID. |
-| `GET` | `/api/alerts` | Yes | List active alerts. |
-| `POST` | `/api/alerts/{id}/resolve` | Yes | Resolve an alert. |
-| `POST` | `/api/reports/evidence-pack` | Yes | Preview a deterministic evidence-pack JSON payload. |
-| `POST` | `/api/reports/evidence-pack/export` | Yes | Export an evidence pack as Markdown, CSV, or PDF (`?format=`). |
-| `GET` | `/ws` | Yes | WebSocket hub. Browser clients use the HttpOnly session cookie; `?token={jwt}` is a legacy fallback (see [WebSocket](websocket.md)). |
-| `GET` | `/healthz` | No | Liveness probe. |
+| `GET` | `/api/workloads/{id}/configs/{hash}` | Yes + `ReadConfigContent` permission | Fetches one pushed config revision by hash. |
+| `POST` | `/api/workloads/{id}/config` | Yes + `PushConfig` permission | Legacy direct push endpoint; disabled and returns `410 Gone` with `code=config_approval_required`. |
+| `GET` | `/api/workloads/{id}/config/approvals` | Yes + feature + `PushConfig` permission | Lists config approval requests; gated by `config_safety.approvals`. |
+| `POST` | `/api/workloads/{id}/config/approvals` | Yes + feature + `PushConfig` permission | Creates or updates a validated approval draft. |
+| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/approve` | Yes + feature + `PushConfig` permission | Approves a pending draft. |
+| `POST` | `/api/workloads/{id}/config/approvals/{approval_id}/push` | Yes + feature + `PushConfig` permission | Pushes an approved draft, or audited break-glass draft. |
+| `POST` | `/api/workloads/{id}/config/validate` | Yes + `ValidateConfig` permission | Validates raw YAML against syntax/components/runtime checks without pushing it. |
+| `POST` | `/api/workloads/{id}/configs/{hash}/label` | Yes + `PushConfig` permission | Sets or clears a user-facing revision label. |
+| `POST` | `/api/workloads/{id}/configs/{hash}/rollback` | Yes + feature + `PushConfig` permission | Pushes a previous config revision again; gated by `config_safety.guided_rollback`. |
+| `POST` | `/api/workloads/{id}/archive` | Yes + `ArchiveWorkload` permission | Archives a disconnected workload; hidden from default inventory and retained for audit/history. |
+| `DELETE` | `/api/workloads/{id}` | Yes + `DeleteWorkload` permission | Hard-deletes a workload. |
+| `GET` | `/api/configs` | Yes | Lists named config templates. |
+| `POST` | `/api/configs` | Yes + `CreateConfigTpl` permission | Creates a named config template. |
+| `POST` | `/api/configs/diff` | Yes | Computes a config diff. |
+| `GET` | `/api/configs/{id}` | Yes + `ReadConfigContent` permission | Fetches a named config template. |
+| `POST` | `/api/configs/migration-assistant/preview` | Yes + `ValidateConfig` permission | Converts a pasted vendor config snippet into a Collector draft preview. |
+| `GET` | `/api/alerts?include_resolved=true` | Yes | Lists active alerts by default; include resolved alerts when requested. |
+| `POST` | `/api/alerts/{id}/resolve` | Yes + `ResolveAlert` permission | Resolves an alert. |
+| `POST` | `/api/reports/evidence-pack` | Yes + `ExportReports` permission | Preview a deterministic evidence-pack JSON payload. |
+| `POST` | `/api/reports/evidence-pack/export` | Yes + `ExportReports` permission | Export an evidence pack as Markdown, CSV, or PDF (`?format=`). |
+| `GET` | `/api/pushes/activity?window=7d` | Yes | Push activity buckets. Only `7d` is supported today. |
+| `GET` | `/api/push-groups` | Yes | Lists configured push groups. |
+| `GET` | `/api/me` | Yes | Current user, groups, permissions, and preferences. |
+| `PUT` | `/api/me/password` | Yes | Changes the current user's password. |
+| `PUT` | `/api/me/preferences` | Yes | Updates current user's UI preferences. |
+| `GET` | `/ws` | Yes | Browser WebSocket hub. Browser clients use the HttpOnly session cookie; `?token={jwt}` is a legacy fallback (see [WebSocket](websocket.md)). |
+
+Feature-gated endpoints return `403` with `code=feature_disabled` when their server-side feature is not enabled. Feature flags are discovery metadata; they do not replace authentication or RBAC.
 
 !!! note "Legacy `/api/agents/*` compatibility"
-    The previous `/api/agents/*` routes still resolve — they reply with HTTP `307 Temporary Redirect` to the matching `/api/workloads/*` path (`?query` string preserved). New integrations should call `/api/workloads/*` directly.
+    The previous `/api/agents/*` routes still resolve for the core workload endpoints. They reply with HTTP `307 Temporary Redirect` to the matching `/api/workloads/*` path with the query string preserved. New integrations should call `/api/workloads/*` directly.
 
-## Representative payloads
+## Public endpoints
 
 ### `POST /api/auth/login`
 
 Request:
 
 ```json
-{
-  "email": "admin@local",
-  "password": "changeme"
-}
+{ "email": "admin@local", "password": "change-me" }
 ```
 
 Response:
 
 ```json
+{ "token": "eyJhbGciOi..." }
+```
+
+The server emits an audit event for login success/failure. If the audit sink is unavailable, the response is `503` with no business side effect:
+
+```json
+{ "error": "audit unavailable", "side_effect_status": "none" }
+```
+
+### `GET /api/auth/methods`
+
+Community response:
+
+```json
 {
-  "token": "eyJhbGciOi...",
-  "user": { "id": "...", "email": "admin@local", "role": "admin" }
+  "methods": [
+    {
+      "id": "password",
+      "type": "password",
+      "display_name": "Email + password",
+      "login_url": "/api/auth/login"
+    }
+  ]
 }
 ```
 
+Edition binaries may replace or extend this list through server options.
+
+### `GET /api/features`
+
+Default community response:
+
+```json
+{ "features": {} }
+```
+
+Feature flags are public discovery metadata. Protected APIs must still enforce auth and RBAC.
+
+## Workload contracts
+
+Workload response bodies use `pkg/models.Workload` as the source of truth. Important fields include:
+
+```json
+{
+  "id": "k8s:prod:deployment:checkout",
+  "fingerprint_source": "k8s",
+  "fingerprint_keys": { "namespace": "prod", "deployment": "checkout" },
+  "display_name": "prod/checkout",
+  "type": "collector",
+  "version": "0.98.0",
+  "status": "connected",
+  "last_seen_at": "2026-07-05T20:00:00Z",
+  "labels": { "env": "prod" },
+  "active_config_hash": "3f9a...",
+  "remote_config_status": {
+    "status": "applied",
+    "config_hash": "3f9a...",
+    "updated_at": "2026-07-05T20:00:00Z"
+  },
+  "available_components": {
+    "components": { "receivers": ["otlp"], "exporters": ["debug"] },
+    "hash": "..."
+  },
+  "accepts_remote_config": true
+}
+```
+
+Status values currently used by the model are `connected`, `disconnected`, and `degraded`. `fingerprint_source` is one of `k8s`, `host`, or `uid`.
+
 ### `GET /api/workloads`
 
-Response is an array of workload summaries. Archived workloads are excluded by default; add `?include_archived=true` to render an audit/history view that includes rows with `archived_at` set. The exact fields are defined by `models.Workload` in `pkg/models/models.go`. Treat it as the source of truth; do not hand-maintain the shape here — link to the file from the rendered doc instead.
+Response is an array of workload summaries. Archived workloads are excluded by default; add `?include_archived=true` to render an audit/history view that includes rows with `archived_at` set. The exact fields are defined by `models.Workload` in `pkg/models/models.go`; treat that model as the source of truth and avoid hand-maintaining every field here.
 
 ### `POST /api/workloads/{id}/archive`
 
@@ -69,150 +152,13 @@ Connected or degraded workloads return `409 Conflict` with `code=workload_not_di
 
 ### `GET /api/workloads/{id}/instances`
 
-Returns the live OpAMP-connected instances for a workload as an array. This endpoint is backed by the in-memory OpAMP registry, not the database; after a server restart it is empty until agents reconnect. If the workload has no live instances, the response is the JSON array `[]`, not `null`.
+Returns the live OpAMP-connected instances for a workload as an array. This endpoint is backed by the in-memory OpAMP registry, not the database; after a server restart it is empty until agents reconnect. If the workload has no live instances, the response is `[]`, not `null`.
 
-Each item uses `internal/opamp.Instance`:
-
-| Field | Meaning |
-|-------|---------|
-| `instance_uid` | Stable OpAMP instance UID for this live connection. |
-| `pod_name` | Kubernetes pod name when reported; omitted otherwise. |
-| `version` | Collector/agent version when reported; omitted otherwise. |
-| `connected_at` | UTC timestamp for when this instance entered the registry. |
-| `last_message_at` | UTC timestamp for the latest OpAMP message from the instance. |
-| `effective_config_hash` | Hash from the latest reported remote config status; omitted until known. |
-| `healthy` | `true` when the registry considers this instance healthy. Any unhealthy live instance makes the workload aggregate `status` become `degraded`. |
-| `accepts_remote_config` | Whether this instance reports OpAMP remote-config support. |
-| `remote_config_status` | Per-instance `RemoteConfigStatus`; omitted until the instance reports one. Status values currently used here are `applying`, `applied`, and `failed`; error text is sanitized before JSON serialization. |
-
-Compatibility notes:
-
-- Existing clients can keep using `GET /api/workloads/{id}/instances`; its top-level response shape remains an array.
-- The instance objects now include per-instance config fields (`effective_config_hash`, `accepts_remote_config`, and optional `remote_config_status`) in addition to the existing live identity/health fields. Clients should ignore unknown fields for forward compatibility.
-- Consumers that need workload-level rollups should prefer `GET /api/workloads/{id}/topology` instead of recalculating mixed versions, config drift, or remote-config states from this array.
+Each item uses `internal/opamp.Instance` fields such as `instance_uid`, `pod_name`, `version`, `connected_at`, `last_message_at`, `healthy`, `effective_config_hash`, `accepts_remote_config`, and optional sanitized `remote_config_status`.
 
 ### `GET /api/workloads/{id}/topology`
 
-Returns the same live instance array as `/instances`, wrapped with a versioned schema and a workload-level summary. This is the preferred contract for frontend topology views because it centralizes heterogeneity rules in the backend.
-
-Response fields:
-
-| Field | Meaning |
-|-------|---------|
-| `schema_version` | Contract identifier. Current value: `workload-topology.v1`. |
-| `workload_id` | The workload id from the path. The endpoint currently returns a well-formed empty topology for unknown or disconnected workloads; it does not 404 just because there are no live instances. |
-| `instances` | Live `internal/opamp.Instance[]`; same per-instance shape as `/instances`. Always an array. |
-| `summary.connected_count` | Number of live instances in `instances`. |
-| `summary.healthy_count` / `summary.unhealthy_count` | Health split across live instances. |
-| `summary.drifted_count` | Number of live instances with a non-empty `effective_config_hash` different from the workload's persisted `active_config_hash`. If the workload has no persisted active hash, this stays `0`; use `summary.config_hash_diversity` / `summary.heterogeneity.mixed_effective_config_hashes` to detect mixed rollout/canary state without mislabeling it as drift. |
-| `summary.version_diversity` | Sorted unique non-empty versions reported by instances. Always an array. |
-| `summary.config_hash_diversity` | Sorted unique non-empty effective config hashes reported by instances. Always an array. |
-| `summary.remote_config_status_counts` | Object with stable keys: `capable`, `no_status`, `sent`, `applying`, `applied`, `failed`. `capable` counts instances with `accepts_remote_config=true`; the other keys count the latest state for remote-config-capable instances only, with `no_status` used when a capable instance has absent/empty `remote_config_status.status`. |
-| `summary.heterogeneous` | Convenience boolean: `true` when any backend heterogeneity flag is true; `false` for the empty shape. |
-| `summary.heterogeneity` | Object with stable boolean flags: `mixed_versions`, `mixed_effective_config_hashes`, `unhealthy_instances`, `mixed_remote_config_statuses`, `applying_remote_config`, `failed_remote_config`. |
-| `summary.heterogeneity_reasons` | Ordered list of the `true` heterogeneity flags, in backend evaluation order. Always an array. |
-
-Non-empty mixed topology example (assumes the workload's persisted `active_config_hash` is `hash-b`):
-
-```json
-{
-  "schema_version": "workload-topology.v1",
-  "workload_id": "checkout-collector",
-  "instances": [
-    {
-      "instance_uid": "uid-a",
-      "pod_name": "checkout-collector-7c9d8f6f5f-a",
-      "version": "0.98.0",
-      "connected_at": "2026-07-02T11:57:00Z",
-      "last_message_at": "2026-07-02T12:00:00Z",
-      "effective_config_hash": "hash-a",
-      "healthy": true,
-      "accepts_remote_config": true,
-      "remote_config_status": {
-        "status": "applied",
-        "config_hash": "hash-a",
-        "updated_at": "2026-07-02T12:00:00Z"
-      }
-    },
-    {
-      "instance_uid": "uid-b",
-      "pod_name": "checkout-collector-7c9d8f6f5f-b",
-      "version": "0.99.0",
-      "connected_at": "2026-07-02T11:58:00Z",
-      "last_message_at": "2026-07-02T12:00:00Z",
-      "effective_config_hash": "hash-b",
-      "healthy": false,
-      "accepts_remote_config": true,
-      "remote_config_status": {
-        "status": "failed",
-        "config_hash": "hash-b",
-        "error_message": "Remote config error details redacted",
-        "updated_at": "2026-07-02T12:00:00Z"
-      }
-    },
-    {
-      "instance_uid": "uid-c",
-      "pod_name": "checkout-collector-7c9d8f6f5f-c",
-      "version": "0.99.0",
-      "connected_at": "2026-07-02T11:59:00Z",
-      "last_message_at": "2026-07-02T12:00:00Z",
-      "effective_config_hash": "hash-b",
-      "healthy": true,
-      "accepts_remote_config": true,
-      "remote_config_status": {
-        "status": "applying",
-        "config_hash": "hash-b",
-        "updated_at": "2026-07-02T12:00:00Z"
-      }
-    },
-    {
-      "instance_uid": "uid-d",
-      "pod_name": "checkout-collector-7c9d8f6f5f-d",
-      "version": "0.99.0",
-      "connected_at": "2026-07-02T11:59:30Z",
-      "last_message_at": "2026-07-02T12:00:00Z",
-      "effective_config_hash": "hash-b",
-      "healthy": true,
-      "accepts_remote_config": true
-    }
-  ],
-  "summary": {
-    "connected_count": 4,
-    "healthy_count": 3,
-    "unhealthy_count": 1,
-    "drifted_count": 1,
-    "heterogeneous": true,
-    "version_diversity": ["0.98.0", "0.99.0"],
-    "config_hash_diversity": ["hash-a", "hash-b"],
-    "remote_config_status_counts": {
-      "capable": 4,
-      "no_status": 1,
-      "sent": 0,
-      "applying": 1,
-      "applied": 1,
-      "failed": 1
-    },
-    "heterogeneity": {
-      "mixed_versions": true,
-      "mixed_effective_config_hashes": true,
-      "unhealthy_instances": true,
-      "mixed_remote_config_statuses": true,
-      "applying_remote_config": true,
-      "failed_remote_config": true
-    },
-    "heterogeneity_reasons": [
-      "mixed_versions",
-      "mixed_effective_config_hashes",
-      "unhealthy_instances",
-      "mixed_remote_config_statuses",
-      "applying_remote_config",
-      "failed_remote_config"
-    ]
-  }
-}
-```
-
-Empty topology example:
+Returns the same live instance array as `/instances`, wrapped with `schema_version`, `workload_id`, and a `summary`. The summary centralizes workload-level heterogeneity rules for frontend topology views:
 
 ```json
 {
@@ -248,19 +194,15 @@ Empty topology example:
 }
 ```
 
-Intentional response shape changes introduced for topology work:
+`/topology` does not replace the existing `/instances` array contract. Clients should ignore unknown fields for forward compatibility.
 
-- New endpoint: `GET /api/workloads/{id}/topology`.
-- `/topology` returns a wrapper object with `schema_version`, `workload_id`, `instances`, and `summary`; it does not replace the existing `/instances` array contract.
-- The `/instances` item shape now exposes per-instance config status/capability fields so frontend consumers can render each pod's latest remote-config state without relying on workload-level aggregation.
+## Config workflow contracts
 
-### `POST /api/workloads/{id}/config`
+### Legacy direct push: `POST /api/workloads/{id}/config`
 
-Legacy direct config push is intentionally disabled after the P2.14 approval flow. Even callers with `workload:push_config` receive `410 Gone` and must create, approve, and push through `/api/workloads/{id}/config/approvals`. This keeps prod confirmation, approval status, break-glass reason, audit, and OpAMP push semantics on one server-enforced path instead of relying on UI-only routing.
+Legacy direct config push is intentionally disabled after the approval flow. Even callers with `workload:push_config` receive `410 Gone` and must create, approve, and push through `/api/workloads/{id}/config/approvals`.
 
-Historical clients may still send the **raw YAML** body (no JSON wrapper), but the body is not validated, persisted, audited as `config.push`, or forwarded to OpAMP by this endpoint.
-
-Response (410 Gone):
+Response:
 
 ```json
 {
@@ -271,15 +213,23 @@ Response (410 Gone):
 
 Use `POST /api/workloads/{id}/config/validate` for raw-YAML validation feedback before creating an approval draft.
 
-### `POST /api/workloads/{id}/config/approvals`
+### Validate only: `POST /api/workloads/{id}/config/validate`
 
-Create or update the single pending approval draft for the same workload and `target_group`. This backend contract lives in community core because it owns the safety gate, persistence, validation, audit, and OpAMP push path; Pro/Enterprise should gate the richer approval UX and any commercial workflow policy with feature flags on top of these shared endpoints.
+Request body is raw YAML. Optional query parameter: `target_collector_version` overrides the workload-reported collector version for compatibility/runtime proof messaging.
+
+For a non-empty readable body, the endpoint returns `200` with a validation result. `valid` and top-level `errors[]` are preserved for existing clients; newer clients should also inspect `overall_status`, `warnings[]`, and `checks[]`.
+
+Stable check IDs: `yaml_static`, `collector_structure`, `component_availability`, `collector_version_compatibility`, `otelcol_runtime`. Check statuses are `passed`, `warning`, `failed`, or `skipped`; message severities are `info`, `warning`, or `error`. Warnings do not block push. Errors make `valid=false` and are also returned by push/rollback as `validation_errors[]`.
+
+### Approval draft: `POST /api/workloads/{id}/config/approvals`
 
 Request body is JSON:
 
 ```json
 {
-  "draft_yaml": "receivers:\n  otlp:\n...",
+  "draft_yaml": "receivers:
+  otlp:
+...",
   "target_group": "prod-collectors",
   "target_env": "prod",
   "comment": "why this config should be reviewed",
@@ -287,36 +237,15 @@ Request body is JSON:
 }
 ```
 
-Validation is mandatory here and again before approval/push. Empty or invalid drafts return `400` with `{ "error": "configuration failed validation", "validation_errors": [...] }` (or `empty config draft`). Prod-targeted drafts require `prod_confirmation=true` before the request is saved. Unsupported remote config returns `409` with `code=remote_config_unsupported`.
+Validation is mandatory here and again before approval/push. Empty or invalid drafts return `400` with `{ "error": "configuration failed validation", "validation_errors": [...] }` or `empty config draft`. Prod-targeted drafts require `prod_confirmation=true`. Unsupported remote config returns `409` with `code=remote_config_unsupported`.
 
-Response `201 Created` is `ConfigApprovalRequest`:
+Response `201 Created` is a `ConfigApprovalRequest`; audit action: `config.approval.request`.
 
-```json
-{
-  "id": "car_...",
-  "workload_id": "w1",
-  "draft_yaml": "receivers:\n...",
-  "target_group": "prod-collectors",
-  "target_env": "prod",
-  "requester": "operator@example.com",
-  "request_comment": "why this config should be reviewed",
-  "status": "pending",
-  "prod_target": true,
-  "prod_confirmation": true,
-  "prod_double_confirmed": false,
-  "break_glass": false,
-  "created_at": "2026-07-02T20:00:00Z",
-  "updated_at": "2026-07-02T20:00:00Z"
-}
-```
+### List approvals: `GET /api/workloads/{id}/config/approvals`
 
-Audit action: `config.approval.request`.
+Requires `workload:push_config` because list responses include draft YAML and operator comments. Viewers or other users without that permission receive `403 Forbidden`. Authorized callers receive `200 OK` with an array of `ConfigApprovalRequest`, newest first.
 
-### `GET /api/workloads/{id}/config/approvals`
-
-Requires the same `workload:push_config` permission as the approval mutation endpoints because list responses include draft YAML and operator comments. Viewers or other users without that permission receive `403 Forbidden` and cannot retrieve `draft_yaml`, `request_comment`, `approval_comment`, `push_comment`, or `break_glass_reason` from this endpoint. Authorized callers receive `200 OK` with an array of `ConfigApprovalRequest`, newest first.
-
-### `POST /api/workloads/{id}/config/approvals/{approval_id}/approve`
+### Approve: `POST /api/workloads/{id}/config/approvals/{approval_id}/approve`
 
 Request body:
 
@@ -326,7 +255,7 @@ Request body:
 
 Requires a non-empty comment and a still-valid draft. Response `200 OK` is the updated request with `status=approved`, `approved_by`, and `approved_at`. Non-pending approvals return `409` with `code=approval_not_pending`. Audit action: `config.approval.approve`.
 
-### `POST /api/workloads/{id}/config/approvals/{approval_id}/push`
+### Push approval: `POST /api/workloads/{id}/config/approvals/{approval_id}/push`
 
 Request body:
 
@@ -339,69 +268,104 @@ Request body:
 }
 ```
 
-Normal push requires `status=approved`; otherwise `409` with `code=approval_required`. Prod-targeted pushes require a non-empty `comment` and `prod_double_confirmed=true`, otherwise `400`. Break-glass push is allowed from a pending request only when `break_glass=true`, `comment` is non-empty, and `break_glass_reason` is non-empty; it emits `config.approval.break_glass_push` instead of the normal `config.approval.push` audit action.
+Normal push requires `status=approved`; otherwise `409` with `code=approval_required`. Prod-targeted pushes require a non-empty `comment` and `prod_double_confirmed=true`. Break-glass push is allowed from a pending request only when `break_glass=true`, `comment` is non-empty, and `break_glass_reason` is non-empty; it emits `config.approval.break_glass_push` instead of the normal `config.approval.push` audit action.
 
-Response `202 Accepted` is the updated request with `status=pushed`, `config_hash`, `push_comment`, `pushed_at`, and break-glass metadata when used. The endpoint reuses the standard validator, remote-config gate, config hash, `RecordWorkloadConfig`, OpAMP `PushConfig`, and audit-unavailable semantics: if audit fails after the push side effect, response is `503` with `{ "error": "audit unavailable", "side_effect_status": "applied" }`.
+Response `202 Accepted` is the updated request with `status=pushed`, `config_hash`, `push_comment`, `pushed_at`, and break-glass metadata when used. If audit fails after the push side effect, response is `503` with `{ "error": "audit unavailable", "side_effect_status": "applied" }`.
 
-### `POST /api/workloads/{id}/config/validate`
+### Revision label: `POST /api/workloads/{id}/configs/{hash}/label`
 
-Same request shape as the push endpoint (raw YAML). Optional query parameter: `target_collector_version` overrides the workload-reported collector version for compatibility/runtime proof messaging.
+Request:
 
-For a non-empty readable body, the endpoint always returns 200 with an enriched validation result. `valid` and top-level `errors[]` are preserved for existing clients; new clients should prefer `overall_status`, `warnings[]`, and `checks[]`.
+```json
+{ "label": "stable-2026-07" }
+```
+
+Use an empty string to clear the label. Labels are bounded server-side; overly long labels return `400`.
+
+### Rollback: `POST /api/workloads/{id}/configs/{hash}/rollback`
+
+The endpoint validates and re-pushes the YAML from a previous revision through the same OpAMP path as an approved push. Follow-up status arrives through the WebSocket hub. Guided rollback and known-good helper endpoints are gated by `config_safety.guided_rollback`.
+
+## Config template contracts
+
+### `POST /api/configs`
+
+Request:
+
+```json
+{ "name": "prod baseline", "content": "receivers:
+  otlp:
+" }
+```
+
+Response is a `pkg/models.Config`:
 
 ```json
 {
-  "valid": false,
-  "overall_status": "failed",
-  "summary": "Configuration failed 1 blocking validation error(s).",
-  "target_collector_version": "0.150.1",
-  "validated_at": "2026-06-30T15:09:00Z",
-  "checks": [
-    {
-      "id": "yaml_static",
-      "label": "YAML syntax",
-      "source": "server.static_yaml",
-      "status": "passed",
-      "required": true,
-      "messages": [
-        { "code": "yaml_parse_ok", "severity": "info", "message": "YAML parsed successfully.", "check_id": "yaml_static" }
-      ],
-      "metadata": { "bytes": 1842 }
-    },
-    {
-      "id": "otelcol_runtime",
-      "label": "Collector runtime validation",
-      "source": "otelcol.binary",
-      "status": "failed",
-      "required": false,
-      "messages": [
-        { "code": "otelcol_validation_failed", "severity": "error", "message": "otelcol validate failed: ...", "check_id": "otelcol_runtime" }
-      ],
-      "metadata": {
-        "binary_path": "/usr/local/bin/otelcol",
-        "binary_version": "0.150.1",
-        "binary_distribution": "otelcol-contrib",
-        "exit_code": 1,
-        "duration_ms": 126,
-        "command_mode": "otelcol validate --config"
-      }
-    }
-  ],
-  "errors": [
-    { "code": "otelcol_validation_failed", "message": "otelcol validate failed: ...", "check_id": "otelcol_runtime" }
-  ],
-  "warnings": []
+  "id": "...",
+  "name": "prod baseline",
+  "content": "receivers:
+  otlp:
+",
+  "created_at": "2026-07-05T20:00:00Z",
+  "created_by": "user-id"
 }
 ```
 
-Stable check IDs: `yaml_static`, `collector_structure`, `component_availability`, `collector_version_compatibility`, `otelcol_runtime`. Check statuses are `passed`, `warning`, `failed`, or `skipped`; message severities are `info`, `warning`, or `error`. Warnings do not block push. Errors make `valid=false` and are also returned by push/rollback as `validation_errors[]`.
+## User self-service contracts
+
+### `GET /api/me`
+
+Returns the current user's identity, groups, permissions, and preferences. This endpoint is what the SPA uses to decide which actions to render after login.
+
+### `PUT /api/me/password`
+
+Request:
+
+```json
+{ "current_password": "old-password", "new_password": "new-password-at-least-12" }
+```
+
+The new password must be at least 12 characters and must differ from the current password.
+
+### `PUT /api/me/preferences`
+
+Request:
+
+```json
+{ "theme": "system", "language": "en" }
+```
+
+Valid themes are `light`, `dark`, and `system`. Valid languages are `en` and `fr`.
 
 ## Error format
 
-Errors follow the shape:
+Most handler errors follow:
 
 ```json
 { "error": "human-readable message" }
 ```
 
-HTTP status codes follow REST conventions: `400` for bad input, `401` for missing/expired JWT, `403` for insufficient role, `404` for unknown IDs, `409` for conflicts such as pushing to a workload whose reported capabilities do not include `AcceptsRemoteConfig`, `500` for server errors.
+Audit-sink failures use a richer `503` shape:
+
+```json
+{ "error": "audit unavailable", "side_effect_status": "applied" }
+```
+
+`side_effect_status` is either:
+
+- `none` — no business mutation was persisted; retrying is usually safe.
+- `applied` — the business mutation happened before audit emission failed; reconcile state before retrying.
+
+Common status codes:
+
+| Status | Meaning |
+|--------|---------|
+| `400` | Bad input, invalid JSON/YAML, unsupported query value, or validation error. |
+| `401` | Missing, invalid, or expired JWT. |
+| `403` | Authenticated user lacks the required permission, or a feature-gated endpoint is disabled. |
+| `404` | Unknown ID/hash. |
+| `409` | Conflict, such as pushing remote config to a workload that cannot accept it. |
+| `410` | Legacy endpoint intentionally disabled. |
+| `500` | Unexpected server/store error. |
+| `503` | Audit sink unavailable for an audited operation. |
