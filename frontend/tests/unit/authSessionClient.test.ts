@@ -28,8 +28,12 @@ test('WebSocket auth-expiry closes end the SPA session instead of reconnecting w
   assert.match(websocketSource, /import \{ endClientSession \} from '\.\/session'/)
   assert.match(
     websocketSource,
-    /ws\.onclose = \(event\) => \{[\s\S]*isAuthClose\(event\)[\s\S]*shouldReconnect = false[\s\S]*endClientSession\(\)[\s\S]*window\.location\.href = '\/login'[\s\S]*return[\s\S]*scheduleReconnect\(\)/,
+    /ws\.onclose = \(event\) => \{[\s\S]*isAuthClose\(event\)[\s\S]*shouldReconnect = false[\s\S]*endClientSession\(\)[\s\S]*window\.location\.href = '\/login\?expired=1'[\s\S]*return[\s\S]*scheduleReconnect\(\)/,
   )
+})
+
+test('401 session expiry redirects to login with an operator-visible recovery message', () => {
+  assert.match(clientSource, /window\.location\.href = '\/login\?expired=1'/)
 })
 
 test('SPA session gates never persist or read bearer tokens from localStorage', () => {

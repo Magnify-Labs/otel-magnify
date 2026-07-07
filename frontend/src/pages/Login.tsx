@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { authAPI, meAPI, type AuthMethod } from '../api/client'
 import { startClientSession } from '../api/session'
 import { useStore } from '../store'
@@ -13,6 +13,7 @@ const PASSWORD_METHOD: AuthMethod = {
 
 export default function Login() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const setMe = useStore((s) => s.setMe)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -39,6 +40,7 @@ export default function Login() {
 
   const hasPassword = methods.some((m) => m.type === 'password')
   const ssoMethods = methods.filter((m) => m.type === 'sso')
+  const expired = searchParams.has('expired')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -67,6 +69,11 @@ export default function Login() {
         </div>
         <div className="login-sub">OpAMP Control Plane</div>
 
+        {expired && (
+          <div className="login-session-expired" role="status">
+            Your session expired. Sign in again to continue.
+          </div>
+        )}
         {error && <div className="error-text">{error}</div>}
 
         {hasPassword && (
@@ -101,34 +108,16 @@ export default function Login() {
               />
             </div>
 
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading}
-              style={{
-                width: '100%',
-                justifyContent: 'center',
-                padding: '0.6rem',
-                marginTop: '0.5rem',
-              }}
-            >
+            <button type="submit" className="btn btn-primary login-submit" disabled={loading}>
               {loading ? 'Authenticating...' : 'Sign in'}
             </button>
           </>
         )}
 
         {ssoMethods.length > 0 && (
-          <div
-            className="login-sso"
-            style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
-          >
+          <div className="login-sso">
             {ssoMethods.map((m) => (
-              <a
-                key={m.id}
-                href={m.login_url}
-                className="btn btn-secondary"
-                style={{ width: '100%', justifyContent: 'center', padding: '0.6rem' }}
-              >
+              <a key={m.id} href={m.login_url} className="btn btn-secondary login-sso-link">
                 Sign in with {m.display_name}
               </a>
             ))}

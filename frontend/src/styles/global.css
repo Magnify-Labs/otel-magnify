@@ -1885,6 +1885,29 @@ h4 {
   padding: 0.75rem;
   color: var(--text, #d9d0bd);
 }
+.config-diff-lightweight {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  padding: 0.75rem;
+}
+.config-diff-lightweight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.config-diff-lightweight-grid pre {
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0.75rem;
+}
 .rollback-confirm-check {
   display: flex;
   gap: 0.5rem;
@@ -1990,6 +2013,34 @@ h4 {
   text-align: center;
   letter-spacing: 0.04em;
   margin-bottom: 2rem;
+}
+
+.login-session-expired {
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--amber-dim);
+  color: var(--text-hi);
+  font-size: 0.8rem;
+}
+
+.login-submit,
+.login-sso-link {
+  width: 100%;
+  justify-content: center;
+  padding: 0.6rem;
+}
+
+.login-submit {
+  margin-top: 0.5rem;
+}
+
+.login-sso {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
 }
 
 /* ── Resolve button ── */

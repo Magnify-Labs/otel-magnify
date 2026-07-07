@@ -250,7 +250,7 @@ export function connectWS() {
       shouldReconnect = false
       reconnectAttempt = 0
       endClientSession()
-      window.location.href = '/login'
+      window.location.href = '/login?expired=1'
       return
     }
     scheduleReconnect()

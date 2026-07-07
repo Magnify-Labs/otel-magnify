@@ -7,19 +7,21 @@ import './styles/global.css'
 import RootLayout from './App'
 import Layout from './components/layout/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
-import Dashboard from './pages/Dashboard'
-import ConfigDriftDashboard from './pages/ConfigDriftDashboard'
-import Workloads from './pages/Workloads'
-import WorkloadDetail from './pages/WorkloadDetail'
-import Configs from './pages/Configs'
-import Alerts from './pages/Alerts'
-import Audit from './pages/Audit'
-import Profile from './pages/Profile'
-import Admin from './pages/Admin'
-import SSOProviders from './pages/admin/sso/Providers'
-import ProviderEdit from './pages/admin/sso/ProviderEdit'
-import Login from './pages/Login'
 import { queryClient } from './api/queryClient'
+import {
+  Admin,
+  Alerts,
+  Audit,
+  ConfigDriftDashboard,
+  Configs,
+  Dashboard,
+  Login,
+  Profile,
+  ProviderEdit,
+  SSOProviders,
+  WorkloadDetail,
+  Workloads,
+} from './routes/lazyPages'
 
 const router = createBrowserRouter([
   {
