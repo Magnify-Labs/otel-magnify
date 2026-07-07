@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/magnify-labs/otel-magnify/internal/audit"
 )
 
 // handleArchiveWorkload hides a stale workload from the default inventory
@@ -33,8 +31,7 @@ func (a *API) handleArchiveWorkload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 500, "failed to archive workload")
 		return
 	}
-	if err := audit.Emit(r.Context(), a.audit, "workload.archive", "workload", id, ""); err != nil {
-		respondAuditUnavailable(w, sideEffectApplied)
+	if !a.emitAudit(w, r, sideEffectApplied, "workload.archive", "workload", id, "") {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
