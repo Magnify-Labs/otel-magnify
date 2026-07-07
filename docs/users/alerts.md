@@ -1,6 +1,6 @@
 # Alerts
 
-otel-magnify evaluates workload alerts in the backend and broadcasts alert changes to the UI. The alert engine runs every 30 seconds from `pkg/server` and stores alerts until they are resolved.
+otel-magnify evaluates workload alerts in the backend and broadcasts alert changes to the UI. The alert engine is started by `pkg/server` on a 30-second interval and stores alerts until they are resolved.
 
 ## Built-in rules
 

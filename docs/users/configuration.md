@@ -39,7 +39,7 @@ The browser WebSocket hub lives on the API listener at `/ws` and uses the `om_se
 `OPAMP_SHARED_SECRET` protects the OpAMP HTTP/WebSocket handshake on `OPAMP_ADDR`.
 
 - Unset or empty: OpAMP clients can connect without an `Authorization` header. This is intended for local development and demo collectors on a trusted machine or private Docker network.
-- Set: every OpAMP client must send the exact value as a bearer token, for example `Authorization: Bearer <shared-secret>`. Missing or mismatched tokens are rejected with `401 Unauthorized` before any OpAMP message is processed.
+- Set: every OpAMP client must send the exact value as a bearer token, for example `Authorization: Bearer ***`. Missing or mismatched tokens are rejected with `401 Unauthorized` before any OpAMP message is processed.
 
 Use placeholders in examples and store the real value in your deployment secret manager or shell environment; do not commit real OpAMP secrets.
 
