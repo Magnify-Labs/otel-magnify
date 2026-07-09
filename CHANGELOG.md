@@ -1,21 +1,165 @@
 # Changelog
 
 All notable changes to this project are documented here.
-## Unreleased
+## v0.6.0 — 2026-07-09
+
+### Bug Fixes
+- Make known-good replacement precondition atomic (#151)
+- Harden guided rollback safety gates (#152)
+- Add workload config safety translations
+- Use collector-specific validation label
+- Gate rollback history actions
+- Route recovery panel rollback through guided dialog
+- Render rollback report from redacted status
+- Harden push status errors and timeouts (#157)
+- Improve frontend push status visibility
+- Redact legacy remote config status errors (#174)
+- Sanitize legacy remote status at rest
+- Sanitize workload remote status upserts
+- Avoid unsafe rollback endpoint regex
+- Close sanitizer follow-up gaps (#179)
+- Sanitize workload push error responses
+- Enforce canary promotion safety
+- Block offline workload config pushes
+- Render all fleet recommendation paths
+- Localize fleet intelligence UI states
+- Localize fleet intelligence recommendation copy (#203)
+- Add backend scoped push preview contract
+- Enforce trusted scoped push selectors
+- Finalize fleet version intelligence contract
+- Require approval flow for config pushes
+- Require GitOps validation pass before export
+- Align workload topology contract
+- Harden GitOps export security
+- Harden canary instance eligibility (#231)
+- Gate dashboard drift CTA by feature
+- Guard targeted config pushes by workload (#229)
+- Harden report evidence exports (#220)
+- Scope legacy config safety exports
+- Mock policy preview in config versioning e2e
+- Redact gitops import fetch errors (#242)
+- Preserve unknown canary instance capability (#244)
+- Align evidence reports with gates and scope (#245)
+- Align migration preview source limit
+- Redact migration assistant endpoint secrets
+- Fail closed on weak JWT secrets (#256)
+- Pin production backend builder image to golang:1.25-alpine (#257)
+- Require optional OpAMP bearer secret (#258)
+- Validate trimmed JWT secrets (#259)
+- Pass OpAMP shared secret through Compose (#262)
+- Enforce WebSocket origin and token expiry
+- Harden dashboard websocket resilience (#266)
+- Gate config content reads by permission (#268)
+- Canonicalize frontend server state in query cache
+- Gate rollback prepare config reads
+- Rate-limit login and bound JSON bodies
+- Handle restricted config content in UI (#272)
+- Clear frontend config content cache on session change
+- Project workload attributes for lookup (#278)
+- Renumber workload attributes migration
+- Slim config metadata payloads (#288)
+- Harden browser session authentication
+- Harden auth session failure handling (#290)
+- Paginate alert engine workload scans (#277)
+- Harden webhook notifier URL safety (#312)
+- Block IPv6 webhook transition ranges (#315)
+
+
+### CI/CD
+- Pin scorecard action to commit
+- Add e2e and Go race gates (#261)
+- Add pre-tag test hygiene gate (#313)
+
+
+### Documentation
+- Clarify test commands and fix npm lockfile
+- Clarify remote status redaction boundary
+- Document OpAMP shared secret configuration (#260)
+- Refresh roadmap and Go toolchain (#264)
+- Add P1 remediation gate report (#275)
+- Expand developer API and deployment guidance
+- Add P2 remediation gate report (#309)
+- Refresh workflow and hygiene docs (#310)
+
 
 ### Features
 - Wire AuditLogger emission across community handlers (#88)
-- Add 503 response helper with side-effect status
+- Add config safety frontend UX (#141)
+- Add runtime otelcol validation (#142)
+- Enrich validation API response (#143)
+- Fix-config-safety-mobile-responsiveness-and-e2e-mock-regress (#145)
+- Add enriched OTel config diff engine (#147)
+- Implement push timeline and instance status backend (#146)
+- Add known-good config semantics (#149)
+- Add guided rollback backend support (#150)
+- Build-guided-rollback-modal-in-react (#144)
+- Display enriched OTel diff in UI (#148)
+- Show validation checks separately (#153)
+- Build visible push status UI (#154)
+- Build known-good config UI flow
+- Add config application plan API
+- Add config library templates API
+- Add workload config canary API (#188)
+- Add config library templates UI
+- Add manual canary push UI (#190)
+- Add config safety plan dry-run UX
+- Add fleet version intelligence API (#187)
+- Integrate push scope UX (#196)
+- Add fleet config drift dashboard (#184)
+- Add fleet version intelligence dashboard panel (#197)
+- Surface actionable fleet recommendations
+- Add config approval flow backend
+- Add report export API contract
+- Add Git config import provenance (#212)
+- Add backend evidence pack exports
+- Add audit viewer
+- Add config approval frontend flow
+- Add workload topology API
+- Add GitOps config export backend
+- Support targeted workload canaries
+- Expose workload topology in frontend
+- Gate config safety backend endpoints
+- Gate paid config safety UI by capabilities
+- Add config safety evidence report exports
+- Add config policy engine
+- Surface config policy findings in frontend
+- Add config policy engine (#213)
+- Add config safety evidence pack UX
+- Add GitOps config workflow UX (#240)
+- Clarify config policy edition findings (#236)
+- Add config safety report export UX (#238)
+- Add config safety evidence pack UX (#241)
+- Show pre-push config risk score
+- Add config diff blast radius backend
+- Add offline config migration assistant
+- Add fleet compatibility matrix UX (#248)
+- Add human-readable config diff summary (#251)
+- Surface config blast radius simulation (#252)
+- Add migration assistant config UI (#255)
+- Wire workload archive UX (#283)
+- Polish frontend performance and session UX (#316)
 
 
 ### Refactoring
-- Make AuditLogger.Log return error and propagate fail-loud
+- Make AuditLogger.Log return error for fail-loud sinks (#89)
+- Split OpAMP message handling (#280)
+- Split oteldiff and standardize audit responses (#314)
 
 
 ### Testing
-- Cover fail-loud 503 path for auth surface
-- Cover fail-loud 503 for config template create
-- Cover fail-loud 503 for workload lifecycle
+- Disable real websocket during e2e fixtures (#155)
+- Stabilize workload config push e2e
+- Cover workload sanitizer boundaries
+- Stabilize canary Playwright workload mocks
+- Cover integrated scope UX regressions (#200)
+- Cover scoped push preview safety (#204)
+- Stabilize workload config push e2e mocks (#206)
+- Stabilize frontend sidebar e2e coverage
+- Enable pro config safety e2e features (#235)
+- Cover webhook notifier behavior (#263)
+- Cover rollback and fleet version intelligence (#265)
+- Cover config content RBAC boundaries
+- Add handler coverage and smoke path (#281)
 
 
 ## v0.5.0 — 2026-05-08
@@ -35,6 +179,7 @@ All notable changes to this project are documented here.
 
 ### Documentation
 - Update alert engine description in README
+- Update changelog for v0.5.0
 
 
 ### Features
