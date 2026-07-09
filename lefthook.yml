@@ -33,7 +33,7 @@ pre-push:
       run: |
         docker run --rm -v "$PWD:/app" -w /app \
           -e GOFLAGS='-buildvcs=false' \
-          golang:1.25.11 sh -c 'go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...'
+          golang:1.25.12 sh -c 'go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...'
 
     frontend-build:
       tags: build

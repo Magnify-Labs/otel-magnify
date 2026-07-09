@@ -8,7 +8,7 @@ ignored:
   - DL3059
   # DL3006 — explicit image tags: distroless/static-debian12 is a stable rolling
   # tag maintained by Google. Pinning to a digest is a separate effort tracked
-  # alongside golang:1.25.11 (see ci.yml).
+  # alongside golang:1.25.12 (see ci.yml).
   - DL3006
 
 trustedRegistries:

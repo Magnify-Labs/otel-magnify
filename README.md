@@ -71,7 +71,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 
 ### Prerequisites
 
-- Go 1.25.11+
+- Go 1.25.12+
 - Node.js 20+
 
 ### Development

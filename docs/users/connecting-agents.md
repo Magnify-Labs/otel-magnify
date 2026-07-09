@@ -75,7 +75,7 @@ The supervisor is not shipped as an official Docker image, so you build it
 yourself. Minimal recipe:
 
 ```dockerfile
-FROM golang:1.25.11 AS build
+FROM golang:1.25.12 AS build
 WORKDIR /src
 RUN git clone --depth=1 --branch=v0.150.0 \
     https://github.com/open-telemetry/opentelemetry-collector-contrib.git

@@ -4,7 +4,7 @@ Use this page as the quick pre-PR checklist for local verification. Run the smal
 
 ## Backend
 
-The Go module lives at the repository root and currently declares Go `1.25.11` in `go.mod`.
+The Go module lives at the repository root and currently declares Go `1.25.12` in `go.mod`.
 
 ```bash
 go test ./...
@@ -18,7 +18,7 @@ docker run --rm \
   -v "$PWD:/app" \
   -w /app \
   -e GOFLAGS='-mod=mod -buildvcs=false' \
-  golang:1.25.11 sh -c 'go build ./... && go test ./...'
+  golang:1.25.12 sh -c 'go build ./... && go test ./...'
 ```
 
 Store tests use in-memory SQLite where possible. PostgreSQL-specific behavior should be covered with a targeted integration setup or Docker Compose when needed.
