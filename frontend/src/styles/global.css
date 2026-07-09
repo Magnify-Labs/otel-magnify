@@ -1306,6 +1306,10 @@ h4 {
   margin-bottom: 1.1rem;
 }
 
+.field-flush {
+  margin-bottom: 0;
+}
+
 .field-label {
   font-family: var(--sans);
   font-size: 0.68rem;
@@ -2079,7 +2083,55 @@ code {
   border: 1px solid var(--border);
 }
 
-/* ── Configs form ── */
+/* ── Configs page ── */
+.configs-tab-bar {
+  display: flex;
+  gap: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+}
+
+.configs-tab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.6rem 0;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.configs-tab:hover {
+  color: var(--text);
+}
+
+.configs-tab-active {
+  color: var(--text-hi);
+  border-bottom-color: var(--gold);
+}
+
+.configs-tab-panel {
+  animation: enter 0.2s ease both;
+}
+
+.configs-name-cell {
+  font-family: var(--mono);
+  color: var(--text-hi);
+}
+
+.configs-created-by {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.configs-created-at {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .configs-form {
   border: 1px solid var(--border);
   border-radius: var(--radius);
