@@ -9,8 +9,10 @@ Exhaustive community-server runtime reference. See [Configuration](../users/conf
 | `OPAMP_ADDR` | No | `:4320` | OpAMP | Listen address for the OpAMP WebSocket server. The OpAMP path is `/v1/opamp`. |
 | `OPAMP_SHARED_SECRET` | No | — | OpAMP | Optional bearer token required from OpAMP clients during the HTTP/WebSocket handshake. Empty keeps local/dev OpAMP connections unauthenticated; set a random value for production, shared, or exposed networks. |
 | `CORS_ORIGINS` | No | `http://localhost:5173` | API | Comma-separated list of allowed browser origins. Docker Compose sets this to `http://localhost:8080` for same-origin production-style access. |
-| `DB_DRIVER` | No | `sqlite` | Store | `sqlite` (default) or `pgx` for PostgreSQL. |
-| `DB_DSN` | No | `otel-magnify.db` | Store | SQLite file path or PostgreSQL DSN. Docker and Helm commonly set this to a `/data/...` path or a secret-backed PostgreSQL URL. |
+| `DB_DSN` | Yes | — | Store | PostgreSQL connection string. Docker Compose supplies a local service URL; use `sslmode=require` for connections outside that local network. |
+| `DB_MAX_OPEN_CONNS` | No | `40` | Store | Maximum PostgreSQL connections held open. |
+| `DB_MAX_IDLE_CONNS` | No | `10` | Store | Maximum idle PostgreSQL connections retained. |
+| `DB_CONN_MAX_LIFETIME_SECONDS` | No | `1800` | Store | Maximum lifetime for a pooled connection in seconds. |
 | `SEED_ADMIN_EMAIL` | No | — | Bootstrap | If set with `SEED_ADMIN_PASSWORD`, creates a first admin user on startup when that email does not already exist. |
 | `SEED_ADMIN_PASSWORD` | No | — | Bootstrap | Password for the seeded admin. Use only for initial bootstrap, then rotate through the UI or your operational process. |
 | `WEBHOOK_URL` | No | — | Alerts | HTTP endpoint called when a new alert fires. Treat as sensitive if it contains embedded credentials. |

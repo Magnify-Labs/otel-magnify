@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ -z "${TEST_POSTGRES_DSN:-}" ]; then
+  echo "pre-tag gate: TEST_POSTGRES_DSN must be set to a PostgreSQL test database" >&2
+  exit 1
+fi
+
 echo "pre-tag gate: go test ./..."
 go test ./...
 

@@ -13,7 +13,7 @@ flowchart LR
         api[REST API + WS hub<br/>chi router]
         opamp[OpAMP server<br/>opamp-go]
         alerts[Alert engine<br/>30s tick]
-        store[(Store<br/>SQLite / Postgres)]
+        store[(PostgreSQL store)]
     end
     subgraph agents["Agents"]
         col[OTel Collectors]
@@ -42,14 +42,14 @@ internal/
 ├── config/          # env-based configuration
 ├── opamp/           # OpAMP server, workload registry, config push
 ├── workloads/       # fingerprint + in-memory instance registry + janitor
-└── store/           # SQLite/Postgres via goose migrations
+└── store/           # PostgreSQL persistence via goose migrations
 pkg/models/          # shared structs
 go.mod               # module root (github.com/magnify-labs/otel-magnify)
 ```
 
 ## Key design decisions
 
-- **`pressly/goose` over `golang-migrate`** — better `modernc.org/sqlite` support (pure Go, no CGO required).
+- **`pressly/goose` over `golang-migrate`** — migrations stay versioned with the application and run automatically at startup.
 - **OpAMP server runs on a dedicated `http.ServeMux` on `:4320`**, separate from the chi-based API mux on `:8080`. `Attach()` returns the handler and `ConnContext` hook, which are wired into the OpAMP-only mux at `/v1/opamp`. Keeping them on different listeners avoids the OpAMP protocol leaking into the user-facing router.
 - **Workload-centric data model** — persistence is keyed by workload (a K8s Deployment/DaemonSet/StatefulSet/Job/CronJob, or host+service). Individual pods are tracked as instances in an in-memory registry and are not persisted. See [OpAMP flow](opamp-flow.md) and [Connecting agents / Workload identity](../users/connecting-agents.md#workload-identity).
 - **Agent type detection via `isCollectorName()`** — matches the `otelcol*` prefix patterns; determines the collector vs SDK agent category shown in the UI.

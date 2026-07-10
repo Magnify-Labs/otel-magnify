@@ -14,6 +14,20 @@ jobs:
     name: Go build + test + pre-tag gate (Go 1.25.12)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: magnify
+          POSTGRES_USER: magnify
+          POSTGRES_PASSWORD: test-postgres-password
+        options: >-
+          --health-cmd "pg_isready -U magnify -d magnify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -25,7 +39,9 @@ jobs:
           docker run --rm \
             -v "$PWD:/app" \
             -w /app \
+            --network host \
             -e GOFLAGS='-mod=mod -buildvcs=false' \
+            -e TEST_POSTGRES_DSN='postgres://magnify:test-postgres-password@localhost:5432/magnify?sslmode=disable' \
             golang:1.25.12 sh -c 'bash scripts/pre-tag-gate.sh'
 
   build-frontend:

@@ -7,19 +7,18 @@ otel-magnify is configured primarily through environment variables. See the [ref
 | Variable | Description |
 |----------|-------------|
 | `JWT_SECRET` | HS256 signing key for JWTs issued at login. Startup fails when this is unset, when the placeholder value is used, or when the value is shorter than 32 characters. Use a strong random value in production; at least 32 bytes is recommended. |
+| `DB_DSN` | PostgreSQL connection string. Startup fails when this is unset or empty. Use `sslmode=require` outside the local Compose network. |
 
 ## Persistence
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_DRIVER` | `sqlite` | `sqlite` (default, pure Go via `modernc.org/sqlite`) or `pgx` for PostgreSQL. |
-| `DB_DSN` | `otel-magnify.db` | SQLite file path or a PostgreSQL DSN. |
+| `DB_DSN` | *(required)* | PostgreSQL connection string. |
+| `DB_MAX_OPEN_CONNS` | `40` | Maximum PostgreSQL connections held open. |
+| `DB_MAX_IDLE_CONNS` | `10` | Maximum idle PostgreSQL connections retained. |
+| `DB_CONN_MAX_LIFETIME_SECONDS` | `1800` | Maximum lifetime for a pooled connection in seconds. |
 
-SQLite is sufficient for local demos and single-instance deployments. PostgreSQL is recommended or required when:
-
-- You run otel-magnify behind multiple replicas.
-- You need off-host backup or point-in-time recovery.
-- You operate at a scale where SQLite write contention becomes a bottleneck.
+PostgreSQL is the only supported database for development and deployment. Use a managed service or an operator-managed PostgreSQL instance for backups, recovery, and scaling.
 
 Migrations run automatically on startup via [`pressly/goose`](https://github.com/pressly/goose).
 

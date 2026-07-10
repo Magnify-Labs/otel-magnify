@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Spin up the full otel-magnify stack against SQLite and run the real-backend
-# Playwright suite end-to-end. Tears down on exit (success or failure).
+# Spin up the full otel-magnify stack against PostgreSQL and run the
+# real-backend Playwright suite end-to-end. Tears down on exit (success or failure).
 #
 # Usage: ./scripts/e2e-real.sh
 # Requires: docker, npx (playwright installed in frontend/)
@@ -11,9 +11,16 @@ cd "$(dirname "$0")/.."
 
 # Test credentials — fixed so re-runs on the same DB volume are predictable.
 # The volume is wiped by `docker compose down -v` at the end of each run.
-export JWT_SECRET="e2e-real-jwt-secret-test-only-32b"
+: "${JWT_SECRET:=e2e-real-jwt-secret-test-only-32b}"
+if [ "${#JWT_SECRET}" -lt 32 ]; then
+  echo "JWT_SECRET must be at least 32 characters for the real E2E suite" >&2
+  exit 1
+fi
+export JWT_SECRET
 export SEED_ADMIN_EMAIL="admin@e2e.local"
 export SEED_ADMIN_PASSWORD="initialPass!!!12"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-e2e-real-postgres-password}"
+export DB_DSN="${DB_DSN:-postgres://magnify:${POSTGRES_PASSWORD}@postgres:5432/magnify?sslmode=disable}"
 
 cleanup() {
   echo "--- docker compose down -v ---"
@@ -70,7 +77,7 @@ done
 
 # Authenticated 404 path on an unknown hash — proves routing + handler return
 # the JSON {"error":...} shape the frontend renders.
-not_found_body="$(curl -fsS -X GET http://localhost:8080/api/workloads/ghost/configs/ghost \
+not_found_body="$(curl -sS -X GET http://localhost:8080/api/workloads/ghost/configs/ghost \
   -H "Authorization: Bearer ${TOKEN}" -o /dev/null -w '%{http_code}')"
 if [ "$not_found_body" != "404" ]; then
   echo "smoke: expected 404 on GET /api/workloads/ghost/configs/ghost, got ${not_found_body}"
