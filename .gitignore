@@ -7,6 +7,7 @@ site/
 # Superpowers artifacts (specs / plans) belong in the Obsidian vault, not the repo
 docs/superpowers/
 .superpowers/
+.worktrees/
 .DS_Store
 
 # Compiled Go binaries (moved from backend/.gitignore after the module-to-root refactor)
