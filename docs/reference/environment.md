@@ -22,6 +22,19 @@ Exhaustive community-server runtime reference. See [Configuration](../users/conf
 | `WORKLOAD_JANITOR_INTERVAL_SECONDS` | No | `300` | Workloads | Workload janitor tick interval. The janitor archives expired workloads and purges old events. Invalid or non-positive values fall back to one second. |
 | `WORKLOAD_EVENT_RETENTION_DAYS` | No | `30` | Workloads | Days the `workload_events` log is kept before the janitor trims it. Invalid or non-positive values fall back to 30 days. |
 
+## Load-test variables
+
+These variables are consumed only by `scripts/load-test-5000.sh`; they are not
+community-server runtime configuration. Use test-only values and never reuse
+production credentials for this scenario.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LOAD_TEST_CONFIRM` | Yes | — | Must be exactly `5000` before the script will start the 5,000 collector scenario. |
+| `LOAD_TEST_RAMP` | No | `5m` | Go duration used to spread 5,000 client starts. |
+| `LOAD_TEST_HOLD` | No | `10m` | Go duration that keeps established connections open. |
+| `LOAD_TEST_OUTPUT_DIR` | No | system temporary directory | Directory for the JSON summary, Docker resource snapshot, PostgreSQL activity query, and filtered application errors. |
+
 ## Feature flags
 
 Feature flags are not configured through environment variables in the community binary. They are static server options registered by the binary with `server.WithFeatures(...)`, optionally backed by an edition `WithLicenseChecker(...)`, and exposed by the public endpoint `GET /api/features`.
