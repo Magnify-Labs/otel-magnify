@@ -13,7 +13,7 @@ Go module `github.com/magnify-labs/otel-magnify` (lives at the repo root — `go
 - `internal/api/` — chi router, REST handlers, WebSocket hub
 - `internal/alerts/` — alert engine (30s tick), webhook notifier
 - `internal/auth/` — JWT HS256, middleware
-- `internal/store/` — SQLite/Postgres via goose migrations
+- `internal/store/` — PostgreSQL persistence via goose migrations
 - `pkg/models/` — shared structs
 - `frontend/` — React 19 + TypeScript + Vite
   - Zustand for state, TanStack Query for fetching, CodeMirror 6 for YAML editor
@@ -25,17 +25,15 @@ Go module `github.com/magnify-labs/otel-magnify` (lives at the repo root — `go
 
 ```bash
 # Backend
-go test ./...
+TEST_POSTGRES_DSN='postgres://user:password@host:5432/magnify_test?sslmode=disable' go test ./...
 go build ./cmd/server/
 
 # Frontend
 cd frontend && npm run build
 cd frontend && npm run dev
 
-# Docker
-JWT_SECRET=xxx docker compose up --build
-# With Postgres:
-DB_DRIVER=pgx DB_DSN="postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable" docker compose --profile postgres up
+# Docker Compose (starts PostgreSQL)
+JWT_SECRET="$(openssl rand -hex 32)" POSTGRES_PASSWORD="$(openssl rand -hex 24)" docker compose up --build
 
 # Demo collectors
 docker run -d --name collector-prod-eu --network otel-magnify_default \
@@ -48,13 +46,13 @@ docker run -d --name collector-prod-eu --network otel-magnify_default \
 - **Language**: all repo content (documentation, code, commits) in English
 - **Commits**: conventional (`feat:`, `fix:`, `docs:`, `refactor:`)
 - **No Co-Authored-By** in commit messages
-- **Go**: standard `testing`, in-memory SQLite for tests, `chi` for routing
+- **Go**: standard `testing`, PostgreSQL integration tests through `TEST_POSTGRES_DSN`, `chi` for routing
 - **Frontend**: CSS classes in `styles/global.css`, no inline styles, CSS variables for theming
 - **Pages route**: `/inventory` (not `/agents`) — contains both collectors and SDK agents
 
 ## Key design decisions
 
-- `pressly/goose` over `golang-migrate` — better `modernc.org/sqlite` support (pure Go, no CGO)
+- `pressly/goose` over `golang-migrate` — SQL migrations are versioned with the application and run at startup.
 - OpAMP server uses `Attach()` to mount on chi mux (not standalone)
 - Agent type detection via `isCollectorName()` — matches `otelcol*` prefix patterns
 - WebSocket auth prefers the HttpOnly session cookie; `?token=` remains as a legacy fallback because browsers cannot set WS auth headers
@@ -81,8 +79,10 @@ git push origin main && git push origin v0.x.y
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `JWT_SECRET` | Yes | JWT signing key |
-| `DB_DRIVER` | No (sqlite) | `sqlite` or `pgx` |
-| `DB_DSN` | No | DB connection string |
+| `DB_DSN` | Yes | PostgreSQL connection string |
+| `DB_MAX_OPEN_CONNS` | No (40) | Maximum PostgreSQL connections held open |
+| `DB_MAX_IDLE_CONNS` | No (10) | Maximum idle PostgreSQL connections retained |
+| `DB_CONN_MAX_LIFETIME_SECONDS` | No (1800) | Maximum lifetime for a pooled connection in seconds |
 | `WEBHOOK_URL` | No | Alert webhook endpoint |
 | `MIN_AGENT_VERSION` | No | Minimum agent version for alerts |
 | `SEED_ADMIN_EMAIL` | No | Create admin on startup |

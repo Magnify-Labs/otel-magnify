@@ -20,4 +20,4 @@ Use this page to map common symptoms to the first checks to run.
 
 - WebSocket disconnects in the UI — check whether the browser still has a valid `om_session` cookie. Legacy clients using `/ws?token=` should check the token and its expiry.
 - Login repeatedly returns `401` — verify the seeded admin credentials or reset the user's password through the configured admin process.
-- SQLite "database is locked" under load — switch to PostgreSQL for production or concurrent-heavy deployments.
+- PostgreSQL connection failures — verify `DB_DSN`, network reachability, credentials, TLS settings, and the database connection limit. Use `sslmode=require` outside the local Compose network.

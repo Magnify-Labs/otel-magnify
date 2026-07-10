@@ -48,7 +48,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 │                      │  └────────┬───────────┘  │  │
 │                      │           │               │  │
 │                      │  ┌────────▼───────────┐  │  │
-│                      │  │  SQLite / Postgres  │  │  │
+│                      │  │    PostgreSQL       │  │  │
 │                      │  └────────────────────┘  │  │
 │                      └──────────────────────────┘  │
 └─────────────────────────────────────────────────────┘
@@ -63,7 +63,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 |-------|-----------|
 | Backend | Go, [chi](https://github.com/go-chi/chi), [opamp-go](https://github.com/open-telemetry/opamp-go), [goose](https://github.com/pressly/goose) |
 | Frontend | React 19, TypeScript, Vite, Zustand, TanStack Query, CodeMirror 6 |
-| Database | SQLite (dev) / PostgreSQL (prod) |
+| Database | PostgreSQL 16+ |
 | Auth | JWT (HS256), bcrypt |
 | Deployment | Docker, Docker Compose, Helm |
 
@@ -73,12 +73,14 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 
 - Go 1.25.12+
 - Node.js 20+
+- PostgreSQL 16+
 
 ### Development
 
 ```bash
 # Backend
-JWT_SECRET=dev-secret go run ./cmd/server/
+DB_DSN="postgres://magnify:***@localhost:5432/magnify?sslmode=require" \
+  JWT_SECRET=dev-secret-at-least-32-bytes-long go run ./cmd/server/
 
 # Frontend (separate terminal)
 cd frontend
@@ -91,23 +93,46 @@ The API runs on `:8080`, OpAMP on `:4320`, frontend dev server on `:5173` (proxi
 ### Seed an admin user
 
 ```bash
-SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=changeme JWT_SECRET=dev-secret go run ./cmd/server/
+DB_DSN="postgres://magnify:***@localhost:5432/magnify?sslmode=require" \
+  SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=changeme \
+  JWT_SECRET=dev-secret-at-least-32-bytes-long go run ./cmd/server/
 ```
 
 ### Docker Compose
 
 ```bash
-JWT_SECRET=mysecret docker compose up --build
+JWT_SECRET="$(openssl rand -hex 32)" \
+  POSTGRES_PASSWORD="$(openssl rand -hex 24)" docker compose up --build
 ```
 
 App available at `http://localhost:8080`.
+
+### 5,000 collector load test
+
+The local-only OpAMP benchmark requires an explicit confirmation and test-only
+configuration values. It creates an isolated Compose project and never removes
+Docker volumes:
+
+```bash
+LOAD_TEST_CONFIRM=5000 \
+  DB_DSN='required-but-ignored' \
+  JWT_SECRET='load-test-jwt-secret-at-least-32-bytes' \
+  OPAMP_SHARED_SECRET='load-test-opamp-token' \
+  ./scripts/load-test-5000.sh
+```
+
+`DB_DSN` is required as an intent guard, but its value is intentionally ignored
+and replaced with the fixed PostgreSQL DSN inside the isolated Compose project.
+
+See [load testing](docs/operations/load-testing.md) for capacity prerequisites,
+timing controls, output artifacts, and acceptance criteria.
 
 ### Kubernetes (Helm)
 
 ```bash
 helm install magnify helm/otel-magnify/ \
-  --set jwtSecret=your-secret \
-  --set config.dbDSN="postgres://user:pass@host:5432/magnify?sslmode=require"
+  --set jwtSecret="$(openssl rand -hex 32)" \
+  --set database.dsn="postgres://user:***@host:5432/magnify?sslmode=require"
 ```
 
 ## Configuration
@@ -116,8 +141,10 @@ All configuration via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_DRIVER` | `sqlite` | Database driver (`sqlite` or `pgx`) |
-| `DB_DSN` | `otel-magnify.db` | Database connection string |
+| `DB_DSN` | *(required)* | PostgreSQL connection string |
+| `DB_MAX_OPEN_CONNS` | `40` | Maximum PostgreSQL connections held open |
+| `DB_MAX_IDLE_CONNS` | `10` | Maximum idle PostgreSQL connections retained |
+| `DB_CONN_MAX_LIFETIME_SECONDS` | `1800` | Maximum lifetime for a pooled connection |
 | `LISTEN_ADDR` | `:8080` | API server listen address |
 | `OPAMP_ADDR` | `:4320` | OpAMP server listen address |
 | `JWT_SECRET` | *(required)* | Secret key for JWT signing |

@@ -415,7 +415,7 @@ func (a *API) handleRollbackStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func newRollbackRequestID(workloadID, targetHash string, startedAt time.Time) string {
-	b, _ := json.Marshal(rollbackRequestRef{WorkloadID: workloadID, TargetHash: targetHash, StartedAt: startedAt.UTC()})
+	b, _ := json.Marshal(rollbackRequestRef{WorkloadID: workloadID, TargetHash: targetHash, StartedAt: startedAt.UTC().Truncate(time.Microsecond)})
 	return "rb_" + base64.RawURLEncoding.EncodeToString(b)
 }
 

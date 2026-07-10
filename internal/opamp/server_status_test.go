@@ -12,6 +12,7 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 
 	"github.com/magnify-labs/otel-magnify/internal/store"
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
@@ -55,7 +56,7 @@ func (f *fakeNotifier) BroadcastAutoRollback(workloadID, fromHash, toHash, reaso
 
 func newTestServer(t *testing.T) (*Server, *store.DB, *fakeNotifier) {
 	t.Helper()
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +68,10 @@ func newTestServer(t *testing.T) (*Server, *store.DB, *fakeNotifier) {
 	// Short grace so tests don't wait forever for rolling-restart behavior.
 	srv := New(db, n, Options{DisconnectGrace: 20 * time.Millisecond, RetentionDuration: time.Hour})
 	return srv, db, n
+}
+
+func testPoolConfig() store.PoolConfig {
+	return store.PoolConfig{MaxOpenConns: 2, MaxIdleConns: 1, ConnMaxLifetime: time.Minute}
 }
 
 // fingerprintUIDHex returns the workload ID the UID-based fingerprint would

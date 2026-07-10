@@ -8,7 +8,7 @@ The Go module lives at the repository root:
 
 ```bash
 go version
-go test ./...
+TEST_POSTGRES_DSN='postgres://user:password@host:5432/magnify_test?sslmode=disable' go test ./...
 ```
 
 Use the Go toolchain declared in `go.mod`; do not rely on older minimum versions from stale screenshots or blog posts.
@@ -16,7 +16,10 @@ Use the Go toolchain declared in `go.mod`; do not rely on older minimum versions
 The production binary embeds a pre-built frontend, but backend-only development can run without rebuilding frontend assets:
 
 ```bash
-JWT_SECRET=dev-secret-at-least-32-bytes-long   SEED_ADMIN_EMAIL=admin@local   SEED_ADMIN_PASSWORD=change-me-in-dev   go run ./cmd/server/
+DB_DSN="postgres://magnify:***@localhost:5432/magnify?sslmode=require" \
+  JWT_SECRET=dev-secret-at-least-32-bytes-long \
+  SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=change-me-in-dev \
+  go run ./cmd/server/
 ```
 
 Default listeners:
@@ -41,7 +44,7 @@ For frontend development, run Vite separately from `frontend/`; the default back
 | `internal/opamp/` | OpAMP server lifecycle, workload identity, available component tracking, config fan-out, and status aggregation. |
 | `internal/alerts/` | Alert engine and notifier fan-out. The engine ticks every 30 seconds in `pkg/server`. |
 | `internal/workloads/` | Workload janitor that archives expired disconnected workloads and trims old events. |
-| `internal/store/` | SQLite/PostgreSQL persistence plus goose migrations. |
+| `internal/store/` | PostgreSQL persistence plus goose migrations. |
 | `pkg/models/` | Shared domain structs serialized by the API and persisted by the store. |
 | `pkg/ext/` | Extension interfaces used by community and enterprise binaries: auth methods, audit logger, notifier, store abstractions. |
 
@@ -51,7 +54,7 @@ For frontend development, run Vite separately from `frontend/`; the default back
 
 1. Load `internal/config.Config` from environment variables.
 2. Fail closed when `JWT_SECRET` is unset, the placeholder is used, or the secret is too short.
-3. Open the configured store (`sqlite` or `pgx`) and run migrations.
+3. Require `DB_DSN`, open the PostgreSQL store, and run migrations.
 4. Optionally seed the first admin user from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
 5. Construct `pkg/server.Server` with any extension options supplied by the binary.
 6. Start the API listener, OpAMP listener, alert engine, workload janitor, and WebSocket hub.
@@ -87,10 +90,9 @@ Current server-side feature gate names are defined in `internal/api/feature_gate
 
 ## Database notes
 
-- SQLite is the default and uses `modernc.org/sqlite`, so local development does not require CGO.
-- PostgreSQL uses the `pgx` driver and is selected with `DB_DRIVER=pgx` plus a PostgreSQL `DB_DSN`.
+- PostgreSQL is the only supported database. `DB_DSN` is required and must be a PostgreSQL connection string.
 - Migrations are managed with `pressly/goose` and run automatically on startup.
-- Store tests use in-memory SQLite where possible.
+- Store tests use isolated PostgreSQL schemas through `TEST_POSTGRES_DSN`.
 
 ## Security caveats for contributors
 

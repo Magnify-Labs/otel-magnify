@@ -13,6 +13,7 @@ import (
 
 	"github.com/magnify-labs/otel-magnify/internal/auth"
 	"github.com/magnify-labs/otel-magnify/internal/store"
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 )
 
@@ -30,7 +31,7 @@ func (q *queryableAuditLogger) ListAuditEvents(_ context.Context, filter ext.Aud
 
 func newAuditViewerTestAPI(t *testing.T, logger ext.AuditLogger) http.Handler {
 	t.Helper()
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}

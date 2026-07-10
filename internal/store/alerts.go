@@ -1,4 +1,4 @@
-// Package store implements the SQLite/Postgres-backed persistence layer behind ext.Store.
+// Package store implements the PostgreSQL-backed persistence layer behind ext.Store.
 package store
 
 import (

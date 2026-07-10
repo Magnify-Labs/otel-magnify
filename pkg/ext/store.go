@@ -6,7 +6,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
-// Store is the persistence-layer contract consumed by the API and OpAMP layers; satisfied by the community SQLite/Postgres DB and overridable from EE.
+// Store is the persistence-layer contract consumed by the API and OpAMP layers; satisfied by the community PostgreSQL DB and overridable from EE.
 type Store interface {
 	CreateUser(u models.User) error
 	GetUserByEmail(email string) (models.User, error)

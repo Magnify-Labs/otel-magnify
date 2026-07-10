@@ -10,6 +10,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/auth"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/store"
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 )
 
@@ -52,7 +53,7 @@ func (r *recordingAuditLogger) failWith(err error) {
 // so tests can assert the audit emission surface end-to-end.
 func newAuditTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPusher, *recordingAuditLogger) {
 	t.Helper()
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,4 +71,12 @@ func newAuditTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPusher, *
 	rec := &recordingAuditLogger{}
 	router := NewRouter(db, a, hub, fake, rec, "", nil, nil, 30*24*time.Hour, testEnabledFeatures(), nil, nil)
 	return db, router, fake, rec
+}
+
+func testPoolConfig() store.PoolConfig {
+	return store.PoolConfig{
+		MaxOpenConns:    2,
+		MaxIdleConns:    1,
+		ConnMaxLifetime: time.Minute,
+	}
 }

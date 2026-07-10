@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/magnify-labs/otel-magnify/internal/store"
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
 func newReportTestStore(t *testing.T) ext.Store {
 	t.Helper()
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,6 +23,10 @@ func newReportTestStore(t *testing.T) ext.Store {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return db
+}
+
+func testPoolConfig() store.PoolConfig {
+	return store.PoolConfig{MaxOpenConns: 2, MaxIdleConns: 1, ConnMaxLifetime: time.Minute}
 }
 
 func seedReportWorkload(t *testing.T, db ext.Store, id, name string, at time.Time) {

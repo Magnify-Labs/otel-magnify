@@ -11,15 +11,17 @@ func (d *DB) InsertWorkloadEvent(e models.WorkloadEvent) (int64, error) {
 	if e.OccurredAt.IsZero() {
 		e.OccurredAt = time.Now().UTC()
 	}
-	res, err := d.Exec(`
+	var id int64
+	err := d.QueryRow(`
 		INSERT INTO workload_events (workload_id, instance_uid, pod_name, event_type, version, prev_version, occurred_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`,
 		e.WorkloadID, e.InstanceUID, e.PodName, e.EventType, e.Version, e.PrevVersion, e.OccurredAt.UTC(),
-	)
+	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	return id, nil
 }
 
 // ListWorkloadEvents returns the latest events for a workload (capped by limit), optionally filtered to events after the since timestamp.

@@ -68,7 +68,11 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	db, err := store.Open(cfg.DBDriver, cfg.DBDSN)
+	db, err := store.Open(cfg.DBDSN, store.PoolConfig{
+		MaxOpenConns:    cfg.DBMaxOpenConns,
+		MaxIdleConns:    cfg.DBMaxIdleConns,
+		ConnMaxLifetime: cfg.DBConnMaxLifetime,
+	})
 	if err != nil {
 		return err
 	}

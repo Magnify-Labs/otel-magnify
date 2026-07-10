@@ -19,29 +19,8 @@ SELECT
 FROM users u;
 -- +goose StatementEnd
 
--- SQLite table-rebuild pour dropper users.role (DROP COLUMN n'existe pas en
--- SQLite < 3.35 et modernc.org/sqlite ne l'expose pas de façon fiable).
--- foreign_keys est déjà OFF au niveau connexion (cf. db.go Migrate).
 -- +goose StatementBegin
-CREATE TABLE users_new (
-    id            TEXT PRIMARY KEY,
-    email         TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    tenant_id     TEXT
-);
--- +goose StatementEnd
-
--- +goose StatementBegin
-INSERT INTO users_new (id, email, password_hash, tenant_id)
-SELECT id, email, password_hash, tenant_id FROM users;
--- +goose StatementEnd
-
--- +goose StatementBegin
-DROP TABLE users;
--- +goose StatementEnd
-
--- +goose StatementBegin
-ALTER TABLE users_new RENAME TO users;
+ALTER TABLE users DROP COLUMN role;
 -- +goose StatementEnd
 
 -- +goose Down

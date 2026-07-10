@@ -9,8 +9,10 @@ Exhaustive community-server runtime reference. See [Configuration](../users/conf
 | `OPAMP_ADDR` | No | `:4320` | OpAMP | Listen address for the OpAMP WebSocket server. The OpAMP path is `/v1/opamp`. |
 | `OPAMP_SHARED_SECRET` | No | — | OpAMP | Optional bearer token required from OpAMP clients during the HTTP/WebSocket handshake. Empty keeps local/dev OpAMP connections unauthenticated; set a random value for production, shared, or exposed networks. |
 | `CORS_ORIGINS` | No | `http://localhost:5173` | API | Comma-separated list of allowed browser origins. Docker Compose sets this to `http://localhost:8080` for same-origin production-style access. |
-| `DB_DRIVER` | No | `sqlite` | Store | `sqlite` (default) or `pgx` for PostgreSQL. |
-| `DB_DSN` | No | `otel-magnify.db` | Store | SQLite file path or PostgreSQL DSN. Docker and Helm commonly set this to a `/data/...` path or a secret-backed PostgreSQL URL. |
+| `DB_DSN` | Yes | — | Store | PostgreSQL connection string. Docker Compose supplies a local service URL; use `sslmode=require` for connections outside that local network. |
+| `DB_MAX_OPEN_CONNS` | No | `40` | Store | Maximum PostgreSQL connections held open. |
+| `DB_MAX_IDLE_CONNS` | No | `10` | Store | Maximum idle PostgreSQL connections retained. |
+| `DB_CONN_MAX_LIFETIME_SECONDS` | No | `1800` | Store | Maximum lifetime for a pooled connection in seconds. |
 | `SEED_ADMIN_EMAIL` | No | — | Bootstrap | If set with `SEED_ADMIN_PASSWORD`, creates a first admin user on startup when that email does not already exist. |
 | `SEED_ADMIN_PASSWORD` | No | — | Bootstrap | Password for the seeded admin. Use only for initial bootstrap, then rotate through the UI or your operational process. |
 | `WEBHOOK_URL` | No | — | Alerts | HTTP endpoint called when a new alert fires. Treat as sensitive if it contains embedded credentials. |
@@ -19,6 +21,22 @@ Exhaustive community-server runtime reference. See [Configuration](../users/conf
 | `WORKLOAD_RETENTION_DAYS` | No | `30` | Workloads | Days a `disconnected` workload is kept before archival by the workload janitor. Invalid or non-positive values fall back to 30 days. |
 | `WORKLOAD_JANITOR_INTERVAL_SECONDS` | No | `300` | Workloads | Workload janitor tick interval. The janitor archives expired workloads and purges old events. Invalid or non-positive values fall back to one second. |
 | `WORKLOAD_EVENT_RETENTION_DAYS` | No | `30` | Workloads | Days the `workload_events` log is kept before the janitor trims it. Invalid or non-positive values fall back to 30 days. |
+
+## Load-test variables
+
+These variables are consumed only by `scripts/load-test-5000.sh`; they are not
+community-server runtime configuration. Use test-only values and never reuse
+production credentials for this scenario. `DB_DSN` is required as an intent
+guard, but its supplied value is ignored and replaced with the local isolated
+Compose PostgreSQL DSN.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LOAD_TEST_CONFIRM` | Yes | — | Must be exactly `5000` before the script will start the 5,000 collector scenario. |
+| `DB_DSN` | Yes | — | Required intent guard. The supplied value is ignored and replaced with the fixed isolated Compose PostgreSQL DSN. |
+| `LOAD_TEST_RAMP` | No | `5m` | Go duration used to spread 5,000 client starts. |
+| `LOAD_TEST_HOLD` | No | `10m` | Go duration that keeps established connections open. |
+| `LOAD_TEST_OUTPUT_DIR` | No | system temporary directory | Directory for the JSON summary, Docker resource snapshot, PostgreSQL activity query, and filtered application errors. |
 
 ## Feature flags
 

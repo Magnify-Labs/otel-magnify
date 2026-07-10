@@ -11,8 +11,15 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const EE_BINARY =
   process.env.EE_BINARY ??
   path.resolve(__dirname, '../../../../otel-magnify-enterprise/bin/server-ee')
+const E2E_POSTGRES_DSN = process.env.E2E_POSTGRES_DSN
 
 const SKIP_REASON = (() => {
+  if (!E2E_POSTGRES_DSN) {
+    return 'E2E_POSTGRES_DSN must be set to an isolated PostgreSQL database for the SSO admin flow'
+  }
+  if (!E2E_POSTGRES_DSN.startsWith('postgres://') && !E2E_POSTGRES_DSN.startsWith('postgresql://')) {
+    return 'E2E_POSTGRES_DSN must use a PostgreSQL connection URL'
+  }
   // Single open()+read() handles three checks in one syscall — avoids the
   // TOCTOU race that fs.existsSync()+open() would create (CodeQL js/file-system-race).
   // The fd is held just long enough to sniff the ELF magic bytes; that read
@@ -76,14 +83,7 @@ test.beforeAll(async () => {
       JWT_SECRET: 'e2e-real-sso-secret-test-only-32b',
       SEED_ADMIN_EMAIL: 'admin@e2e-sso.local',
       SEED_ADMIN_PASSWORD: 'admin12345',
-      DB_DRIVER: 'sqlite',
-      // Each `:memory:` open gets its own isolated DB — connections from the
-      // sql.DB pool then see divergent state, randomly 500-ing on reads that
-      // raced a write (mappings list/POST after provider create).
-      // `file:…?mode=memory&cache=shared` keeps a single in-memory DB shared
-      // across all connections within the process. Mirrors the EE integration
-      // test pattern (internal/sso/integration_auth_test.go).
-      DB_DSN: 'file:e2e_sso?mode=memory&cache=shared',
+      DB_DSN: E2E_POSTGRES_DSN,
       LISTEN_ADDR: `:${PORT}`,
       // SSO_SP_CERT_PATH/SSO_SP_KEY_PATH unset: the registry boots empty.
     },

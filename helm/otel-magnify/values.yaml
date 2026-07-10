@@ -21,9 +21,18 @@ ingress:
           pathType: Prefix
   tls: []
 
+database:
+  # Use an operator-managed Secret instead of rendering database.dsn into the
+  # release Secret. The Secret must contain the key in existingSecretKey.
+  existingSecret: ""
+  existingSecretKey: db-dsn
+  # Set only when Helm should create the release Secret with this DSN.
+  dsn: ""
+  maxOpenConns: 40
+  maxIdleConns: 10
+  connMaxLifetimeSeconds: 1800
+
 config:
-  dbDriver: pgx
-  dbDSN: ""
   corsOrigins: ""
 
 jwtSecret: ""
@@ -50,13 +59,6 @@ containerSecurityContext:
 
 # The binary does not call the Kubernetes API.
 automountServiceAccountToken: false
-
-# Storage for the data directory (SQLite DB, runtime state). emptyDir is
-# ephemeral; set persistence.existingClaim to bind a pre-created PVC for
-# durable storage.
-persistence:
-  enabled: false
-  existingClaim: ""
 
 resources:
   limits:

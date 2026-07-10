@@ -5,8 +5,7 @@ services:
       - "8080:8080"
       - "4320:4320"
     environment:
-      DB_DRIVER: ${DB_DRIVER:-sqlite}
-      DB_DSN: ${DB_DSN:-/data/otel-magnify.db}
+      DB_DSN: ${DB_DSN:-postgres://magnify:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set to a strong PostgreSQL password}@postgres:5432/magnify?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value of at least 32 characters}
       LISTEN_ADDR: ":8080"
       OPAMP_ADDR: ":4320"
@@ -16,25 +15,25 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       WEBHOOK_URL: ${WEBHOOK_URL:-}
       MIN_AGENT_VERSION: ${MIN_AGENT_VERSION:-}
-    volumes:
-      - magnify-data:/data
     depends_on:
       postgres:
-        condition: service_started
-        required: false
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
-    profiles: [postgres]
     environment:
       POSTGRES_DB: magnify
       POSTGRES_USER: magnify
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-magnify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set to a strong PostgreSQL password}
     ports:
       - "5432:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U magnify -d magnify"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  magnify-data:
   pg-data:

@@ -17,6 +17,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/auth"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/store"
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -61,7 +62,7 @@ func (f *fakeOpAMPPusher) InstanceWorkload(instanceUID string) (string, bool) {
 // tests can inspect what got pushed / stub instances.
 func newTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPusher) {
 	t.Helper()
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1890,6 +1891,17 @@ func TestDefaultRollbackPermissionsViewerForbiddenEditorAllowed(t *testing.T) {
 	}
 	if len(fake.pushed) != 1 {
 		t.Fatalf("editor should push once, got %+v", fake.pushed)
+	}
+}
+
+func TestRollbackRequestIDNormalizesTimestampToMicroseconds(t *testing.T) {
+	startedAt := time.Date(2026, time.July, 10, 12, 34, 56, 123456789, time.UTC)
+	ref, err := decodeRollbackRequestID(newRollbackRequestID("w1", "hash-a", startedAt))
+	if err != nil {
+		t.Fatalf("decode rollback request ID: %v", err)
+	}
+	if want := startedAt.Truncate(time.Microsecond); !ref.StartedAt.Equal(want) {
+		t.Fatalf("StartedAt = %v, want %v", ref.StartedAt, want)
 	}
 }
 
