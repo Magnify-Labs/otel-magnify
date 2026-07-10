@@ -26,7 +26,8 @@ Exhaustive community-server runtime reference. See [Configuration](../users/conf
 
 These variables are consumed only by `scripts/load-test-5000.sh`; they are not
 community-server runtime configuration. Use test-only values and never reuse
-production credentials for this scenario.
+production credentials for this scenario. The script ignores inherited
+database settings and always uses the local isolated Compose PostgreSQL DSN.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|

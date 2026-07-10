@@ -26,12 +26,18 @@ require_command() {
   fi
 }
 
-require_env "DB_DSN"
 require_env "JWT_SECRET"
 require_env "OPAMP_SHARED_SECRET"
 require_command "docker"
 require_command "jq"
 
+local_postgres_dsn="postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable"
+
+# The application can only reach the PostgreSQL container from this isolated
+# Compose project. Ignore inherited database settings from the caller.
+export DB_DSN="$local_postgres_dsn"
+export POSTGRES_PASSWORD="magnify"
+export DB_MAX_OPEN_CONNS="40"
 export DB_DSN
 export JWT_SECRET
 export OPAMP_SHARED_SECRET
@@ -40,10 +46,19 @@ project_name="otel-magnify-load-5000-$$"
 output_dir="${LOAD_TEST_OUTPUT_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/otel-magnify-load-5000.XXXXXX")}"
 load_test_ramp="${LOAD_TEST_RAMP:-5m}"
 load_test_hold="${LOAD_TEST_HOLD:-10m}"
+ready_file="${output_dir}/ready.json"
+summary_file="${output_dir}/summary.json"
+client_stderr_file="${output_dir}/opamp-load.stderr"
+client_pid=""
 
 mkdir -p "$output_dir"
 
 cleanup() {
+  if [ -n "$client_pid" ] && kill -0 "$client_pid" >/dev/null 2>&1; then
+    kill -TERM "$client_pid" >/dev/null 2>&1 || true
+    wait "$client_pid" >/dev/null 2>&1 || true
+  fi
+
   # This project name is unique to this invocation. Deliberately omit -v so
   # neither this command nor a naming mistake can remove a production volume.
   docker compose -p "$project_name" down --remove-orphans >/dev/null 2>&1 || true
@@ -57,9 +72,41 @@ load_test_compose() {
     'services:' \
     '  otel-magnify:' \
     '    ports: !override []' \
+    '    environment:' \
+    '      DB_DSN: postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable' \
+    '      DB_MAX_OPEN_CONNS: "40"' \
     '  postgres:' \
     '    ports: !override []' \
     | docker compose -p "$project_name" -f docker-compose.yml -f - "$@"
+}
+
+wait_for_ready() {
+  local attempt
+  for attempt in $(seq 1 900); do
+    if [ -s "$ready_file" ]; then
+      return 0
+    fi
+    if ! kill -0 "$client_pid" >/dev/null 2>&1; then
+      return 1
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+stop_client() {
+  local client_status
+
+  if [ -n "$client_pid" ] && kill -0 "$client_pid" >/dev/null 2>&1; then
+    kill -TERM "$client_pid"
+  fi
+  if wait "$client_pid"; then
+    client_pid=""
+    return 0
+  fi
+  client_status=$?
+  client_pid=""
+  return "$client_status"
 }
 
 echo "load-test artifacts: ${output_dir}"
@@ -80,10 +127,10 @@ for attempt in $(seq 1 120); do
   sleep 1
 done
 
-set +e
 docker run --rm \
   --network "${project_name}_default" \
   -v "$PWD:/app:ro" \
+  -v "${output_dir}:/artifacts" \
   -w /app \
   -e OPAMP_SHARED_SECRET \
   golang:1.25.12 \
@@ -92,9 +139,34 @@ docker run --rm \
   --collectors 5000 \
   --ramp "$load_test_ramp" \
   --hold "$load_test_hold" \
-  | tee "${output_dir}/summary.json"
-client_status="${PIPESTATUS[0]}"
-set -e
+  --ready-file /artifacts/ready.json \
+  >"$summary_file" 2>"$client_stderr_file" &
+client_pid="$!"
+
+if ! wait_for_ready; then
+  if wait "$client_pid"; then
+    client_status=0
+  else
+    client_status=$?
+  fi
+  client_pid=""
+  echo "opamp-load did not reach the connection hold phase (status ${client_status})" >&2
+  exit 1
+fi
+
+if ! jq -e \
+  '.attempted == 5000 and .connected == 5000 and .failed == 0 and .cancelled == 0 and .disconnected == 0 and .stop_failed == 0 and .interrupted == false' \
+  "$ready_file" >/dev/null; then
+  echo "collectors did not all reach the hold phase successfully" >&2
+  stop_client || true
+  exit 1
+fi
+
+if ! kill -0 "$client_pid" >/dev/null 2>&1; then
+  echo "opamp-load exited before hold-phase evidence could be captured" >&2
+  stop_client || true
+  exit 1
+fi
 
 container_ids=()
 while IFS= read -r container_id; do
@@ -108,14 +180,34 @@ fi
 
 load_test_compose exec -T postgres \
   psql -U magnify -d magnify \
-  -c "SELECT state, count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() GROUP BY state ORDER BY state;" \
+  -X -A -t -F '|' \
+  -c "SELECT count(*), 40 FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();" \
   >"${output_dir}/pg-stat-activity.txt"
 load_test_compose logs --no-color otel-magnify \
   | grep -Ei "error|failed|panic" >"${output_dir}/opamp-errors.txt" || true
 
+if ! awk -F '|' 'NF == 2 && $1 ~ /^[0-9]+$/ && $2 == "40" && $1 <= $2 { valid = 1 } END { exit !valid }' "${output_dir}/pg-stat-activity.txt"; then
+  echo "PostgreSQL connections exceeded the configured maximum of 40" >&2
+  stop_client || true
+  exit 1
+fi
+
+if [ -s "${output_dir}/opamp-errors.txt" ]; then
+  echo "application errors were recorded while collectors were held" >&2
+  stop_client || true
+  exit 1
+fi
+
+if wait "$client_pid"; then
+  client_status=0
+else
+  client_status=$?
+fi
+client_pid=""
+
 if ! jq -e \
-  '.attempted == 5000 and .connected == 5000 and .failed == 0 and .disconnected == 5000' \
-  "${output_dir}/summary.json" >/dev/null; then
+  '.attempted == 5000 and .connected == 5000 and .failed == 0 and .cancelled == 0 and .disconnected == 5000 and .stop_failed == 0 and .interrupted == false' \
+  "$summary_file" >/dev/null; then
   echo "load test summary did not meet the 5,000 connected collector target" >&2
   exit 1
 fi

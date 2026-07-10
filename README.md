@@ -115,7 +115,6 @@ Docker volumes:
 
 ```bash
 LOAD_TEST_CONFIRM=5000 \
-  DB_DSN='postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable' \
   JWT_SECRET='load-test-jwt-secret-at-least-32-bytes' \
   OPAMP_SHARED_SECRET='load-test-opamp-token' \
   ./scripts/load-test-5000.sh

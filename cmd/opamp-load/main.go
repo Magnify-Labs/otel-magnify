@@ -10,8 +10,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/open-telemetry/opamp-go/client"
@@ -26,21 +29,29 @@ type config struct {
 	collectors int
 	ramp       time.Duration
 	hold       time.Duration
+	readyFile  string
 }
 
 type summary struct {
 	Attempted    uint64 `json:"attempted"`
 	Connected    uint64 `json:"connected"`
 	Failed       uint64 `json:"failed"`
+	Cancelled    uint64 `json:"cancelled"`
 	Disconnected uint64 `json:"disconnected"`
+	StopFailed   uint64 `json:"stop_failed"`
+	Interrupted  bool   `json:"interrupted"`
 }
 
 type counters struct {
 	attempted    atomic.Uint64
 	connected    atomic.Uint64
 	failed       atomic.Uint64
+	cancelled    atomic.Uint64
 	disconnected atomic.Uint64
+	stopFailed   atomic.Uint64
 }
+
+type collectorFunc func(context.Context, string, string, <-chan struct{}, *sync.WaitGroup, *sync.WaitGroup, *counters)
 
 func main() {
 	config, err := parseConfig(os.Args[1:])
@@ -49,12 +60,22 @@ func main() {
 		os.Exit(2)
 	}
 
-	result := run(context.Background(), config, os.Getenv("OPAMP_SHARED_SECRET"))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	result, runErr := run(ctx, config, os.Getenv("OPAMP_SHARED_SECRET"))
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 		fmt.Fprintln(os.Stderr, "write summary:", err)
 		os.Exit(1)
 	}
-	if result.Failed != 0 || result.Connected != result.Attempted || result.Disconnected != result.Connected {
+	if runErr != nil {
+		fmt.Fprintln(os.Stderr, runErr)
+		os.Exit(1)
+	}
+	if result.Interrupted {
+		os.Exit(130)
+	}
+	if result.Failed != 0 || result.Cancelled != 0 || result.StopFailed != 0 || result.Connected != result.Attempted || result.Disconnected != result.Connected {
 		os.Exit(1)
 	}
 }
@@ -68,6 +89,7 @@ func parseConfig(args []string) (config, error) {
 	flags.IntVar(&config.collectors, "collectors", 5000, "number of collectors to connect")
 	flags.DurationVar(&config.ramp, "ramp", 5*time.Minute, "time used to start all collectors")
 	flags.DurationVar(&config.hold, "hold", 10*time.Minute, "time to hold connections after they are established")
+	flags.StringVar(&config.readyFile, "ready-file", "", "write a JSON summary after all collectors connect")
 
 	if err := flags.Parse(args); err != nil {
 		return config, err
@@ -91,7 +113,24 @@ func parseConfig(args []string) (config, error) {
 	return config, nil
 }
 
-func run(ctx context.Context, config config, sharedSecret string) summary {
+func run(ctx context.Context, config config, sharedSecret string) (summary, error) {
+	return runWithReporter(ctx, config, sharedSecret, runCollector, func(ready summary) error {
+		return writeSummary(config.readyFile, ready)
+	})
+}
+
+func runWithCollector(ctx context.Context, config config, sharedSecret string, collector collectorFunc) summary {
+	result, _ := runWithReporter(ctx, config, sharedSecret, collector, nil)
+	return result
+}
+
+func runWithReporter(
+	ctx context.Context,
+	config config,
+	sharedSecret string,
+	collector collectorFunc,
+	reportReady func(summary) error,
+) (summary, error) {
 	var counters counters
 	var ready sync.WaitGroup
 	var workers sync.WaitGroup
@@ -99,31 +138,91 @@ func run(ctx context.Context, config config, sharedSecret string) summary {
 	startedAt := time.Now()
 
 	for index := 0; index < config.collectors; index++ {
+		if ctx.Err() != nil {
+			break
+		}
 		counters.attempted.Add(1)
 		ready.Add(1)
 		workers.Add(1)
-		go runCollector(ctx, config.endpoint, sharedSecret, stop, &ready, &workers, &counters)
+		go collector(ctx, config.endpoint, sharedSecret, stop, &ready, &workers, &counters)
 
 		if config.ramp == 0 {
 			continue
 		}
 		nextStart := startedAt.Add(time.Duration(index+1) * config.ramp / time.Duration(config.collectors))
 		if delay := time.Until(nextStart); delay > 0 {
-			time.Sleep(delay)
+			if !wait(ctx, delay) {
+				break
+			}
 		}
 	}
 
 	ready.Wait()
-	time.Sleep(config.hold)
+	if ctx.Err() == nil && counters.failed.Load() == 0 && counters.cancelled.Load() == 0 {
+		readySummary := snapshot(&counters, false)
+		if reportReady != nil {
+			if err := reportReady(readySummary); err != nil {
+				close(stop)
+				workers.Wait()
+				return snapshot(&counters, ctx.Err() != nil), fmt.Errorf("write ready summary: %w", err)
+			}
+		}
+		wait(ctx, config.hold)
+	}
 	close(stop)
 	workers.Wait()
 
+	return snapshot(&counters, ctx.Err() != nil), nil
+}
+
+func snapshot(counters *counters, interrupted bool) summary {
 	return summary{
 		Attempted:    counters.attempted.Load(),
 		Connected:    counters.connected.Load(),
 		Failed:       counters.failed.Load(),
+		Cancelled:    counters.cancelled.Load(),
 		Disconnected: counters.disconnected.Load(),
+		StopFailed:   counters.stopFailed.Load(),
+		Interrupted:  interrupted,
 	}
+}
+
+func wait(ctx context.Context, duration time.Duration) bool {
+	if duration <= 0 {
+		return ctx.Err() == nil
+	}
+
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func writeSummary(path string, result summary) error {
+	if path == "" {
+		return nil
+	}
+
+	file, err := os.CreateTemp(filepath.Dir(path), ".opamp-load-ready-*.json")
+	if err != nil {
+		return err
+	}
+	temporaryPath := file.Name()
+	defer os.Remove(temporaryPath)
+
+	if err := json.NewEncoder(file).Encode(result); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 func runCollector(
@@ -136,6 +235,11 @@ func runCollector(
 	counters *counters,
 ) {
 	defer workers.Done()
+	var readyOnce sync.Once
+	markReady := func() {
+		readyOnce.Do(ready.Done)
+	}
+	defer markReady()
 
 	opampClient := client.NewWebSocket(nil)
 	if err := opampClient.SetAgentDescription(&protobufs.AgentDescription{
@@ -145,14 +249,16 @@ func runCollector(
 		},
 	}); err != nil {
 		counters.failed.Add(1)
-		ready.Done()
 		return
 	}
 
 	var instanceUID types.InstanceUid
 	if _, err := rand.Read(instanceUID[:]); err != nil {
 		counters.failed.Add(1)
-		ready.Done()
+		return
+	}
+	if ctx.Err() != nil {
+		counters.cancelled.Add(1)
 		return
 	}
 
@@ -181,28 +287,37 @@ func runCollector(
 			},
 		},
 	}); err != nil {
-		counters.failed.Add(1)
-		ready.Done()
+		if ctx.Err() != nil {
+			counters.cancelled.Add(1)
+		} else {
+			counters.failed.Add(1)
+		}
 		return
 	}
 
 	connected := false
 	select {
 	case connected = <-connectResult:
+	case <-ctx.Done():
+		counters.cancelled.Add(1)
+		_ = opampClient.Stop(context.Background())
+		return
 	case <-time.After(connectTimeout):
 	}
 	if !connected {
 		counters.failed.Add(1)
-		ready.Done()
 		_ = opampClient.Stop(context.Background())
 		return
 	}
 
 	counters.connected.Add(1)
-	ready.Done()
-	<-stop
+	markReady()
+	select {
+	case <-stop:
+	case <-ctx.Done():
+	}
 	if err := opampClient.Stop(context.Background()); err != nil {
-		counters.failed.Add(1)
+		counters.stopFailed.Add(1)
 		return
 	}
 	counters.disconnected.Add(1)

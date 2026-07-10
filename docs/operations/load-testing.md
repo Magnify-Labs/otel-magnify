@@ -13,8 +13,10 @@ concurrent WebSocket connections.
 ## Safety boundary
 
 The script requires the explicit `LOAD_TEST_CONFIRM=5000` acknowledgement and
-test-only values for `DB_DSN`, `JWT_SECRET`, and `OPAMP_SHARED_SECRET`. It
-never prints those values. Each run uses a unique Compose project name and its
+test-only values for `JWT_SECRET` and `OPAMP_SHARED_SECRET`. It always uses
+`postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable` inside its
+unique Compose network; inherited `DB_DSN`, `POSTGRES_PASSWORD`, and database
+pool settings are ignored. Each run uses a unique Compose project name and its
 cleanup deliberately omits `docker compose down -v`, so it does not remove
 volumes.
 
@@ -28,7 +30,6 @@ From the repository root, use test-only values such as:
 
 ```bash
 LOAD_TEST_CONFIRM=5000 \
-DB_DSN='postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable' \
 JWT_SECRET='load-test-jwt-secret-at-least-32-bytes' \
 OPAMP_SHARED_SECRET='load-test-opamp-token' \
 ./scripts/load-test-5000.sh
@@ -42,7 +43,6 @@ acceptance scenario.
 ```bash
 LOAD_TEST_RAMP=1m LOAD_TEST_HOLD=5m \
   LOAD_TEST_CONFIRM=5000 \
-  DB_DSN='postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable' \
   JWT_SECRET='load-test-jwt-secret-at-least-32-bytes' \
   OPAMP_SHARED_SECRET='load-test-opamp-token' \
   ./scripts/load-test-5000.sh
@@ -53,20 +53,33 @@ it, the script creates a directory under the system temporary directory.
 
 ## Result and evidence
 
-`cmd/opamp-load` writes one JSON object to standard output:
+`cmd/opamp-load` writes a final JSON lifecycle summary to standard output:
 
 ```json
-{"attempted":5000,"connected":5000,"failed":0,"disconnected":5000}
+{"attempted":5000,"connected":5000,"failed":0,"cancelled":0,"disconnected":5000,"stop_failed":0,"interrupted":false}
 ```
 
-The script fails unless all 5,000 connections succeed and cleanly disconnect.
+`connected` is the cumulative count of collectors that completed their initial
+connection; `disconnected` is the cumulative count of those that stopped
+cleanly. `failed` counts failures before an initial connection, while
+`stop_failed` records failures after one. `cancelled` counts clients cancelled
+before connecting and `interrupted` marks a SIGINT or SIGTERM run. The client
+prints this final summary even when interrupted, then exits non-zero.
+
+Before the hold period ends, the script waits for a `ready.json` summary that
+proves all 5,000 clients are connected, captures the following evidence, and
+enforces the acceptance criteria. It fails unless the final lifecycle counters
+are exact, PostgreSQL has no more than 40 application connections, and no
+application log lines match `error`, `failed`, or `panic`.
+
 Its artifact directory contains:
 
-- `summary.json`: client connection counters.
+- `ready.json`: client counters at the start of the hold period.
+- `summary.json`: final client lifecycle counters after graceful stopping.
+- `opamp-load.stderr`: client diagnostics.
 - `docker-stats.txt`: one resource snapshot for the application and PostgreSQL containers.
-- `pg-stat-activity.txt`: PostgreSQL connection-state counts, excluding the diagnostic query itself, used to confirm the SQL pool stays at or below the configured maximum of 40.
-- `opamp-errors.txt`: application log lines matching error, failed, or panic.
+- `pg-stat-activity.txt`: PostgreSQL connection count and the enforced limit, excluding the diagnostic query itself.
+- `opamp-errors.txt`: application log lines matching error, failed, or panic while clients are held.
 
-Review `opamp-errors.txt` and `pg-stat-activity.txt` with the JSON summary
-before treating a run as accepted. A non-empty error file, more than 40 active
-database connections, or any failed client requires investigation.
+The script checks these artifacts before the clients stop. Preserve them with
+`LOAD_TEST_OUTPUT_DIR` when a failed acceptance run needs investigation.
