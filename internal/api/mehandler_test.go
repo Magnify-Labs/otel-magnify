@@ -13,7 +13,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
-// newMeTestAPI opens an in-memory SQLite database, runs migrations, and
+// newMeTestAPI opens a PostgreSQL database in a temporary schema, runs migrations, and
 // returns a store and auth instance for /api/me handler tests.
 func newMeTestAPI(t *testing.T) (*store.DB, *auth.Auth) {
 	t.Helper()

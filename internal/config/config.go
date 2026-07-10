@@ -34,7 +34,7 @@ func Load() Config {
 		DBDSN:                   getenv("DB_DSN", ""),
 		DBMaxOpenConns:          positiveInt(getenv("DB_MAX_OPEN_CONNS", "40"), 40),
 		DBMaxIdleConns:          positiveInt(getenv("DB_MAX_IDLE_CONNS", "10"), 10),
-		DBConnMaxLifetime:       seconds(getenv("DB_CONN_MAX_LIFETIME_SECONDS", "1800")),
+		DBConnMaxLifetime:       dbConnMaxLifetime(getenv("DB_CONN_MAX_LIFETIME_SECONDS", "1800")),
 		ListenAddr:              getenv("LISTEN_ADDR", ":8080"),
 		OpAMPAddr:               getenv("OPAMP_ADDR", ":4320"),
 		OpAMPSharedSecret:       getenv("OPAMP_SHARED_SECRET", ""),
@@ -76,6 +76,10 @@ func seconds(s string) time.Duration {
 		n = 1
 	}
 	return time.Duration(n) * time.Second
+}
+
+func dbConnMaxLifetime(s string) time.Duration {
+	return time.Duration(positiveInt(s, 1800)) * time.Second
 }
 
 func positiveInt(s string, fallback int) int {

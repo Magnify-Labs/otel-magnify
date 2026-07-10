@@ -88,3 +88,16 @@ func TestLoadDatabasePoolDefaults(t *testing.T) {
 		t.Fatalf("DBConnMaxLifetime = %v, want %v", c.DBConnMaxLifetime, 30*time.Minute)
 	}
 }
+
+func TestLoadDatabasePoolLifetimeInvalidValuesFallBackToDefault(t *testing.T) {
+	for _, value := range []string{"not-a-number", "0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("DB_CONN_MAX_LIFETIME_SECONDS", value)
+
+			c := Load()
+			if c.DBConnMaxLifetime != 30*time.Minute {
+				t.Fatalf("DBConnMaxLifetime = %v, want %v", c.DBConnMaxLifetime, 30*time.Minute)
+			}
+		})
+	}
+}
