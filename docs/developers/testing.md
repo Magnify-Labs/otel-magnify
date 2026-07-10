@@ -7,7 +7,7 @@ Use this page as the quick pre-PR checklist for local verification. Run the smal
 The Go module lives at the repository root and currently declares Go `1.25.12` in `go.mod`.
 
 ```bash
-go test ./...
+TEST_POSTGRES_DSN='postgres://user:password@host:5432/magnify_test?sslmode=disable' go test ./...
 go build ./...
 ```
 
@@ -18,6 +18,7 @@ docker run --rm \
   -v "$PWD:/app" \
   -w /app \
   -e GOFLAGS='-mod=mod -buildvcs=false' \
+  -e TEST_POSTGRES_DSN="${TEST_POSTGRES_DSN:?set TEST_POSTGRES_DSN to a disposable PostgreSQL database}" \
   golang:1.25.12 sh -c 'go build ./... && go test ./...'
 ```
 

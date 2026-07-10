@@ -5,7 +5,7 @@ services:
       - "8080:8080"
       - "4320:4320"
     environment:
-      DB_DSN: ${DB_DSN:-postgres://magnify:${POSTGRES_PASSWORD:-magnify}@postgres:5432/magnify?sslmode=disable}
+      DB_DSN: ${DB_DSN:-postgres://magnify:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set to a strong PostgreSQL password}@postgres:5432/magnify?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value of at least 32 characters}
       LISTEN_ADDR: ":8080"
       OPAMP_ADDR: ":4320"
@@ -24,7 +24,7 @@ services:
     environment:
       POSTGRES_DB: magnify
       POSTGRES_USER: magnify
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-magnify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set to a strong PostgreSQL password}
     ports:
       - "5432:5432"
     volumes:

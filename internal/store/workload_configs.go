@@ -435,8 +435,7 @@ func (nt *nullableTime) scanString(v string) error {
 
 // GetPushActivity returns a time series of push counts per calendar day (UTC)
 // covering the last `days` days, oldest first. Missing days are filled with
-// zero. The bucketing is done in Go so the SQL stays portable across SQLite
-// and Postgres.
+// zero. The bucketing is done in Go to keep the SQL straightforward.
 func (d *DB) GetPushActivity(days int) ([]models.PushActivityPoint, error) {
 	if days <= 0 {
 		return []models.PushActivityPoint{}, nil

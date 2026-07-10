@@ -9,6 +9,10 @@ otel-magnify ships as a single binary that embeds the frontend. Three deployment
 - PostgreSQL 16 or later. `DB_DSN` is required by the binary.
 - A strong `JWT_SECRET`. Startup fails when it is missing, too short, or still set to the production placeholder.
 
+## Breaking change: fresh database required
+
+This release does not convert existing data. Before upgrading, back up or export any data you need from an existing SQLite or PostgreSQL database. Do not upgrade this release against an existing database. Create a fresh, empty PostgreSQL database and point `DB_DSN` to it; no conversion tool is supplied.
+
 ## Docker Compose
 
 The simplest local or single-host path is Docker Compose:
