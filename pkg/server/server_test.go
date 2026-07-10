@@ -13,13 +13,14 @@ import (
 
 	"github.com/magnify-labs/otel-magnify/internal/auth"
 	"github.com/magnify-labs/otel-magnify/internal/store"
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 	"github.com/magnify-labs/otel-magnify/pkg/server"
 )
 
 func TestNew_DefaultsCompile(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +42,7 @@ func TestNew_DefaultsCompile(t *testing.T) {
 }
 
 func TestServer_StartsAndStops(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestServer_StartsAndStops(t *testing.T) {
 }
 
 func TestAuthMethods_DefaultsToPassword(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestAuthMethods_DefaultsToPassword(t *testing.T) {
 }
 
 func TestAuthMethods_AppendsViaOption(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +160,7 @@ func TestAuthMethods_AppendsViaOption(t *testing.T) {
 }
 
 func TestAuthMethods_DuplicateIDKeepsFirst(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +195,7 @@ func TestAuthMethods_DuplicateIDKeepsFirst(t *testing.T) {
 }
 
 func TestAuthMethodProvider_DynamicOverridesStatic(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +237,7 @@ func TestAuthMethodProvider_DynamicOverridesStatic(t *testing.T) {
 }
 
 func TestAuthMethodProvider_NilProvider_FallbacksToStatic(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +268,7 @@ func TestAuthMethodProvider_NilProvider_FallbacksToStatic(t *testing.T) {
 }
 
 func TestWithFeatures_PopulatesServerField(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +307,7 @@ func TestWithFeatures_PopulatesServerField(t *testing.T) {
 // hooks mounted via WithRouterHook bypassed the auth middleware, so the
 // inner perm.RequireGroup check rejected even valid admin tokens.
 func TestWithProtectedRouterHook_AppliesAuthMiddleware(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +383,7 @@ func TestWithProtectedRouterHook_AppliesAuthMiddleware(t *testing.T) {
 }
 
 func TestWithFeatures_NotSet_ReturnsEmptyMap(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,8 +441,12 @@ type serverTestLicenseChecker map[string]bool
 
 func (s serverTestLicenseChecker) FeatureEnabled(feature string) bool { return s[feature] }
 
+func testPoolConfig() store.PoolConfig {
+	return store.PoolConfig{MaxOpenConns: 2, MaxIdleConns: 1, ConnMaxLifetime: time.Minute}
+}
+
 func TestWithLicenseChecker_AllowsGatedEndpointWithoutAdvertisingFeature(t *testing.T) {
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE workload_events (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workload_id  TEXT     NOT NULL REFERENCES workloads(id) ON DELETE CASCADE,
     instance_uid TEXT     NOT NULL,
     pod_name     TEXT     NOT NULL DEFAULT '',

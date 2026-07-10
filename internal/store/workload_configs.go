@@ -701,7 +701,7 @@ func valueOrEmpty(v *string) string {
 	return *v
 }
 
-func getWorkloadKnownGoodTx(tx *sql.Tx, workloadID string) (*models.WorkloadKnownGoodConfig, error) {
+func getWorkloadKnownGoodTx(tx queryRower, workloadID string) (*models.WorkloadKnownGoodConfig, error) {
 	var (
 		kg               models.WorkloadKnownGoodConfig
 		markedBy         sql.NullString

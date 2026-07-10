@@ -9,6 +9,7 @@ import (
 
 	"github.com/magnify-labs/otel-magnify/internal/auth"
 	"github.com/magnify-labs/otel-magnify/internal/store"
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 )
 
 // newFeaturesTestRouter builds a minimal router for features endpoint tests.
@@ -16,7 +17,7 @@ import (
 // and real auth, no OpAMP pusher or WebSocket hub.
 func newFeaturesTestRouter(t *testing.T, features map[string]bool) http.Handler {
 	t.Helper()
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

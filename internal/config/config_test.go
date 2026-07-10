@@ -67,3 +67,24 @@ func TestLoadOpAMPSharedSecret(t *testing.T) {
 		t.Fatalf("OpAMPSharedSecret = %q, want %q", c.OpAMPSharedSecret, "opamp-psk")
 	}
 }
+
+func TestLoadDatabasePoolDefaults(t *testing.T) {
+	for _, key := range []string{
+		"DB_MAX_OPEN_CONNS",
+		"DB_MAX_IDLE_CONNS",
+		"DB_CONN_MAX_LIFETIME_SECONDS",
+	} {
+		t.Setenv(key, "")
+	}
+
+	c := Load()
+	if c.DBMaxOpenConns != 40 {
+		t.Fatalf("DBMaxOpenConns = %d, want 40", c.DBMaxOpenConns)
+	}
+	if c.DBMaxIdleConns != 10 {
+		t.Fatalf("DBMaxIdleConns = %d, want 10", c.DBMaxIdleConns)
+	}
+	if c.DBConnMaxLifetime != 30*time.Minute {
+		t.Fatalf("DBConnMaxLifetime = %v, want %v", c.DBConnMaxLifetime, 30*time.Minute)
+	}
+}

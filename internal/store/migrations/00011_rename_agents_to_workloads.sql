@@ -14,7 +14,7 @@ CREATE TABLE workloads (
     active_config_hash    TEXT NOT NULL DEFAULT '',
     remote_config_status  TEXT,
     available_components  TEXT,
-    accepts_remote_config INTEGER NOT NULL DEFAULT 0,
+    accepts_remote_config BOOLEAN NOT NULL DEFAULT FALSE,
     retention_until       TIMESTAMP,
     archived_at           TIMESTAMP
 );
@@ -23,7 +23,7 @@ INSERT INTO workloads (id, fingerprint_source, fingerprint_keys, display_name, t
                        last_seen_at, labels, active_config_id, remote_config_status,
                        available_components, accepts_remote_config)
 SELECT id, 'uid', '{}', display_name, type, version, status, last_seen_at, labels,
-       active_config_id, remote_config_status, available_components, accepts_remote_config
+       active_config_id, remote_config_status, available_components, accepts_remote_config <> 0
 FROM agents;
 
 CREATE TABLE agent_configs_new (
@@ -64,8 +64,6 @@ CREATE INDEX idx_workload_configs_workload_time
 CREATE INDEX idx_alerts_workload
     ON alerts(workload_id);
 
--- Fail loudly if the rebuild left orphaned FK references.
-PRAGMA foreign_key_check;
 -- +goose StatementEnd
 
 -- +goose Down
@@ -86,7 +84,8 @@ CREATE TABLE agents (
 INSERT INTO agents (id, display_name, type, version, status, last_seen_at, labels,
                     active_config_id, remote_config_status, available_components, accepts_remote_config)
 SELECT id, display_name, type, version, status, last_seen_at, labels,
-       active_config_id, remote_config_status, available_components, accepts_remote_config
+                    active_config_id, remote_config_status, available_components,
+                    CASE WHEN accepts_remote_config THEN 1 ELSE 0 END
 FROM workloads;
 
 CREATE TABLE agent_configs_restore (

@@ -413,8 +413,9 @@ func TestMarkWorkloadDisconnectedSetsRetention(t *testing.T) {
 	if w.Status != "disconnected" {
 		t.Fatalf("status = %q, want disconnected", w.Status)
 	}
-	if w.RetentionUntil == nil || !w.RetentionUntil.Equal(until) {
-		t.Fatalf("retention_until = %v, want %v", w.RetentionUntil, until)
+	wantUntil := until.Truncate(time.Microsecond)
+	if w.RetentionUntil == nil || !w.RetentionUntil.Equal(wantUntil) {
+		t.Fatalf("retention_until = %v, want %v", w.RetentionUntil, wantUntil)
 	}
 }
 

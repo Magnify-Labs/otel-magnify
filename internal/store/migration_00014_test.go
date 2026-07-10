@@ -2,13 +2,15 @@ package store
 
 import (
 	"testing"
+
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 )
 
 // TestMigration00014_DataMigration vérifie qu'un user seedé avant 00014
 // avec role='admin' se retrouve membre du groupe grp_system_administrator
 // après migration, et que la colonne role a disparu.
 func TestMigration00014_DataMigration(t *testing.T) {
-	db, err := Open("sqlite", ":memory:")
+	db, err := Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -29,21 +31,15 @@ func TestMigration00014_DataMigration(t *testing.T) {
 	}
 
 	// Vérifie que users.role n'existe plus.
-	rows, err := db.Query(`PRAGMA table_info(users)`)
-	if err != nil {
-		t.Fatalf("pragma: %v", err)
+	var roleExists bool
+	if err := db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'role'
+		)`).Scan(&roleExists); err != nil {
+		t.Fatalf("query users columns: %v", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt any
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			t.Fatalf("scan col: %v", err)
-		}
-		if name == "role" {
-			t.Errorf("users.role should have been dropped")
-		}
+	if roleExists {
+		t.Errorf("users.role should have been dropped")
 	}
 }

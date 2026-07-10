@@ -8,18 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 	"github.com/magnify-labs/otel-magnify/pkg/bootstrap"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/server"
 )
 
 // TestRun_ReturnsOnContextCancel confirms that bootstrap.Run honours
-// context cancellation and returns cleanly. It runs with a minimal
-// in-memory SQLite store and a short-lived context.
+// context cancellation and returns cleanly. It runs with a PostgreSQL
+// test store and a short-lived context.
 func TestRun_ReturnsOnContextCancel(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-key-at-least-32-bytes!")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_DSN", ":memory:")
+	t.Setenv("DB_DSN", testPostgresDSN(t))
 	t.Setenv("LISTEN_ADDR", ":0")
 	t.Setenv("OPAMP_ADDR", ":0")
 
@@ -43,8 +43,7 @@ func TestRun_ReturnsOnContextCancel(t *testing.T) {
 // JWT_SECRET as an error rather than calling os.Exit.
 func TestRun_FailsWithoutJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", "")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_DSN", ":memory:")
+	t.Setenv("DB_DSN", testPostgresDSN(t))
 
 	err := bootstrap.Run(context.Background(), bootstrap.Options{})
 	if err == nil {
@@ -93,8 +92,7 @@ func TestRun_RejectsWeakJWTSecretsBeforeOpeningDatabase(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("JWT_SECRET", tt.secret)
-			t.Setenv("DB_DRIVER", "sqlite")
-			t.Setenv("DB_DSN", "/definitely/not/a/writable/path/otel-magnify.db")
+			t.Setenv("DB_DSN", testPostgresDSN(t))
 
 			err := bootstrap.Run(context.Background(), bootstrap.Options{})
 			if err == nil {
@@ -109,8 +107,7 @@ func TestRun_RejectsWeakJWTSecretsBeforeOpeningDatabase(t *testing.T) {
 
 func TestRun_AcceptsValidJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-at-least-32-bytes-long-for-hmac")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_DSN", ":memory:")
+	t.Setenv("DB_DSN", testPostgresDSN(t))
 	t.Setenv("LISTEN_ADDR", ":0")
 	t.Setenv("OPAMP_ADDR", ":0")
 
@@ -132,8 +129,7 @@ func TestRun_AcceptsValidJWTSecret(t *testing.T) {
 
 func TestPreRun_CalledAfterMigrations_BeforeServerStart(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-at-least-32-bytes-long-for-hmac")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_DSN", ":memory:")
+	t.Setenv("DB_DSN", testPostgresDSN(t))
 	t.Setenv("LISTEN_ADDR", ":0")
 	t.Setenv("OPAMP_ADDR", ":0")
 
@@ -199,8 +195,7 @@ func TestPreRun_CalledAfterMigrations_BeforeServerStart(t *testing.T) {
 
 func TestPreRun_Error_PropagatesAsRunError(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-at-least-32-bytes-long-for-hmac")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_DSN", ":memory:")
+	t.Setenv("DB_DSN", testPostgresDSN(t))
 	t.Setenv("LISTEN_ADDR", ":0")
 	t.Setenv("OPAMP_ADDR", ":0")
 
@@ -214,4 +209,9 @@ func TestPreRun_Error_PropagatesAsRunError(t *testing.T) {
 	if !errors.Is(err, want) {
 		t.Fatalf("expected PreRun error to propagate, got %v", err)
 	}
+}
+
+func testPostgresDSN(t *testing.T) string {
+	t.Helper()
+	return testdb.New(t).DSN
 }

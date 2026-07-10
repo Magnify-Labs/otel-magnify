@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"github.com/magnify-labs/otel-magnify/internal/store"
+	"github.com/magnify-labs/otel-magnify/internal/testdb"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
 
 func newTestDB(t *testing.T) *store.DB {
 	t.Helper()
-	db, err := store.Open("sqlite", ":memory:")
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,15 +23,25 @@ func newTestDB(t *testing.T) *store.DB {
 	return db
 }
 
+func testPoolConfig() store.PoolConfig {
+	return store.PoolConfig{
+		MaxOpenConns:    2,
+		MaxIdleConns:    1,
+		ConnMaxLifetime: time.Minute,
+	}
+}
+
 func TestEvaluate_WorkloadDown(t *testing.T) {
 	db := newTestDB(t)
 
 	// Workload last seen 10 minutes ago
-	db.UpsertWorkload(models.Workload{
+	if err := db.UpsertWorkload(models.Workload{
 		ID: "a1", Type: "collector", Status: "connected",
 		LastSeenAt: time.Now().UTC().Add(-10 * time.Minute),
 		Labels:     models.Labels{}, FingerprintKeys: models.FingerprintKeys{},
-	})
+	}); err != nil {
+		t.Fatalf("seed workload: %v", err)
+	}
 
 	engine := New(db, nil, 5*time.Minute, "")
 	engine.Evaluate()

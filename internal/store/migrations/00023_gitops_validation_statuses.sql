@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE gitops_validation_statuses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     provider TEXT NOT NULL,
     event TEXT NOT NULL,
     action TEXT NOT NULL DEFAULT '',

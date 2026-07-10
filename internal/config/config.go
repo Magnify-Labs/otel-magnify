@@ -9,8 +9,10 @@ import (
 
 // Config groups the server's runtime settings: DB, listen addresses, JWT secret, CORS, and workload lifecycle tuning.
 type Config struct {
-	DBDriver          string // "sqlite" or "pgx"
-	DBDSN             string // file path for sqlite, connection string for postgres
+	DBDSN             string // PostgreSQL connection string
+	DBMaxOpenConns    int
+	DBMaxIdleConns    int
+	DBConnMaxLifetime time.Duration
 	ListenAddr        string // e.g. ":8080"
 	OpAMPAddr         string // e.g. ":4320"
 	OpAMPSharedSecret string // bearer token required by OpAMP clients; empty = disabled for local/dev
@@ -29,8 +31,10 @@ type Config struct {
 // Load reads the configuration from environment variables, applying default values for missing or invalid entries.
 func Load() Config {
 	return Config{
-		DBDriver:                getenv("DB_DRIVER", "sqlite"),
-		DBDSN:                   getenv("DB_DSN", "otel-magnify.db"),
+		DBDSN:                   getenv("DB_DSN", ""),
+		DBMaxOpenConns:          positiveInt(getenv("DB_MAX_OPEN_CONNS", "40"), 40),
+		DBMaxIdleConns:          positiveInt(getenv("DB_MAX_IDLE_CONNS", "10"), 10),
+		DBConnMaxLifetime:       seconds(getenv("DB_CONN_MAX_LIFETIME_SECONDS", "1800")),
 		ListenAddr:              getenv("LISTEN_ADDR", ":8080"),
 		OpAMPAddr:               getenv("OPAMP_ADDR", ":4320"),
 		OpAMPSharedSecret:       getenv("OPAMP_SHARED_SECRET", ""),
@@ -72,4 +76,12 @@ func seconds(s string) time.Duration {
 		n = 1
 	}
 	return time.Duration(n) * time.Second
+}
+
+func positiveInt(s string, fallback int) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
