@@ -44,7 +44,8 @@ The chart creates:
 
 - one `Deployment`
 - one `Service` exposing named ports `api` and `opamp`
-- one `Secret` containing `jwt-secret`, `opamp-shared-secret`, and `db-dsn`
+- one release `Secret` containing the supplied application secrets; it contains `db-dsn` only when Helm creates the database credential from `database.dsn`
+- no release `db-dsn` credential when `database.existingSecret` is set; the `Deployment` reads the operator-managed Secret and `database.existingSecretKey`
 - an optional `Ingress` for the API/frontend only
 
 Important values:
@@ -73,7 +74,7 @@ Important values:
 ### Helm security caveats
 
 - Passing secrets with `--set` can expose them in shell history. Prefer a local values file, your secret manager, or a pre-created Secret workflow for shared clusters.
-- The generated release Secret is created only when supplied values require it. Prefer `database.existingSecret` for an operator-managed PostgreSQL DSN and protect namespace read access accordingly.
+- When `database.dsn` is set without `database.existingSecret`, Helm creates the release Secret with the `db-dsn` credential. When `database.existingSecret` is set, Helm does not render a release `db-dsn`; protect the operator-managed Secret and namespace read access accordingly.
 - The default ingress exposes only the API/frontend. OpAMP is a separate service port and should be exposed deliberately, with network policy, an internal load balancer, and `OPAMP_SHARED_SECRET` when possible.
 - `readOnlyRootFilesystem` is enabled. The application uses `/tmp` only for temporary files; database state belongs to PostgreSQL.
 - `automountServiceAccountToken=false` should stay disabled unless an extension binary actually needs Kubernetes API access.

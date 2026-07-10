@@ -73,6 +73,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 
 - Go 1.25.12+
 - Node.js 20+
+- PostgreSQL 16+
 
 ### Development
 
