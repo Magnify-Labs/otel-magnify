@@ -1,9 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -104,5 +113,87 @@ func TestRunStopsConnectedCollectorsWhenContextIsCancelled(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("run did not stop connected collectors after cancellation")
+	}
+}
+
+func TestMainWritesSummaryAndExits130OnSignal(t *testing.T) {
+	binaryPath := filepath.Join(t.TempDir(), "opamp-load")
+	build := exec.Command("go", "build", "-o", binaryPath, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build opamp-load: %v\n%s", err, output)
+	}
+
+	for _, signal := range []os.Signal{os.Interrupt, syscall.SIGTERM} {
+		t.Run(signal.String(), func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen: %v", err)
+			}
+			defer listener.Close()
+
+			accepted := make(chan net.Conn, 1)
+			acceptErr := make(chan error, 1)
+			go func() {
+				connection, err := listener.Accept()
+				if err != nil {
+					acceptErr <- err
+					return
+				}
+				accepted <- connection
+			}()
+
+			endpoint := fmt.Sprintf("ws://%s/v1/opamp", listener.Addr())
+			command := exec.Command(binaryPath,
+				"--endpoint", endpoint,
+				"--collectors", "1",
+				"--ramp", "0s",
+				"--hold", "1h",
+			)
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			command.Stdout = &stdout
+			command.Stderr = &stderr
+			if err := command.Start(); err != nil {
+				t.Fatalf("start opamp-load: %v", err)
+			}
+
+			var connection net.Conn
+			select {
+			case connection = <-accepted:
+				defer connection.Close()
+			case err := <-acceptErr:
+				t.Fatalf("accept connection: %v", err)
+			case <-time.After(10 * time.Second):
+				t.Fatal("opamp-load did not connect to the local test listener")
+			}
+
+			if err := command.Process.Signal(signal); err != nil {
+				t.Fatalf("signal opamp-load: %v", err)
+			}
+
+			wait := make(chan error, 1)
+			go func() {
+				wait <- command.Wait()
+			}()
+			select {
+			case err := <-wait:
+				var exitError *exec.ExitError
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 130 {
+					t.Fatalf("opamp-load exit = %v, want status 130; stderr = %s", err, stderr.String())
+				}
+			case <-time.After(10 * time.Second):
+				_ = command.Process.Kill()
+				<-wait
+				t.Fatal("opamp-load did not stop after signal")
+			}
+
+			var result summary
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+				t.Fatalf("decode final summary: %v; stdout = %q; stderr = %s", err, stdout.String(), stderr.String())
+			}
+			if !result.Interrupted {
+				t.Fatalf("summary = %#v, want interrupted run", result)
+			}
+		})
 	}
 }

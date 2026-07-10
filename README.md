@@ -115,10 +115,14 @@ Docker volumes:
 
 ```bash
 LOAD_TEST_CONFIRM=5000 \
+  DB_DSN='required-but-ignored' \
   JWT_SECRET='load-test-jwt-secret-at-least-32-bytes' \
   OPAMP_SHARED_SECRET='load-test-opamp-token' \
   ./scripts/load-test-5000.sh
 ```
+
+`DB_DSN` is required as an intent guard, but its value is intentionally ignored
+and replaced with the fixed PostgreSQL DSN inside the isolated Compose project.
 
 See [load testing](docs/operations/load-testing.md) for capacity prerequisites,
 timing controls, output artifacts, and acceptance criteria.

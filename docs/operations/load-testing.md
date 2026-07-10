@@ -13,16 +13,16 @@ concurrent WebSocket connections.
 ## Safety boundary
 
 The script requires the explicit `LOAD_TEST_CONFIRM=5000` acknowledgement and
-test-only values for `JWT_SECRET` and `OPAMP_SHARED_SECRET`. It always uses
-`postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable` inside its
-unique Compose network; inherited `DB_DSN`, `POSTGRES_PASSWORD`, and database
-pool settings are ignored. Each run uses a unique Compose project name and its
-cleanup deliberately omits `docker compose down -v`, so it does not remove
-volumes.
+test-only values for `DB_DSN`, `JWT_SECRET`, and `OPAMP_SHARED_SECRET`.
+`DB_DSN` is an intent guard: its supplied value is deliberately ignored and
+replaced with `postgres://magnify:magnify@postgres:5432/magnify?sslmode=disable`
+inside the unique isolated Compose network. Inherited `POSTGRES_PASSWORD` and
+database pool settings are also ignored. Each run uses a unique Compose project
+name and its cleanup deliberately omits `docker compose down -v`, so it does
+not remove volumes.
 
 Do not point this scenario at a shared or production database, listener, or
-secret. The supplied `DB_DSN` must resolve `postgres` on the isolated Compose
-network.
+secret. Never provide a production `DB_DSN`; the required value is not used.
 
 ## Run the scenario
 
@@ -30,6 +30,7 @@ From the repository root, use test-only values such as:
 
 ```bash
 LOAD_TEST_CONFIRM=5000 \
+DB_DSN='required-but-ignored' \
 JWT_SECRET='load-test-jwt-secret-at-least-32-bytes' \
 OPAMP_SHARED_SECRET='load-test-opamp-token' \
 ./scripts/load-test-5000.sh
@@ -43,6 +44,7 @@ acceptance scenario.
 ```bash
 LOAD_TEST_RAMP=1m LOAD_TEST_HOLD=5m \
   LOAD_TEST_CONFIRM=5000 \
+  DB_DSN='required-but-ignored' \
   JWT_SECRET='load-test-jwt-secret-at-least-32-bytes' \
   OPAMP_SHARED_SECRET='load-test-opamp-token' \
   ./scripts/load-test-5000.sh
@@ -77,9 +79,12 @@ Its artifact directory contains:
 - `ready.json`: client counters at the start of the hold period.
 - `summary.json`: final client lifecycle counters after graceful stopping.
 - `opamp-load.stderr`: client diagnostics.
+- `compose.log`: raw application Compose logs, including any log-collection failure.
 - `docker-stats.txt`: one resource snapshot for the application and PostgreSQL containers.
 - `pg-stat-activity.txt`: PostgreSQL connection count and the enforced limit, excluding the diagnostic query itself.
 - `opamp-errors.txt`: application log lines matching error, failed, or panic while clients are held.
 
 The script checks these artifacts before the clients stop. Preserve them with
-`LOAD_TEST_OUTPUT_DIR` when a failed acceptance run needs investigation.
+`LOAD_TEST_OUTPUT_DIR` when a failed acceptance run needs investigation. Before
+each run, it removes prior artifacts with these names while preserving the
+selected output directory.

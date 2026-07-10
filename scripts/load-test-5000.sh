@@ -26,6 +26,7 @@ require_command() {
   fi
 }
 
+require_env "DB_DSN"
 require_env "JWT_SECRET"
 require_env "OPAMP_SHARED_SECRET"
 require_command "docker"
@@ -49,9 +50,24 @@ load_test_hold="${LOAD_TEST_HOLD:-10m}"
 ready_file="${output_dir}/ready.json"
 summary_file="${output_dir}/summary.json"
 client_stderr_file="${output_dir}/opamp-load.stderr"
+opamp_errors_file="${output_dir}/opamp-errors.txt"
+compose_log_file="${output_dir}/compose.log"
+docker_stats_file="${output_dir}/docker-stats.txt"
+postgres_activity_file="${output_dir}/pg-stat-activity.txt"
 client_pid=""
 
 mkdir -p "$output_dir"
+
+# Reuse the caller's directory, but never let a previous run satisfy this
+# invocation's readiness checks or appear as its evidence.
+rm -f -- \
+  "$ready_file" \
+  "$summary_file" \
+  "$client_stderr_file" \
+  "$opamp_errors_file" \
+  "$compose_log_file" \
+  "$docker_stats_file" \
+  "$postgres_activity_file"
 
 cleanup() {
   if [ -n "$client_pid" ] && kill -0 "$client_pid" >/dev/null 2>&1; then
@@ -109,6 +125,30 @@ stop_client() {
   return "$client_status"
 }
 
+collect_opamp_errors() {
+  local status
+
+  if load_test_compose logs --no-color otel-magnify >"$compose_log_file" 2>&1; then
+    :
+  else
+    status=$?
+    echo "failed to collect Compose logs; see ${compose_log_file}" >&2
+    return "$status"
+  fi
+
+  if grep -Ei "error|failed|panic" "$compose_log_file" >"$opamp_errors_file"; then
+    return 0
+  else
+    status=$?
+  fi
+  if [ "$status" -eq 1 ]; then
+    return 0
+  fi
+
+  echo "failed to filter Compose logs; see ${compose_log_file}" >&2
+  return "$status"
+}
+
 echo "load-test artifacts: ${output_dir}"
 echo "starting isolated Compose project: ${project_name}"
 load_test_compose up -d --build
@@ -120,7 +160,10 @@ for attempt in $(seq 1 120); do
     break
   fi
   if [ "$attempt" -eq 120 ]; then
-    load_test_compose logs --no-color >"${output_dir}/compose.log" || true
+    if ! load_test_compose logs --no-color >"$compose_log_file" 2>&1; then
+      echo "failed to collect Compose logs; see ${compose_log_file}" >&2
+      exit 1
+    fi
     echo "server did not become healthy within 120 seconds" >&2
     exit 1
   fi
@@ -175,24 +218,26 @@ while IFS= read -r container_id; do
   fi
 done < <(load_test_compose ps -q)
 if [ "${#container_ids[@]}" -gt 0 ]; then
-  docker stats --no-stream "${container_ids[@]}" >"${output_dir}/docker-stats.txt"
+  docker stats --no-stream "${container_ids[@]}" >"$docker_stats_file"
 fi
 
 load_test_compose exec -T postgres \
   psql -U magnify -d magnify \
   -X -A -t -F '|' \
   -c "SELECT count(*), 40 FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();" \
-  >"${output_dir}/pg-stat-activity.txt"
-load_test_compose logs --no-color otel-magnify \
-  | grep -Ei "error|failed|panic" >"${output_dir}/opamp-errors.txt" || true
+  >"$postgres_activity_file"
+if ! collect_opamp_errors; then
+  stop_client || true
+  exit 1
+fi
 
-if ! awk -F '|' 'NF == 2 && $1 ~ /^[0-9]+$/ && $2 == "40" && $1 <= $2 { valid = 1 } END { exit !valid }' "${output_dir}/pg-stat-activity.txt"; then
+if ! awk -F '|' 'NF == 2 && $1 ~ /^[0-9]+$/ && $2 == "40" && $1 <= $2 { valid = 1 } END { exit !valid }' "$postgres_activity_file"; then
   echo "PostgreSQL connections exceeded the configured maximum of 40" >&2
   stop_client || true
   exit 1
 fi
 
-if [ -s "${output_dir}/opamp-errors.txt" ]; then
+if [ -s "$opamp_errors_file" ]; then
   echo "application errors were recorded while collectors were held" >&2
   stop_client || true
   exit 1

@@ -22,7 +22,10 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-const connectTimeout = 30 * time.Second
+const (
+	connectTimeout = 30 * time.Second
+	stopTimeout    = 5 * time.Second
+)
 
 type config struct {
 	endpoint   string
@@ -203,6 +206,13 @@ func wait(ctx context.Context, duration time.Duration) bool {
 	}
 }
 
+func stopCollector(opampClient client.OpAMPClient) error {
+	ctx, cancel := context.WithTimeout(context.Background(), stopTimeout)
+	defer cancel()
+
+	return opampClient.Stop(ctx)
+}
+
 func writeSummary(path string, result summary) error {
 	if path == "" {
 		return nil
@@ -300,13 +310,13 @@ func runCollector(
 	case connected = <-connectResult:
 	case <-ctx.Done():
 		counters.cancelled.Add(1)
-		_ = opampClient.Stop(context.Background())
+		_ = stopCollector(opampClient)
 		return
 	case <-time.After(connectTimeout):
 	}
 	if !connected {
 		counters.failed.Add(1)
-		_ = opampClient.Stop(context.Background())
+		_ = stopCollector(opampClient)
 		return
 	}
 
@@ -316,7 +326,7 @@ func runCollector(
 	case <-stop:
 	case <-ctx.Done():
 	}
-	if err := opampClient.Stop(context.Background()); err != nil {
+	if err := stopCollector(opampClient); err != nil {
 		counters.stopFailed.Add(1)
 		return
 	}

@@ -26,12 +26,14 @@ Exhaustive community-server runtime reference. See [Configuration](../users/conf
 
 These variables are consumed only by `scripts/load-test-5000.sh`; they are not
 community-server runtime configuration. Use test-only values and never reuse
-production credentials for this scenario. The script ignores inherited
-database settings and always uses the local isolated Compose PostgreSQL DSN.
+production credentials for this scenario. `DB_DSN` is required as an intent
+guard, but its supplied value is ignored and replaced with the local isolated
+Compose PostgreSQL DSN.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `LOAD_TEST_CONFIRM` | Yes | — | Must be exactly `5000` before the script will start the 5,000 collector scenario. |
+| `DB_DSN` | Yes | — | Required intent guard. The supplied value is ignored and replaced with the fixed isolated Compose PostgreSQL DSN. |
 | `LOAD_TEST_RAMP` | No | `5m` | Go duration used to spread 5,000 client starts. |
 | `LOAD_TEST_HOLD` | No | `10m` | Go duration that keeps established connections open. |
 | `LOAD_TEST_OUTPUT_DIR` | No | system temporary directory | Directory for the JSON summary, Docker resource snapshot, PostgreSQL activity query, and filtered application errors. |
