@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	// Register pgx with database/sql for isolated PostgreSQL test schemas.
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

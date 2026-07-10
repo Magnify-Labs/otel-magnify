@@ -57,30 +57,34 @@ type counters struct {
 type collectorFunc func(context.Context, string, string, <-chan struct{}, *sync.WaitGroup, *sync.WaitGroup, *counters)
 
 func main() {
+	os.Exit(runMain())
+}
+
+func runMain() int {
 	config, err := parseConfig(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	result, runErr := run(ctx, config, os.Getenv("OPAMP_SHARED_SECRET"))
+	stop()
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 		fmt.Fprintln(os.Stderr, "write summary:", err)
-		os.Exit(1)
+		return 1
 	}
 	if runErr != nil {
 		fmt.Fprintln(os.Stderr, runErr)
-		os.Exit(1)
+		return 1
 	}
 	if result.Interrupted {
-		os.Exit(130)
+		return 130
 	}
 	if result.Failed != 0 || result.Cancelled != 0 || result.StopFailed != 0 || result.Connected != result.Attempted || result.Disconnected != result.Connected {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func parseConfig(args []string) (config, error) {
@@ -223,7 +227,10 @@ func writeSummary(path string, result summary) error {
 		return err
 	}
 	temporaryPath := file.Name()
-	defer os.Remove(temporaryPath)
+	defer func() {
+		// #nosec G703 -- CreateTemp owns this temporary path.
+		_ = os.Remove(temporaryPath)
+	}()
 
 	if err := json.NewEncoder(file).Encode(result); err != nil {
 		_ = file.Close()
@@ -232,6 +239,7 @@ func writeSummary(path string, result summary) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
+	// #nosec G703 -- the operator supplies the ready-file destination.
 	return os.Rename(temporaryPath, path)
 }
 

@@ -86,9 +86,9 @@ func TestRunStopsConnectedCollectorsWhenContextIsCancelled(t *testing.T) {
 	result := make(chan summary, 1)
 	go func() {
 		result <- runWithCollector(ctx, config{collectors: 1, hold: time.Hour}, "", func(
-			ctx context.Context,
-			endpoint string,
-			sharedSecret string,
+			_ context.Context,
+			_ string,
+			_ string,
 			stop <-chan struct{},
 			readyGroup *sync.WaitGroup,
 			workers *sync.WaitGroup,
