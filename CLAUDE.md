@@ -25,7 +25,7 @@ Go module `github.com/magnify-labs/otel-magnify` (lives at the repo root — `go
 
 ```bash
 # Backend
-go test ./...
+TEST_POSTGRES_DSN='postgres://user:password@host:5432/magnify_test?sslmode=disable' go test ./...
 go build ./cmd/server/
 
 # Frontend

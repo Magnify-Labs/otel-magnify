@@ -8,7 +8,7 @@ The Go module lives at the repository root:
 
 ```bash
 go version
-go test ./...
+TEST_POSTGRES_DSN='postgres://user:password@host:5432/magnify_test?sslmode=disable' go test ./...
 ```
 
 Use the Go toolchain declared in `go.mod`; do not rely on older minimum versions from stale screenshots or blog posts.
