@@ -1,8 +1,8 @@
 name: release
 
 on:
-  push:
-    tags: ['v*.*.*']
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       image_digest:
@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-image:
     name: Build + push multi-arch image
-    if: github.event_name == 'push'
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -34,6 +34,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          ref: ${{ github.event.release.tag_name }}
 
       - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -95,7 +96,7 @@ jobs:
         env:
           BUILT_DIGEST: ${{ needs.build-image.outputs.digest }}
           INPUT_DIGEST: ${{ inputs.image_digest }}
-          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           image_digest="${BUILT_DIGEST:-$INPUT_DIGEST}"
