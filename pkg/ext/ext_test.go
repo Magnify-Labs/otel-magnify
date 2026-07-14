@@ -30,6 +30,7 @@ func TestUserInfoContextRoundTrip(t *testing.T) {
 
 	if got == nil {
 		t.Fatal("expected UserInfo, got nil")
+		return
 	}
 	if got.UserID != info.UserID {
 		t.Errorf("UserID = %q, want %q", got.UserID, info.UserID)

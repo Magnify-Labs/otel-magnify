@@ -243,7 +243,6 @@ func TestCreateInitialAdmin_ConcurrentStartsCreateExactlyOneAdministrator(t *tes
 		{ID: "concurrent-admin-001", Email: "first@example.invalid", PasswordHash: "first-password-hash"},
 		{ID: "concurrent-admin-002", Email: "second@example.invalid", PasswordHash: "second-password-hash"},
 	} {
-		user := user
 		go func() {
 			<-start
 			created, err := db.CreateInitialAdmin(user)
