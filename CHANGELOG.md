@@ -1,6 +1,38 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## v0.7.0 — 2026-07-14
+
+### Bug Fixes
+- Use database lifetime fallback
+- Isolate Helm PostgreSQL secret sources
+- Harden load test evidence collection
+- Harden PostgreSQL deployment migration
+- Satisfy PostgreSQL lint checks
+
+
+### CI/CD
+- Bump Go toolchain to 1.25.12
+
+
+### Documentation
+- Require PostgreSQL test DSN
+
+
+### Features
+- Reorganize configs page (#317)
+- Require PostgreSQL deployments
+
+
+### Refactoring
+- Make PostgreSQL the community database
+
+
+### Testing
+- Add five thousand collector load scenario
+- Harden five thousand collector load scenario
+
+
 ## v0.6.0 — 2026-07-09
 
 ### Bug Fixes
@@ -80,6 +112,7 @@ All notable changes to this project are documented here.
 - Expand developer API and deployment guidance
 - Add P2 remediation gate report (#309)
 - Refresh workflow and hygiene docs (#310)
+- Update changelog for v0.6.0
 
 
 ### Features
