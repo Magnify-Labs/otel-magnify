@@ -3,6 +3,16 @@ name: release
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: Digest of the already-published image to scan and sign
+        required: true
+        type: string
+      release_tag:
+        description: Existing GitHub release tag to receive the SBOMs
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,6 +20,7 @@ permissions:
 jobs:
   build-image:
     name: Build + push multi-arch image
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -61,6 +72,9 @@ jobs:
   trivy-gate:
     name: Trivy CRITICAL gate on built image
     needs: build-image
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' || needs.build-image.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -69,10 +83,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/otel-magnify@${{ needs.build-image.outputs.digest }}
+          image-ref: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
           severity: CRITICAL
           exit-code: '1'
           ignore-unfixed: true
@@ -81,6 +101,9 @@ jobs:
   sbom-and-sign:
     name: SBOM + cosign sign
     needs: build-image
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' || needs.build-image.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write          # upload SBOMs to the GitHub Release
@@ -92,6 +115,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
@@ -100,25 +130,25 @@ jobs:
 
       - name: Generate SBOM (SPDX)
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository_owner }}/otel-magnify@${{ needs.build-image.outputs.digest }}
+          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
         run: |
           syft "$IMAGE_REF" -o spdx-json=otel-magnify.spdx.json
 
       - name: Generate SBOM (CycloneDX)
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository_owner }}/otel-magnify@${{ needs.build-image.outputs.digest }}
+          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
         run: |
           syft "$IMAGE_REF" -o cyclonedx-json=otel-magnify.cyclonedx.json
 
       - name: Sign image (cosign keyless)
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository_owner }}/otel-magnify@${{ needs.build-image.outputs.digest }}
+          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
         run: |
           cosign sign --yes "$IMAGE_REF"
 
       - name: Attest SBOM (SPDX)
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository_owner }}/otel-magnify@${{ needs.build-image.outputs.digest }}
+          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
         run: |
           cosign attest --yes \
             --predicate otel-magnify.spdx.json \
@@ -128,7 +158,7 @@ jobs:
       - name: Attach SBOMs to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           gh release upload "$TAG" \
             otel-magnify.spdx.json \
