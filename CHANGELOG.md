@@ -1,6 +1,21 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## v0.7.1 — 2026-07-14
+
+### Bug Fixes
+- Avoid duplicate release SBOM attestation
+- Gate release signing on image verification
+- Resolve release verification without checkout
+- Pin release artifacts to published commits
+- Secure the community activation path (#324)
+
+
+### CI/CD
+- Recover release artifact scanning
+- Run releases after publication
+
+
 ## v0.7.0 — 2026-07-14
 
 ### Bug Fixes
@@ -17,6 +32,7 @@ All notable changes to this project are documented here.
 
 ### Documentation
 - Require PostgreSQL test DSN
+- Update changelog for v0.7.0
 
 
 ### Features
