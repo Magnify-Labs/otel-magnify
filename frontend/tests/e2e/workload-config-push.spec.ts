@@ -2851,10 +2851,13 @@ test('dynamic all-capable preview stays preview-only and does not push bulk targ
   expect(pushRequestCount).toBe(0)
 })
 
-test('single collector scope still generates a plan and submits the workload config push', async ({
+test('community features generate a plan and submit the governed workload config push', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockFeatures(page, {
+    'config_safety.approvals': true,
+    'config_safety.policy_preview': true,
+  })
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])

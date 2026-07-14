@@ -1,5 +1,6 @@
 services:
   otel-magnify:
+    image: ${OTEL_MAGNIFY_IMAGE:-otel-magnify:local}
     build: .
     ports:
       - "8080:8080"
@@ -17,6 +18,26 @@ services:
       MIN_AGENT_VERSION: ${MIN_AGENT_VERSION:-}
     depends_on:
       postgres:
+        condition: service_healthy
+
+  activation-agent:
+    profiles: [activation]
+    image: otel-magnify-activation-agent:local
+    build:
+      context: .
+      dockerfile: cmd/sdkagent/Dockerfile
+    command:
+      - --endpoint
+      - ws://otel-magnify:4320/v1/opamp
+      - --name
+      - otelcol-activation-demo
+      - --version
+      - 0.1.0
+      - --env
+      - activation
+      - --accept-remote-config
+    depends_on:
+      otel-magnify:
         condition: service_healthy
 
   postgres:

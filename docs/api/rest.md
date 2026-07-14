@@ -65,7 +65,7 @@ Feature-gated endpoints return `403` with `code=feature_disabled` when their ser
 Request:
 
 ```json
-{ "email": "admin@local", "password": "change-me" }
+{ "email": "<bootstrap-email>", "password": "<bootstrap-password>" }
 ```
 
 Response:
@@ -101,10 +101,15 @@ Edition binaries may replace or extend this list through server options.
 
 ### `GET /api/features`
 
-Default community response:
+Community response:
 
 ```json
-{ "features": {} }
+{
+  "features": {
+    "config_safety.approvals": true,
+    "config_safety.policy_preview": true
+  }
+}
 ```
 
 Feature flags are public discovery metadata. Protected APIs must still enforce auth and RBAC.
@@ -323,7 +328,7 @@ Returns the current user's identity, groups, permissions, and preferences. This 
 Request:
 
 ```json
-{ "current_password": "old-password", "new_password": "new-password-at-least-12" }
+{ "current_password": "<current-password>", "new_password": "<new-random-password>" }
 ```
 
 The new password must be at least 12 characters and must differ from the current password.

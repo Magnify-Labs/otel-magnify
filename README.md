@@ -23,7 +23,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 ## Features
 
 - **Workload inventory** — real-time view of every connected workload (Kubernetes Deployment/DaemonSet/StatefulSet/Job/CronJob, or host+service for non-K8s collectors and SDK agents), with status, version, labels, and live instance count
-- **Remote config push** — edit YAML configs in-browser and push them to workloads via OpAMP; new pods inherit the active config on connect (P.2 auto-push)
+- **Governed remote config** — request, approve, and push YAML configs to compatible workloads via OpAMP; new instances inherit the active config on connect
 - **Activity log** — append-only record of pod connect/disconnect/version transitions, per workload
 - **Alert engine** — built-in rules for workload downtime, config drift (pushed config not applied), and version-outdated checks; webhook notifier for external delivery
 - **Real-time updates** — WebSocket fan-out keeps the dashboard live without polling
@@ -71,16 +71,56 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 
 ### Prerequisites
 
-- Go 1.25.12+
-- Node.js 20+
-- PostgreSQL 16+
+- Docker with Docker Compose v2
+- `curl`, `jq`, and `openssl` for the automated activation smoke test
+
+### Docker Compose activation
+
+From a source checkout, create fresh credentials without storing them in a
+file or copying a sample password:
+
+```bash
+export JWT_SECRET="$(openssl rand -hex 32)"
+export POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+export SEED_ADMIN_EMAIL="admin@example.invalid"
+read -r -s -p "Initial admin password (minimum 12 characters): " SEED_ADMIN_PASSWORD
+echo
+export SEED_ADMIN_PASSWORD
+
+docker compose --profile activation up --detach --build
+```
+
+Open `http://localhost:8080`, sign in, select `otelcol-activation-demo`, edit
+the configuration, then use **Validate for this collector**, **Generate safety
+plan**, **Request approval**, **Approve request**, and **Push approved config**.
+The `activation-agent` service is a local OpAMP protocol simulator; it is not
+an OpenTelemetry Collector and must not be used as one in production.
+
+After the first successful login, remove the bootstrap credential from the
+application container environment:
+
+```bash
+unset SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD
+docker compose --profile activation up --detach --force-recreate otel-magnify
+```
+
+The complete cold path is automated and fails if it exceeds 15 minutes:
+
+```bash
+./scripts/activation-smoke.sh
+```
+
+The script generates ephemeral credentials, starts a fresh PostgreSQL volume,
+creates and logs in as the first admin, discovers a workload, performs a
+governed config push, verifies the OpAMP `applied` status, and cleans up.
 
 ### Development
 
 ```bash
 # Backend
-DB_DSN="postgres://magnify:***@localhost:5432/magnify?sslmode=require" \
-  JWT_SECRET=dev-secret-at-least-32-bytes-long go run ./cmd/server/
+export JWT_SECRET="$(openssl rand -hex 32)"
+DB_DSN="${DB_DSN:?set DB_DSN through your local secret workflow}" \
+  go run ./cmd/server/
 
 # Frontend (separate terminal)
 cd frontend
@@ -90,23 +130,6 @@ npm run dev
 
 The API runs on `:8080`, OpAMP on `:4320`, frontend dev server on `:5173` (proxied to backend).
 
-### Seed an admin user
-
-```bash
-DB_DSN="postgres://magnify:***@localhost:5432/magnify?sslmode=require" \
-  SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=changeme \
-  JWT_SECRET=dev-secret-at-least-32-bytes-long go run ./cmd/server/
-```
-
-### Docker Compose
-
-```bash
-JWT_SECRET="$(openssl rand -hex 32)" \
-  POSTGRES_PASSWORD="$(openssl rand -hex 24)" docker compose up --build
-```
-
-App available at `http://localhost:8080`.
-
 ### 5,000 collector load test
 
 The local-only OpAMP benchmark requires an explicit confirmation and test-only
@@ -114,10 +137,10 @@ configuration values. It creates an isolated Compose project and never removes
 Docker volumes:
 
 ```bash
+export JWT_SECRET="$(openssl rand -hex 32)"
+export OPAMP_SHARED_SECRET="$(openssl rand -hex 32)"
 LOAD_TEST_CONFIRM=5000 \
   DB_DSN='required-but-ignored' \
-  JWT_SECRET='load-test-jwt-secret-at-least-32-bytes' \
-  OPAMP_SHARED_SECRET='load-test-opamp-token' \
   ./scripts/load-test-5000.sh
 ```
 
@@ -130,10 +153,18 @@ timing controls, output artifacts, and acceptance criteria.
 ### Kubernetes (Helm)
 
 ```bash
+read -r -p "Released image version (without v prefix): " otel_magnify_version
 helm install magnify helm/otel-magnify/ \
-  --set jwtSecret="$(openssl rand -hex 32)" \
-  --set database.dsn="postgres://user:***@host:5432/magnify?sslmode=require"
+  --set image.tag="${otel_magnify_version:?pin a released image version}" \
+  --set database.existingSecret=magnify-postgres \
+  --set auth.existingSecret=magnify-auth \
+  --set auth.seedAdmin.enabled=true \
+  --set auth.seedAdmin.existingSecret=magnify-bootstrap
 ```
+
+Create those Secrets through a secret manager or the [documented bootstrap
+workflow](docs/users/installation.md#kubernetes-helm). Keep the durable JWT key
+separate from the removable first-admin bootstrap Secret.
 
 ## Configuration
 
@@ -149,82 +180,18 @@ All configuration via environment variables:
 | `OPAMP_ADDR` | `:4320` | OpAMP server listen address |
 | `JWT_SECRET` | *(required)* | Secret key for JWT signing |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
-| `SEED_ADMIN_EMAIL` | *(optional)* | Create admin user on startup |
-| `SEED_ADMIN_PASSWORD` | *(optional)* | Password for seed admin user |
+| `SEED_ADMIN_EMAIL` | *(optional)* | Bootstrap the first admin on an empty database; must be set with `SEED_ADMIN_PASSWORD` |
+| `SEED_ADMIN_PASSWORD` | *(optional)* | Bootstrap password, minimum 12 characters; remove after first login |
 
 ## Connecting Agents
 
 otel-magnify manages agents via the [OpAMP](https://opentelemetry.io/docs/specs/opamp/) protocol. Each agent must be configured to connect to the OpAMP WebSocket endpoint exposed on port `4320`.
 
-### OTel Collector
-
-Add the `opamp` extension to your Collector config and reference it in `service.extensions`:
-
-```yaml
-extensions:
-  opamp:
-    server:
-      ws:
-        endpoint: ws://<magnify-host>:4320/v1/opamp
-        tls:
-          insecure: true   # set to false with a valid certificate in production
-
-service:
-  extensions: [opamp]
-  pipelines:
-    traces:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [debug]
-```
-
-> The `opamp` extension is included in [opentelemetry-collector-contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib). Use `otel/opentelemetry-collector-contrib:0.98.0` or later.
-
-Sample configs ready to use are available in [`agents/`](agents/).
-
-### SDK Agent (Java / Python / Go)
-
-SDK agents connect the same way — point the OpAMP client to the WebSocket endpoint:
-
-**Java** (OpenTelemetry Java agent with OpAMP support):
-
-```properties
-otel.opamp.service.endpoint=ws://<magnify-host>:4320/v1/opamp
-```
-
-**Python** (`opamp-client` package):
-
-```python
-from opamp import OpAMPClient
-
-client = OpAMPClient(
-    server_url="ws://<magnify-host>:4320/v1/opamp",
-)
-client.start()
-```
-
-**Go** (`opamp-go` client):
-
-```go
-import "github.com/open-telemetry/opamp-go/client"
-
-c := client.NewWebSocket(nil)
-err := c.Start(context.Background(), client.StartSettings{
-    OpAMPServerURL: "ws://<magnify-host>:4320/v1/opamp",
-})
-```
-
-### Docker Compose (local demo)
-
-When running with `docker compose`, agents on the same Docker network reach the OpAMP server at `ws://otel-magnify:4320/v1/opamp`:
-
-```bash
-docker run -d --name collector-demo --network otel-magnify_default \
-  -v $(pwd)/agents/collector-prod-eu.yaml:/etc/otelcol-contrib/config.yaml \
-  otel/opentelemetry-collector-contrib:0.98.0
-```
-
-Once connected, agents are grouped into workloads and appear automatically in the **Inventory** page. See [Workload identity](https://magnify-labs.github.io/otel-magnify/users/connecting-agents/#workload-identity) for how the grouping works.
+The Collector's built-in OpAMP extension can report state but does not apply
+remote configuration. Use the OpAMP Supervisor for a real remotely managed
+Collector. For the local activation path, use the Compose `activation` profile
+described above. See [Connecting agents](docs/users/connecting-agents.md) for
+the supported distinction and workload identity rules.
 
 ## API Endpoints
 
@@ -236,7 +203,9 @@ Once connected, agents are grouped into workloads and appear automatically in th
 | `GET` | `/api/workloads/:id/instances` | Yes | Live OpAMP-connected pods for the workload |
 | `GET` | `/api/workloads/:id/events` | Yes | Append-only pod-lifecycle log (Activity tab) |
 | `GET` | `/api/workloads/:id/configs` | Yes | Workload config push history |
-| `POST` | `/api/workloads/:id/config` | Yes | Push config to workload |
+| `POST` | `/api/workloads/:id/config/approvals` | Yes | Request approval for a config draft |
+| `POST` | `/api/workloads/:id/config/approvals/:approval_id/approve` | Yes | Approve a pending config draft |
+| `POST` | `/api/workloads/:id/config/approvals/:approval_id/push` | Yes | Push an approved config to the workload |
 | `GET` | `/api/configs` | Yes | List all configs |
 | `POST` | `/api/configs` | Yes | Create a config |
 | `GET` | `/api/configs/:id` | Yes | Get config by ID |

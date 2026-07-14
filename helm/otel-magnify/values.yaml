@@ -35,6 +35,19 @@ database:
 config:
   corsOrigins: ""
 
+# Reference an operator-managed Secret for the durable JWT signing key.
+# The documented installation path uses this instead of inline values.
+auth:
+  existingSecret: ""
+  jwtSecretKey: jwt-secret
+  seedAdmin:
+    enabled: false
+    # Keep bootstrap credentials in a separate, removable Secret.
+    existingSecret: ""
+    emailKey: seed-admin-email
+    passwordKey: seed-admin-password
+
+# Legacy inline fallback. Prefer auth.existingSecret for new installations.
 jwtSecret: ""
 # Optional OpAMP bearer token. Leave empty only for local/trusted runs; set for
 # production, shared, or exposed OpAMP boundaries and configure agents to send

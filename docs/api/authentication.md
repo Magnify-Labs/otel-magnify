@@ -33,7 +33,7 @@ otel-magnify's community server uses email/password login backed by HS256 JWTs. 
    ```
 
    ```json
-   { "email": "admin@local", "password": "change-me" }
+   { "email": "<bootstrap-email>", "password": "<bootstrap-password>" }
    ```
 
 3. Store the returned token client-side for API calls:
@@ -97,11 +97,17 @@ Browsers cannot set custom `Authorization` headers during WebSocket handshakes, 
 
 ## Seeded admin bootstrap
 
-On first start, operators can set both:
+On first start, operators can generate or enter a bootstrap credential without
+putting a reusable example password in configuration:
 
 ```bash
-SEED_ADMIN_EMAIL=admin@local
-SEED_ADMIN_PASSWORD=change-me-on-first-login
+export SEED_ADMIN_EMAIL="admin@example.invalid"
+read -r -s -p "Initial admin password (minimum 12 characters): " SEED_ADMIN_PASSWORD
+echo
+export SEED_ADMIN_PASSWORD
 ```
 
-The bootstrapper creates the user only when the email does not already exist and attaches it to the `administrator` system group. Use this for initial setup only, then rotate the password through the application or your operational process.
+The bootstrapper requires both variables and creates the administrator only
+when the users table is empty. Reusing the same existing administrator email
+is idempotent and never resets its password; other conflicts fail startup.
+Remove both variables after the first successful login.

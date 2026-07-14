@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/magnify-labs/otel-magnify/internal/alerts"
@@ -84,7 +85,9 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	log.Println("Database migrations applied")
 
-	seedAdmin(db)
+	if err := seedAdmin(db); err != nil {
+		return fmt.Errorf("seed admin: %w", err)
+	}
 
 	a := auth.New(cfg.JWTSecret)
 
@@ -155,41 +158,44 @@ func validateJWTSecret(secret string) error {
 	return nil
 }
 
-// seedAdmin creates an administrator user on startup when SEED_ADMIN_EMAIL
-// and SEED_ADMIN_PASSWORD are set. The user is attached to the system
-// `administrator` group — membership is what grants privileges now.
-func seedAdmin(db ext.Store) {
-	email := os.Getenv("SEED_ADMIN_EMAIL")
+// seedAdmin creates the first administrator when both seed variables are set.
+// Existing administrator credentials are never reset on subsequent starts.
+func seedAdmin(db *store.DB) error {
+	email := strings.TrimSpace(os.Getenv("SEED_ADMIN_EMAIL"))
 	password := os.Getenv("SEED_ADMIN_PASSWORD")
-	if email == "" || password == "" {
-		return
+	if email == "" && password == "" {
+		return nil
 	}
-
-	if _, err := db.GetUserByEmail(email); err == nil {
-		//nolint:gosec // SEED_ADMIN_EMAIL is operator-supplied at deploy time, not user input
-		log.Printf("Seed admin: user %s already exists, skipping", email)
-		return
+	if email == "" {
+		return errors.New("SEED_ADMIN_EMAIL is required when SEED_ADMIN_PASSWORD is set")
+	}
+	if password == "" {
+		return errors.New("SEED_ADMIN_PASSWORD is required when SEED_ADMIN_EMAIL is set")
+	}
+	if len(password) < 12 {
+		return errors.New("SEED_ADMIN_PASSWORD must be at least 12 characters")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
-		log.Printf("Seed admin: failed to hash password: %v", err)
-		return
+		return fmt.Errorf("hash initial password: %w", err)
 	}
 
 	user := models.User{
-		ID:           "admin-seed-001",
+		ID:           uuid.NewString(),
 		Email:        email,
 		PasswordHash: string(hash),
 	}
-	if err := db.CreateUser(user); err != nil {
-		log.Printf("Seed admin: failed to create user: %v", err)
-		return
+	created, err := db.CreateInitialAdmin(user)
+	if err != nil {
+		return err
 	}
-	if err := db.AttachUserToGroupByName(user.ID, "administrator"); err != nil {
-		log.Printf("Seed admin: failed to attach admin group: %v", err)
-		return
+	if created {
+		//nolint:gosec // SEED_ADMIN_EMAIL is operator-supplied at deploy time, not user input
+		log.Printf("Seed admin: created user %s in group administrator", email)
+	} else {
+		//nolint:gosec // SEED_ADMIN_EMAIL is operator-supplied at deploy time, not user input
+		log.Printf("Seed admin: user %s already exists in group administrator, skipping", email)
 	}
-	//nolint:gosec // SEED_ADMIN_EMAIL is operator-supplied at deploy time, not user input
-	log.Printf("Seed admin: created user %s in group administrator", email)
+	return nil
 }

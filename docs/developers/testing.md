@@ -7,7 +7,7 @@ Use this page as the quick pre-PR checklist for local verification. Run the smal
 The Go module lives at the repository root and currently declares Go `1.25.12` in `go.mod`.
 
 ```bash
-TEST_POSTGRES_DSN='postgres://user:password@host:5432/magnify_test?sslmode=disable' go test ./...
+TEST_POSTGRES_DSN="${TEST_POSTGRES_DSN:?set a disposable PostgreSQL DSN}" go test ./...
 go build ./...
 ```
 
@@ -50,6 +50,8 @@ npm run test:unit
 
 ## End-to-end and integration checks
 
+- Cold Community activation: `./scripts/activation-smoke.sh` builds an isolated Compose stack and verifies bootstrap, login, workload discovery, governed push, and the final OpAMP `applied` status within 15 minutes.
+- Helm activation contract: `./scripts/helm-activation-test.sh` verifies Secret references and fail-closed rendering without exposing secret values.
 - Mocked Playwright E2E: `cd frontend && npm run test:e2e`.
 - Real-backend Playwright flow: `./scripts/e2e-real.sh` or `cd frontend && npm run test:e2e:real` when you intentionally want Docker-backed services.
 - SDK agent simulator: `cmd/sdkagent/` exercises the OpAMP pipeline without a real Collector.

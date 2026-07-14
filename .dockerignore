@@ -1,0 +1,12 @@
+.git
+.github
+.worktrees
+.env
+.env.*
+*.key
+*.pem
+site
+frontend/dist
+frontend/node_modules
+frontend/playwright-report
+frontend/test-results

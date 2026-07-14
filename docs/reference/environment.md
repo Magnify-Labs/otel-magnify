@@ -13,8 +13,8 @@ Exhaustive community-server runtime reference. See [Configuration](../users/conf
 | `DB_MAX_OPEN_CONNS` | No | `40` | Store | Maximum PostgreSQL connections held open. |
 | `DB_MAX_IDLE_CONNS` | No | `10` | Store | Maximum idle PostgreSQL connections retained. |
 | `DB_CONN_MAX_LIFETIME_SECONDS` | No | `1800` | Store | Maximum lifetime for a pooled connection in seconds. |
-| `SEED_ADMIN_EMAIL` | No | — | Bootstrap | If set with `SEED_ADMIN_PASSWORD`, creates a first admin user on startup when that email does not already exist. |
-| `SEED_ADMIN_PASSWORD` | No | — | Bootstrap | Password for the seeded admin. Use only for initial bootstrap, then rotate through the UI or your operational process. |
+| `SEED_ADMIN_EMAIL` | No | — | Bootstrap | First-admin email. Must be set with `SEED_ADMIN_PASSWORD`; bootstrap only creates a user when the users table is empty. |
+| `SEED_ADMIN_PASSWORD` | No | — | Bootstrap | First-admin password, minimum 12 characters. Remove both seed variables after the first successful login. |
 | `WEBHOOK_URL` | No | — | Alerts | HTTP endpoint called when a new alert fires. Treat as sensitive if it contains embedded credentials. |
 | `MIN_AGENT_VERSION` | No | — | Alerts | Minimum `service.version`; workloads reporting a lower semantic version are flagged by the alert engine. Empty disables this rule. |
 | `WORKLOAD_DISCONNECT_GRACE_SECONDS` | No | `120` | Workloads | Seconds a workload remains `connected` after its last live instance disconnects, absorbing rolling updates and short restarts. Invalid or non-positive values fall back to one second. |
@@ -42,10 +42,15 @@ Compose PostgreSQL DSN.
 
 Feature flags are not configured through environment variables in the community binary. They are static server options registered by the binary with `server.WithFeatures(...)`, optionally backed by an edition `WithLicenseChecker(...)`, and exposed by the public endpoint `GET /api/features`.
 
-Default community response:
+Community response:
 
 ```json
-{ "features": {} }
+{
+  "features": {
+    "config_safety.approvals": true,
+    "config_safety.policy_preview": true
+  }
+}
 ```
 
 Edition or extension binaries may advertise capabilities such as:
