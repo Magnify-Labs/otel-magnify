@@ -146,14 +146,9 @@ jobs:
         run: |
           cosign sign --yes "$IMAGE_REF"
 
-      - name: Attest SBOM (SPDX)
-        env:
-          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
-        run: |
-          cosign attest --yes \
-            --predicate otel-magnify.spdx.json \
-            --type spdx \
-            "$IMAGE_REF"
+      # Buildx publishes an SBOM attestation through `sbom: true`; attaching
+      # the Syft documents below makes the same SBOM formats available from
+      # the GitHub release without a second, incompatible attestation format.
 
       - name: Attach SBOMs to GitHub Release
         env:
