@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-image:
     name: Build + push multi-arch image
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' && !github.event.release.prerelease
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.sha }}
 
       - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -104,7 +104,11 @@ jobs:
 
           [[ "$image_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           [[ "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          gh release view "$release_tag" --repo "$GITHUB_REPOSITORY"
+          published_at="$(gh release view "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,publishedAt \
+            --jq 'select(.isDraft == false and .isPrerelease == false and .publishedAt != null) | .publishedAt')"
+          test -n "$published_at"
 
           image_tag="${release_tag#v}"
           published_digest="$(docker buildx imagetools inspect \
