@@ -3,11 +3,21 @@ kind: Deployment
 {{- if not (or .Values.database.existingSecret .Values.database.dsn) }}
 {{- fail "set database.existingSecret or database.dsn to provide DB_DSN" }}
 {{- end }}
-{{- $jwtSecret := required "set jwtSecret to provide JWT_SECRET" .Values.jwtSecret }}
+{{- if not (or .Values.auth.existingSecret .Values.jwtSecret) }}
+{{- fail "set auth.existingSecret or jwtSecret to provide JWT_SECRET" }}
+{{- end }}
+{{- if and .Values.auth.seedAdmin.enabled (not .Values.auth.seedAdmin.existingSecret) }}
+{{- fail "set auth.seedAdmin.existingSecret when auth.seedAdmin.enabled=true" }}
+{{- end }}
 {{- $databaseSecretName := .Values.database.existingSecret | default (printf "%s-secret" .Release.Name) }}
 {{- $databaseSecretKey := .Values.database.existingSecretKey }}
 {{- if not .Values.database.existingSecret }}
 {{- $databaseSecretKey = "db-dsn" }}
+{{- end }}
+{{- $authSecretName := .Values.auth.existingSecret | default (printf "%s-secret" .Release.Name) }}
+{{- $jwtSecretKey := .Values.auth.jwtSecretKey }}
+{{- if not .Values.auth.existingSecret }}
+{{- $jwtSecretKey = "jwt-secret" }}
 {{- end }}
 metadata:
   name: {{ .Release.Name }}
@@ -53,17 +63,33 @@ spec:
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-secret
-                  key: jwt-secret
+                  name: {{ $authSecretName }}
+                  key: {{ $jwtSecretKey | quote }}
+            {{- if .Values.auth.seedAdmin.enabled }}
+            - name: SEED_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.seedAdmin.existingSecret }}
+                  key: {{ .Values.auth.seedAdmin.emailKey | quote }}
+            - name: SEED_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.seedAdmin.existingSecret }}
+                  key: {{ .Values.auth.seedAdmin.passwordKey | quote }}
+            {{- end }}
             - name: LISTEN_ADDR
               value: ":8080"
             - name: OPAMP_ADDR
               value: ":4320"
             - name: OPAMP_SHARED_SECRET
+              {{- if .Values.opampSharedSecret }}
               valueFrom:
                 secretKeyRef:
                   name: {{ .Release.Name }}-secret
                   key: opamp-shared-secret
+              {{- else }}
+              value: ""
+              {{- end }}
             - name: CORS_ORIGINS
               value: {{ .Values.config.corsOrigins | quote }}
           resources:

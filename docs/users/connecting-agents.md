@@ -42,18 +42,17 @@ extensions:
     server:
       ws:
         endpoint: ws://magnify.example.com:4320/v1/opamp
-    instance_uid: collector-prod-eu-01
-    capabilities:
-      reports_effective_config: true
-      reports_remote_config: true
-      reports_health: true
-      accepts_remote_config: true
 
 service:
   extensions: [opamp]
   pipelines:
     # ...
 ```
+
+This built-in extension provides inventory and status reporting. It does not
+apply remote configuration, so otel-magnify records
+`accepts_remote_config=false` and rejects governed pushes to this workload.
+Use the OpAMP Supervisor below for a real Collector that must apply config.
 
 Sample configs are available in the repo under `agents/collector-*.yaml` — they ship with the `resourcedetection` and `resource` processors pre-wired so the collector is fingerprinted correctly out of the box.
 
@@ -130,11 +129,27 @@ distroless and otherwise has no writable path for the supervisor storage dir.
 
 ## Simulating an SDK agent
 
-For development and testing, the repo ships a small simulator at `cmd/sdkagent/` that connects as a fake SDK agent.
+For development and testing, the repo ships a small OpAMP simulator at
+`cmd/sdkagent/`. By default it reports status only. The
+`--accept-remote-config` flag opts into acknowledging remote config as applied;
+it does not launch or reconfigure a Collector process.
 
 ```bash
-go run ./cmd/sdkagent/ --endpoint ws://localhost:4320/v1/opamp --name demo-sdk-agent
+go run ./cmd/sdkagent/ \
+  --endpoint ws://localhost:4320/v1/opamp \
+  --name otelcol-activation-demo \
+  --accept-remote-config
 ```
+
+The reproducible local activation path starts this simulator through an
+isolated Compose profile and checks the full governed flow:
+
+```bash
+./scripts/activation-smoke.sh
+```
+
+Use the Supervisor, not this simulator, to prove that a production Collector
+can restart or reload with a candidate configuration.
 
 ## What otel-magnify captures from an agent
 

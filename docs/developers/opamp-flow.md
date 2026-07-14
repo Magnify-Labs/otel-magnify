@@ -48,9 +48,14 @@ sequenceDiagram
     participant S as Store
     participant WS as WebSocket hub
 
-    U->>API: POST /api/workloads/{id}/config (raw YAML)
-    API->>API: Validate against AvailableComponents
-    API->>S: Insert workload_configs row (status=pending)
+    U->>API: POST /api/workloads/{id}/config/approvals
+    API->>API: Validate draft against AvailableComponents
+    API->>S: Insert approval request (status=pending)
+    U->>API: POST .../{approval_id}/approve
+    API->>S: Mark approval approved
+    U->>API: POST .../{approval_id}/push
+    API->>API: Revalidate draft and config policy
+    API->>S: Insert workload_configs row (status=submitted)
     API->>O: Trigger push for workload {id}
     O->>A: ServerToAgent{RemoteConfig} (fan-out to every live instance)
     A->>O: AgentToServer{RemoteConfigStatus: APPLYING → APPLIED}

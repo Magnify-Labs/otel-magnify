@@ -8,7 +8,7 @@ The Go module lives at the repository root:
 
 ```bash
 go version
-TEST_POSTGRES_DSN='postgres://user:password@host:5432/magnify_test?sslmode=disable' go test ./...
+TEST_POSTGRES_DSN="${TEST_POSTGRES_DSN:?set a disposable PostgreSQL DSN}" go test ./...
 ```
 
 Use the Go toolchain declared in `go.mod`; do not rely on older minimum versions from stale screenshots or blog posts.
@@ -16,10 +16,12 @@ Use the Go toolchain declared in `go.mod`; do not rely on older minimum versions
 The production binary embeds a pre-built frontend, but backend-only development can run without rebuilding frontend assets:
 
 ```bash
-DB_DSN="postgres://magnify:***@localhost:5432/magnify?sslmode=require" \
-  JWT_SECRET=dev-secret-at-least-32-bytes-long \
-  SEED_ADMIN_EMAIL=admin@local SEED_ADMIN_PASSWORD=change-me-in-dev \
-  go run ./cmd/server/
+export JWT_SECRET="$(openssl rand -hex 32)"
+export SEED_ADMIN_EMAIL="admin@example.invalid"
+read -r -s -p "Initial admin password (minimum 12 characters): " SEED_ADMIN_PASSWORD
+echo
+export SEED_ADMIN_PASSWORD
+DB_DSN="${DB_DSN:?set DB_DSN through your local secret workflow}" go run ./cmd/server/
 ```
 
 Default listeners:
@@ -55,7 +57,7 @@ For frontend development, run Vite separately from `frontend/`; the default back
 1. Load `internal/config.Config` from environment variables.
 2. Fail closed when `JWT_SECRET` is unset, the placeholder is used, or the secret is too short.
 3. Require `DB_DSN`, open the PostgreSQL store, and run migrations.
-4. Optionally seed the first admin user from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
+4. Optionally create the first administrator, atomically and only on an empty users table, from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
 5. Construct `pkg/server.Server` with any extension options supplied by the binary.
 6. Start the API listener, OpAMP listener, alert engine, workload janitor, and WebSocket hub.
 
@@ -84,7 +86,10 @@ The public `GET /api/features` endpoint always returns a JSON object shaped as:
 { "features": { "sso.admin": true } }
 ```
 
-No flag is currently enabled by default in the community server, so the default response is `{ "features": {} }`. Flags are intentionally not secrets; protected feature pages and APIs must still enforce authentication and permissions.
+Community enables `config_safety.approvals` and its required UI dependency
+`config_safety.policy_preview` by default. The remaining Config Safety flags
+stay disabled. Flags are intentionally not secrets; protected feature pages
+and APIs must still enforce authentication and permissions.
 
 Current server-side feature gate names are defined in `internal/api/feature_gate.go`. Examples include `config_safety.approvals`, `config_safety.guided_rollback`, `config_safety.canary_rollout`, `config_safety.scoped_push`, `config_safety.drift_dashboard`, `config_safety.version_intelligence`, `config_safety.gitops_export`, `config_safety.policy_preview`, `reports.evidence_pack`, and `audit.viewer`.
 

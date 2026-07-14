@@ -46,10 +46,14 @@ Use placeholders in examples and store the real value in your deployment secret 
 
 | Variable | Description |
 |----------|-------------|
-| `SEED_ADMIN_EMAIL` | If set with `SEED_ADMIN_PASSWORD`, creates a first admin user on startup when that email does not already exist. |
-| `SEED_ADMIN_PASSWORD` | Password for the seeded admin. Use once, then rotate through the UI or your operational process. |
+| `SEED_ADMIN_EMAIL` | Bootstrap email for the first admin. Must be set with `SEED_ADMIN_PASSWORD`; partial configuration fails startup. |
+| `SEED_ADMIN_PASSWORD` | Bootstrap password, minimum 12 characters. Use once, then remove it from the runtime environment. |
 
-Remove seed variables after first bootstrap in shared environments.
+Bootstrap is fail-closed: it creates the administrator only when the users table
+is empty. A restart using the same existing administrator email is idempotent
+and does not change the stored password. A different existing user, or a user
+with the same email who is not an administrator, makes startup fail. Remove
+both seed variables after the first successful login.
 
 ## Alerting
 
@@ -75,13 +79,22 @@ Invalid or non-positive duration values fall back to safe defaults in code. For 
 
 Community otel-magnify does not expose runtime feature-flag environment variables. Feature flags are registered by a binary at construction time through `server.WithFeatures(...)` and surfaced by `GET /api/features`.
 
-The default community response is:
+The Community response is:
 
 ```json
-{ "features": {} }
+{
+  "features": {
+    "config_safety.approvals": true,
+    "config_safety.policy_preview": true
+  }
+}
 ```
 
-Edition binaries may expose flags such as `sso.admin`. Flags control discovery and UI rendering only; protected APIs still require bearer auth and RBAC permissions.
+Together, these flags enable the safety plan and request → approve → push
+workflow while direct config push remains disabled. Edition binaries may
+expose additional flags such as `sso.admin`. Flags control discovery and UI
+rendering only; protected APIs still require authentication and RBAC
+permissions.
 
 ## Secret handling
 

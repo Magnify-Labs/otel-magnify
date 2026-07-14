@@ -5,10 +5,17 @@ otel-magnify stores configurations centrally and pushes them to connected worklo
 ## Workflow
 
 1. Open a workload from the **Inventory** page.
-2. Edit the YAML in the embedded CodeMirror editor.
-3. Click **Validate** — the backend runs a light structural check and blocks the push if errors are found. Errors are listed inline.
-4. Click **Push** to send the configuration to every live instance of the workload.
-5. Each instance reports a `RemoteConfigStatus` — the UI aggregates them and updates live via WebSocket.
+2. Edit the YAML in the embedded CodeMirror editor and validate it for the selected collector.
+3. Generate the safety plan. The UI shows target compatibility, validation results, policy findings, and the pre-push risk score.
+4. Request approval with a target and a non-empty comment. The backend validates the draft again before storing a pending request.
+5. Approve the pending request. The draft is validated again so a stale or invalid stored draft cannot be approved.
+6. Push the approved request. The server revalidates it, evaluates config policy, and sends it to every compatible live instance of the workload.
+7. Each instance reports a `RemoteConfigStatus` — the UI aggregates the statuses and updates live via WebSocket.
+
+The legacy direct endpoint, `POST /api/workloads/{id}/config`, returns `410 Gone`.
+Community enables the governed request → approve → push path by default.
+The target workload must be connected and advertise
+`accepts_remote_config=true`.
 
 ## Validation
 
