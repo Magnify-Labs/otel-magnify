@@ -69,12 +69,55 @@ jobs:
           provenance: true
           sbom: true
 
-  trivy-gate:
-    name: Trivy CRITICAL gate on built image
+  verify-release-artifact:
+    name: Verify release artifact
     needs: build-image
     if: >-
       always() &&
       (github.event_name == 'workflow_dispatch' || needs.build-image.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      image_digest: ${{ steps.artifact.outputs.image_digest }}
+      release_tag: ${{ steps.artifact.outputs.release_tag }}
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve and verify release artifact
+        id: artifact
+        env:
+          BUILT_DIGEST: ${{ needs.build-image.outputs.digest }}
+          INPUT_DIGEST: ${{ inputs.image_digest }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image_digest="${BUILT_DIGEST:-$INPUT_DIGEST}"
+          release_tag="${RELEASE_TAG:-}"
+
+          [[ "$image_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release view "$release_tag"
+
+          image_tag="${release_tag#v}"
+          published_digest="$(docker buildx imagetools inspect \
+            "ghcr.io/magnify-labs/otel-magnify:${image_tag}" \
+            --format '{{.Manifest.Digest}}')"
+          test "$published_digest" = "$image_digest"
+
+          echo "image_digest=$image_digest" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+  trivy-gate:
+    name: Trivy CRITICAL gate on built image
+    needs: verify-release-artifact
+    if: always() && needs.verify-release-artifact.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -92,7 +135,7 @@ jobs:
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
+          image-ref: ghcr.io/magnify-labs/otel-magnify@${{ needs.verify-release-artifact.outputs.image_digest }}
           severity: CRITICAL
           exit-code: '1'
           ignore-unfixed: true
@@ -100,16 +143,16 @@ jobs:
 
   sbom-and-sign:
     name: SBOM + cosign sign
-    needs: build-image
+    needs: [verify-release-artifact, trivy-gate]
     if: >-
       always() &&
-      (github.event_name == 'workflow_dispatch' || needs.build-image.result == 'success')
+      needs.verify-release-artifact.result == 'success' &&
+      needs.trivy-gate.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write          # upload SBOMs to the GitHub Release
       packages: write          # cosign sign the image in ghcr.io
       id-token: write          # cosign keyless OIDC
-      attestations: write      # cosign attest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -130,19 +173,19 @@ jobs:
 
       - name: Generate SBOM (SPDX)
         env:
-          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
+          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ needs.verify-release-artifact.outputs.image_digest }}
         run: |
           syft "$IMAGE_REF" -o spdx-json=otel-magnify.spdx.json
 
       - name: Generate SBOM (CycloneDX)
         env:
-          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
+          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ needs.verify-release-artifact.outputs.image_digest }}
         run: |
           syft "$IMAGE_REF" -o cyclonedx-json=otel-magnify.cyclonedx.json
 
       - name: Sign image (cosign keyless)
         env:
-          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ inputs.image_digest || needs.build-image.outputs.digest }}
+          IMAGE_REF: ghcr.io/magnify-labs/otel-magnify@${{ needs.verify-release-artifact.outputs.image_digest }}
         run: |
           cosign sign --yes "$IMAGE_REF"
 
@@ -153,7 +196,7 @@ jobs:
       - name: Attach SBOMs to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.release_tag || github.ref_name }}
+          TAG: ${{ needs.verify-release-artifact.outputs.release_tag }}
         run: |
           gh release upload "$TAG" \
             otel-magnify.spdx.json \
