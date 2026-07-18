@@ -212,7 +212,8 @@ export default function Audit() {
   const { t } = useTranslation()
   const me = useStore((s) => s.me)
   const [searchParams, setSearchParams] = useSearchParams()
-  const { enabled: auditViewerEnabled, isLoading: auditViewerLoading } = useCapability('audit.viewer')
+  const { enabled: auditViewerEnabled, isLoading: auditViewerLoading } =
+    useCapability('audit.viewer')
   const canViewAudit = auditViewerEnabled && hasPerm(me?.groups, 'audit:view')
   const filters = useMemo(() => filtersFromSearch(searchParams), [searchParams])
   const auditFilters = useMemo(() => toAuditFilters(filters), [filters])

@@ -17,7 +17,9 @@ const DEFAULT_RECOMMENDED_COLLECTOR_VERSION = '0.100.0'
 
 export default function Dashboard() {
   const { t } = useTranslation()
-  const { enabled: versionIntelligenceEnabled } = useCapability('config_safety.version_intelligence')
+  const { enabled: versionIntelligenceEnabled } = useCapability(
+    'config_safety.version_intelligence',
+  )
   const workloadsQuery = useQuery({
     queryKey: ['workloads'],
     queryFn: () => workloadsAPI.list(),
