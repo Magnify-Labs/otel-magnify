@@ -13,13 +13,7 @@ export type PushStatus =
 export type InstancePushStatus = 'sent' | 'applying' | 'applied' | 'failed' | 'no_status'
 
 export type CanaryStatusValue =
-  | 'running'
-  | 'succeeded'
-  | 'promoted'
-  | 'aborted'
-  | 'rollback_started'
-  | 'stopped'
-  | 'failed'
+  'running' | 'succeeded' | 'promoted' | 'aborted' | 'rollback_started' | 'stopped' | 'failed'
 
 export type CanaryStopReason =
   | 'remote_config_failed'
@@ -280,10 +274,7 @@ export interface CreateConfigRequest {
 }
 
 export type ConfigMigrationVendor =
-  | 'datadog_agent'
-  | 'fluent_bit'
-  | 'splunk_forwarder'
-  | 'new_relic_infra'
+  'datadog_agent' | 'fluent_bit' | 'splunk_forwarder' | 'new_relic_infra'
 
 export interface ConfigMigrationContext {
   target_signal?: string
@@ -992,16 +983,10 @@ export interface PushActivityPoint {
 }
 
 export type FleetVersionStatus =
-  | 'below_recommended'
-  | 'at_recommended'
-  | 'above_recommended'
-  | 'unknown'
-  | 'not_applicable'
+  'below_recommended' | 'at_recommended' | 'above_recommended' | 'unknown' | 'not_applicable'
 
 export type FleetVersionRecommendationAction =
-  | 'upgrade_collector'
-  | 'choose_older_config'
-  | 'remove_component'
+  'upgrade_collector' | 'choose_older_config' | 'remove_component'
 
 export interface FleetVersionMatrixEntry {
   group: string
@@ -1336,11 +1321,7 @@ export interface MeResponse {
 export type OTelDiffRisk = 'none' | 'low' | 'medium' | 'high'
 export type OTelDiffChangeKind = 'added' | 'removed' | 'modified' | 'unchanged'
 export type OTelComponentCategory =
-  | 'receivers'
-  | 'processors'
-  | 'exporters'
-  | 'connectors'
-  | 'extensions'
+  'receivers' | 'processors' | 'exporters' | 'connectors' | 'extensions'
 export type OTelSignal = 'traces' | 'metrics' | 'logs' | 'profiles' | 'unknown'
 
 export interface OTelConfigDiffRequest {
