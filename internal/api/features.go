@@ -4,6 +4,10 @@ import (
 	"net/http"
 )
 
+func (a *API) handleListCapabilities(w http.ResponseWriter, _ *http.Request) {
+	respondJSON(w, http.StatusOK, a.capabilities.Document())
+}
+
 // handleListFeatures returns the configured feature flag map as JSON.
 //
 // The route is public (no auth middleware) because feature flags are
@@ -13,5 +17,5 @@ import (
 func (a *API) handleListFeatures(w http.ResponseWriter, _ *http.Request) {
 	respondJSON(w, http.StatusOK, struct {
 		Features map[string]bool `json:"features"`
-	}{Features: a.features})
+	}{Features: a.capabilities.LegacyFeatures()})
 }

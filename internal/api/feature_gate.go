@@ -45,7 +45,7 @@ func (a *API) featureEnabled(feature string) bool {
 	if a == nil || feature == "" {
 		return false
 	}
-	if a.features != nil && a.features[feature] {
+	if a.capabilities.Enabled(feature) {
 		return true
 	}
 	return a.licenseChecker != nil && a.licenseChecker.FeatureEnabled(feature)

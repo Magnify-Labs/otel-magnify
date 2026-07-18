@@ -14,6 +14,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/api"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/workloads"
+	"github.com/magnify-labs/otel-magnify/pkg/capabilities"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 )
 
@@ -30,7 +31,7 @@ type Server struct {
 	protectedRouterHooks []func(chi.Router)
 	authMethods          []ext.AuthMethod
 	authMethodProvider   func() []ext.AuthMethod
-	features             map[string]bool
+	capabilities         capabilities.Registry
 	licenseChecker       ext.LicenseChecker
 }
 
@@ -68,10 +69,6 @@ func New(cfg Config, store ext.Store, auth ext.AuthProvider, opts ...Option) *Se
 		dedup = append(dedup, m)
 	}
 	s.authMethods = dedup
-
-	if s.features == nil {
-		s.features = map[string]bool{}
-	}
 
 	if s.cfg.ListenAddr == "" {
 		s.cfg.ListenAddr = ":8080"
@@ -138,7 +135,7 @@ func (s *Server) Run(ctx context.Context) error {
 		s.cfg.WorkloadJanitorInterval, s.cfg.WorkloadEventRetention)
 
 	// REST API router
-	router := api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.features, s.licenseChecker, s.protectedRouterHooks, s.reportSigner)
+	router := api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.capabilities, s.licenseChecker, s.protectedRouterHooks, s.reportSigner)
 
 	// Apply router hooks (enterprise can add RBAC middleware, extra routes, etc.)
 	if len(s.routerHooks) > 0 {
@@ -212,5 +209,5 @@ func (s *Server) Handler() http.Handler {
 		RetentionDuration: s.cfg.WorkloadRetention,
 		SharedSecret:      s.cfg.OpAMPSharedSecret,
 	})
-	return api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.features, s.licenseChecker, s.protectedRouterHooks, s.reportSigner)
+	return api.NewRouter(s.store, s.auth, hub, opampSrv, s.auditLogger, s.cfg.CORSOrigins, s.staticFS, s.currentAuthMethods, s.cfg.WorkloadRetention, s.capabilities, s.licenseChecker, s.protectedRouterHooks, s.reportSigner)
 }

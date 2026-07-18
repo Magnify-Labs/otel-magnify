@@ -11,7 +11,7 @@ import (
 )
 
 func TestRouterSetsSecurityHeaders(t *testing.T) {
-	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil, nil)
+	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, testCapabilities(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -37,7 +37,7 @@ func TestRouterSetsSecurityHeaders(t *testing.T) {
 // Guards against regressions where authenticated failures bypass middleware and
 // return without the hardening headers browsers rely on.
 func TestRouterSetsStrictSecurityHeaderValuesOnSecureRequests(t *testing.T) {
-	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil, nil)
+	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, testCapabilities(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	rec := httptest.NewRecorder()
@@ -64,7 +64,7 @@ func TestRouterSetsStrictSecurityHeaderValuesOnSecureRequests(t *testing.T) {
 // Guards against accidentally advertising HSTS on plain HTTP development
 // requests, where browsers would pin an unreachable HTTPS origin.
 func TestRouterOmitsHSTSOnPlainHTTPRequests(t *testing.T) {
-	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil, nil)
+	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, testCapabilities(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -81,7 +81,7 @@ func TestRequestLoggerRedactsSensitiveQueryValues(t *testing.T) {
 	log.SetOutput(&logs)
 	t.Cleanup(func() { log.SetOutput(originalOutput) })
 
-	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil, nil)
+	router := NewRouter(nil, wsTestAuth{}, nil, nil, nil, "", nil, nil, 30*24*time.Hour, testCapabilities(nil), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/ws?token=super-secret-token&api_key=super-secret-key&safe=value", nil)
 	rec := httptest.NewRecorder()
 

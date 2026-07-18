@@ -40,7 +40,7 @@ func newAuditViewerTestAPI(t *testing.T, logger ext.AuditLogger) http.Handler {
 	}
 	t.Cleanup(func() { db.Close() })
 	authSvc := auth.New("test-secret-key-at-least-32-bytes!")
-	return NewRouter(db, authSvc, nil, &fakeOpAMPPusher{}, logger, "", nil, nil, 30*24*time.Hour, map[string]bool{FeatureAuditViewer: true}, nil, nil)
+	return NewRouter(db, authSvc, nil, &fakeOpAMPPusher{}, logger, "", nil, nil, 30*24*time.Hour, testCapabilities(map[string]bool{FeatureAuditViewer: true}), nil, nil)
 }
 
 func TestAuditEventsRequiresAuditViewPermission(t *testing.T) {

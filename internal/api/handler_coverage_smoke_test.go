@@ -40,7 +40,7 @@ func TestListAuthMethods_ReturnsConfiguredMethods(t *testing.T) {
 			return []ext.AuthMethod{{ID: "password", Type: "password", DisplayName: "Email + password", LoginURL: "/api/auth/login"}}
 		},
 		30*24*time.Hour,
-		nil,
+		testCapabilities(nil),
 		nil,
 		nil,
 	)
@@ -167,7 +167,7 @@ func TestFullStackSmoke_LoginRepresentativeAPIAndFrontendFallback(t *testing.T) 
 			return []ext.AuthMethod{{ID: "password", Type: "password", DisplayName: "Email + password", LoginURL: "/api/auth/login"}}
 		},
 		30*24*time.Hour,
-		map[string]bool{FeatureConfigSafetyVersionIntelligence: true},
+		testCapabilities(map[string]bool{FeatureConfigSafetyVersionIntelligence: true}),
 		nil,
 		nil,
 	)

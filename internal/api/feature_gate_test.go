@@ -32,7 +32,7 @@ func newFeatureGateTestAPI(t *testing.T, features map[string]bool, checker ext.L
 	t.Cleanup(hub.Stop)
 
 	fake := &fakeOpAMPPusher{instances: make(map[string][]opamp.Instance)}
-	router := NewRouter(db, a, hub, fake, nil, "", nil, nil, 30*24*time.Hour, features, checker, nil)
+	router := NewRouter(db, a, hub, fake, nil, "", nil, nil, 30*24*time.Hour, testCapabilities(features), checker, nil)
 	return db, router, fake
 }
 

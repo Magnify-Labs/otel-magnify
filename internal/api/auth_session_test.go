@@ -25,7 +25,7 @@ func newAuthSessionTestRouter(t *testing.T) (*store.DB, *auth.Auth, http.Handler
 		t.Fatalf("Migrate: %v", err)
 	}
 	authSvc := auth.New("0123456789abcdef0123456789abcdef")
-	return db, authSvc, NewRouter(db, authSvc, nil, nil, nil, "", nil, nil, 30*24*time.Hour, nil, nil, nil)
+	return db, authSvc, NewRouter(db, authSvc, nil, nil, nil, "", nil, nil, 30*24*time.Hour, testCapabilities(nil), nil, nil)
 }
 
 func TestLoginSetsHttpOnlySessionCookie(t *testing.T) {
