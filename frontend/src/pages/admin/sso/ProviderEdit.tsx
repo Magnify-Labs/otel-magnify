@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useStore } from '../../../store'
 import { hasPerm } from '../../../lib/perm'
-import { useFeature } from '../../../hooks/useFeature'
+import { useCapability } from '../../../hooks/useCapability'
 import { adminSSOAPI, type SSOProviderInput, type SystemGroupName } from '../../../api/admin'
 import { adminSSOKeys } from '../../../api/queryKeys'
 import MetadataInput from '../../../components/admin/MetadataInput'
@@ -33,7 +33,7 @@ export default function ProviderEdit() {
   const id = isEdit ? (params.id as string) : ''
 
   const me = useStore((s) => s.me)
-  const { enabled: ssoEnabled, isLoading: featuresLoading } = useFeature('sso.admin')
+  const { enabled: ssoEnabled, isLoading: featuresLoading } = useCapability('sso.admin')
 
   const [form, setForm] = useState<SSOProviderInput>(emptyForm)
   const [error, setError] = useState<string | null>(null)

@@ -6,8 +6,9 @@ import type React from 'react'
 import { useStore } from '../../store'
 import { alertsAPI } from '../../api/client'
 import { endClientSession } from '../../api/session'
+import type { Capability } from '../../api/capabilitiesContract'
 import { hasPerm, type Permission } from '../../lib/perm'
-import { useFeatures } from '../../hooks/useFeature'
+import { useCapabilities } from '../../hooks/useCapability'
 import '../../styles/sidebar.css'
 
 function IconDashboard() {
@@ -144,8 +145,10 @@ type FleetNavItem = {
   Icon: () => React.ReactNode
   end: boolean
   perm?: Permission
-  feature?: string
+  capability?: string
 }
+
+const emptyCapabilities: ReadonlyMap<string, Capability> = new Map()
 
 const fleetNav: FleetNavItem[] = [
   { path: '/', key: 'dashboard', Icon: IconDashboard, end: true },
@@ -155,7 +158,7 @@ const fleetNav: FleetNavItem[] = [
     key: 'config_drift',
     Icon: IconDrift,
     end: false,
-    feature: 'config_safety.drift_dashboard',
+    capability: 'config_safety.drift_dashboard',
   },
   { path: '/configs', key: 'configs', Icon: IconConfigs, end: false },
   { path: '/alerts', key: 'alerts', Icon: IconAlerts, end: false },
@@ -165,7 +168,7 @@ const fleetNav: FleetNavItem[] = [
     Icon: IconAudit,
     end: false,
     perm: 'audit:view',
-    feature: 'audit.viewer',
+    capability: 'audit.viewer',
   },
 ]
 
@@ -226,11 +229,11 @@ export default function Layout() {
   const me = useStore((s) => s.me)
 
   const canAdmin = hasPerm(me?.groups, 'users:manage')
-  const { data: features = {} } = useFeatures()
+  const { data: capabilities = emptyCapabilities, isError: capabilitiesError } = useCapabilities()
   const visibleFleetNav = fleetNav.filter(
     (item) =>
       (!item.perm || hasPerm(me?.groups, item.perm)) &&
-      (!item.feature || features[item.feature] === true),
+      (!item.capability || capabilities.get(item.capability)?.state === 'enabled'),
   )
 
   return (
@@ -289,6 +292,11 @@ export default function Layout() {
       </aside>
 
       <main className="main-content">
+        {capabilitiesError && (
+          <div className="banner banner-error" role="alert">
+            {t('sidebar.capabilities_error')}
+          </div>
+        )}
         <Outlet />
       </main>
     </div>

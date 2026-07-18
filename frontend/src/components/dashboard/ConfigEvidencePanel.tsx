@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { configSafetyAPI, getAPIErrorDetails } from '../../api/client'
-import { useFeature } from '../../hooks/useFeature'
+import { useCapability } from '../../hooks/useCapability'
 import { hasPerm } from '../../lib/perm'
 import { useStore } from '../../store'
 import type {
@@ -23,7 +23,7 @@ export default function ConfigEvidencePanel({ workloadIds }: { workloadIds: stri
   const { t } = useTranslation()
   const me = useStore((s) => s.me)
   const { enabled: evidencePackEnabled, isLoading: evidencePackLoading } =
-    useFeature('reports.evidence_pack')
+    useCapability('reports.evidence_pack')
   const canExport = hasPerm(me?.groups, 'reports:export')
   const [exportStatus, setExportStatus] = useState<string | null>(null)
 

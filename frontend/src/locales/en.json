@@ -17,7 +17,8 @@
     "footer": {
       "live": "LIVE"
     },
-    "subtitle": "OpAMP Control Plane"
+    "subtitle": "OpAMP Control Plane",
+    "capabilities_error": "Unable to load product capabilities. Gated actions remain unavailable."
   },
   "dashboard": {
     "title": "Dashboard",

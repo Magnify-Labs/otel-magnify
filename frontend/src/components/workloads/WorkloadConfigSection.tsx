@@ -16,7 +16,7 @@ import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
 import { isReadOnlyCollector } from '../../lib/workloadCapabilities'
 import { buildSafeOTelDiffContext } from '../../lib/blastRadiusDisplay'
-import { useFeature } from '../../hooks/useFeature'
+import { useCapability } from '../../hooks/useCapability'
 import type {
   PushGroup,
   PushGroupSelector,
@@ -867,18 +867,18 @@ export default function WorkloadConfigSection({ workload }: Props) {
   const clearRollback = useStore((s) => s.clearAutoRollback)
   const me = useStore((s) => s.me)
   const canReadConfigContent = hasPerm(me?.groups, 'config:read_content')
-  const { enabled: guidedRollbackEnabled, isLoading: guidedRollbackLoading } = useFeature(
+  const { enabled: guidedRollbackEnabled, isLoading: guidedRollbackLoading } = useCapability(
     'config_safety.guided_rollback',
   )
-  const { enabled: canaryEnabled, isLoading: canaryLoading } = useFeature(
+  const { enabled: canaryEnabled, isLoading: canaryLoading } = useCapability(
     'config_safety.canary_rollout',
   )
-  const { enabled: scopedPushEnabled, isLoading: scopedPushLoading } = useFeature(
+  const { enabled: scopedPushEnabled, isLoading: scopedPushLoading } = useCapability(
     'config_safety.scoped_push',
   )
   const { enabled: approvalsEnabled, isLoading: approvalsLoading } =
-    useFeature('config_safety.approvals')
-  const { enabled: gitOpsExportEnabled, isLoading: gitOpsExportLoading } = useFeature(
+    useCapability('config_safety.approvals')
+  const { enabled: gitOpsExportEnabled, isLoading: gitOpsExportLoading } = useCapability(
     'config_safety.gitops_export',
   )
 

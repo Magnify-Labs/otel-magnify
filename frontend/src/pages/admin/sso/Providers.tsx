@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useStore } from '../../../store'
 import { hasPerm } from '../../../lib/perm'
-import { useFeature } from '../../../hooks/useFeature'
+import { useCapability } from '../../../hooks/useCapability'
 import { adminSSOAPI, type SSOProvider } from '../../../api/admin'
 import { adminSSOKeys } from '../../../api/queryKeys'
 import '../../../styles/admin-sso.css'
@@ -14,7 +14,7 @@ export default function Providers() {
   const queryClient = useQueryClient()
   const me = useStore((s) => s.me)
 
-  const { enabled: ssoEnabled, isLoading: featuresLoading } = useFeature('sso.admin')
+  const { enabled: ssoEnabled, isLoading: featuresLoading } = useCapability('sso.admin')
 
   // Hooks must be called unconditionally. Gate via `enabled:` instead of
   // placing them after early-return guards — avoids "Rendered more hooks"
