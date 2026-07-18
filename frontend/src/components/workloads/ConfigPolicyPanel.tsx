@@ -139,7 +139,7 @@ function policyPackagingLabel(
   tier: ConfigPolicyFinding['tier'],
   t: ReturnType<typeof useTranslation>['t'],
 ): string {
-  const packagingKey = packaging === 'pro' || packaging === 'enterprise' ? packaging : 'community'
+  const packagingKey = packaging === 'enterprise' ? 'enterprise' : 'community'
   const tierKey =
     tier === 'configurable' || tier === 'tenant_hook' || tier === 'core' ? tier : 'core'
   return t(`workloads.config.policy.packaging.${packagingKey}.${tierKey}`)

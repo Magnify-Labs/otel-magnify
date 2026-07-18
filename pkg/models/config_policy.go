@@ -17,7 +17,7 @@ const (
 )
 
 // ConfigPolicyTarget describes the backend-side scope used to evaluate config
-// safety policy. Community rules use environment/scope; Pro/Enterprise can add
+// safety policy. Community rules use environment/scope; edition extensions can add
 // tenant/team metadata without changing the community evaluator contract.
 type ConfigPolicyTarget struct {
 	Environment string `json:"environment,omitempty"`
@@ -27,7 +27,7 @@ type ConfigPolicyTarget struct {
 	TeamID      string `json:"team_id,omitempty"`
 }
 
-// ConfigPolicySettings represents server-side knobs for paid editions while
+// ConfigPolicySettings represents server-provided policy settings while
 // keeping community defaults immutable when no settings are supplied.
 type ConfigPolicySettings struct {
 	AllowedOTLPEndpoints       []string               `json:"allowed_otlp_endpoints,omitempty"`

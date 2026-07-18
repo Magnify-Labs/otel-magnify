@@ -25,7 +25,7 @@ const (
 // PolicyTarget is the scope used when evaluating config safety rules.
 type PolicyTarget = models.ConfigPolicyTarget
 
-// PolicySettings carries server-side policy knobs for paid-edition hooks.
+// PolicySettings carries server-provided policy settings.
 type PolicySettings = models.ConfigPolicySettings
 
 // SamplingPolicySettings bounds sampling percentages when configured.

@@ -1,4 +1,4 @@
-import { test, expect, mockFeatures, mockMe } from './fixtures'
+import { test, expect, mockCapabilities, mockMe } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const mockWorkloads = [
@@ -129,7 +129,7 @@ test.describe('Dashboard', () => {
   test('config safety status drift CTA is hidden without the drift dashboard feature', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page)
+    await mockCapabilities(page)
 
     await page.goto('/')
 
@@ -147,7 +147,7 @@ test.describe('Dashboard', () => {
   test('config safety status drift CTA is visible with the drift dashboard feature', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'config_safety.drift_dashboard': true })
+    await mockCapabilities(page, { 'config_safety.drift_dashboard': true })
 
     await page.goto('/')
 
@@ -188,7 +188,7 @@ test.describe('Dashboard', () => {
   test('config safety evidence pack previews redacted report data and exports formats', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'reports.evidence_pack': true })
+    await mockCapabilities(page, { 'reports.evidence_pack': true })
     await mockMe(page, {
       groups: [
         {
@@ -351,7 +351,7 @@ test.describe('Dashboard', () => {
   test('config safety evidence export actions are hidden without report export permission', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'reports.evidence_pack': true })
+    await mockCapabilities(page, { 'reports.evidence_pack': true })
     await mockMe(page, {
       groups: [
         {
@@ -410,7 +410,7 @@ test.describe('Dashboard', () => {
   })
 
   test('renders fleet version intelligence recommendations', async ({ loggedInPage: page }) => {
-    await mockFeatures(page, { 'config_safety.version_intelligence': true })
+    await mockCapabilities(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -504,7 +504,7 @@ test.describe('Dashboard', () => {
   test('fleet version matrix renders groups, versions, status badges, and counts', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'config_safety.version_intelligence': true })
+    await mockCapabilities(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -578,7 +578,7 @@ test.describe('Dashboard', () => {
   test('fleet version intelligence surfaces all three recommendation paths for unsupported components', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'config_safety.version_intelligence': true })
+    await mockCapabilities(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -670,7 +670,7 @@ test.describe('Dashboard', () => {
   test('fleet version intelligence localizes recommendation reasons in French', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'config_safety.version_intelligence': true })
+    await mockCapabilities(page, { 'config_safety.version_intelligence': true })
     await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
@@ -762,7 +762,7 @@ test.describe('Dashboard', () => {
   test('fleet compatibility matrix separates blockers and warnings by category without raw config', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'config_safety.version_intelligence': true })
+    await mockCapabilities(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', (route) =>
       route.fulfill({
         status: 200,
@@ -949,7 +949,7 @@ test.describe('Dashboard', () => {
   test('fleet version intelligence represents loading, empty, and error states', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'config_safety.version_intelligence': true })
+    await mockCapabilities(page, { 'config_safety.version_intelligence': true })
     await page.route('**/api/workloads/version-intelligence*', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1000))
       await route.fulfill({
@@ -1083,7 +1083,7 @@ async function installFakeWebSocket(page: Page, options: { captureTimeouts?: boo
       readyState: number
       onopen: (() => void) | null
       onmessage: ((event: { data: string }) => void) | null
-      onclose: (() => void) | null
+      onclose: ((event: { code: number; reason: string }) => void) | null
       onerror: (() => void) | null
       close: () => void
     }
@@ -1098,7 +1098,7 @@ async function installFakeWebSocket(page: Page, options: { captureTimeouts?: boo
       readyState = FakeWebSocket.OPEN
       onopen: (() => void) | null = null
       onmessage: ((event: { data: string }) => void) | null = null
-      onclose: (() => void) | null = null
+      onclose: ((event: { code: number; reason: string }) => void) | null = null
       onerror: (() => void) | null = null
 
       constructor(readonly url: string) {
@@ -1107,7 +1107,7 @@ async function installFakeWebSocket(page: Page, options: { captureTimeouts?: boo
 
       close() {
         this.readyState = FakeWebSocket.CLOSED
-        this.onclose?.()
+        this.onclose?.({ code: 1006, reason: '' })
       }
     }
 
@@ -1143,13 +1143,16 @@ async function installFakeWebSocket(page: Page, options: { captureTimeouts?: boo
 async function closeLatestFakeSocket(page: Page) {
   await page.evaluate(() => {
     const win = window as unknown as {
-      __fakeSockets: Array<{ readyState: number; onclose: (() => void) | null }>
+      __fakeSockets: Array<{
+        readyState: number
+        onclose: ((event: { code: number; reason: string }) => void) | null
+      }>
       WebSocket: { CLOSED: number }
     }
     const socket = win.__fakeSockets.at(-1)
     if (!socket) throw new Error('No fake websocket to close')
     socket.readyState = win.WebSocket.CLOSED
-    socket.onclose?.()
+    socket.onclose?.({ code: 1006, reason: '' })
   })
 }
 

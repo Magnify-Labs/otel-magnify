@@ -20,12 +20,21 @@ const editorGroup = {
   created_at: new Date().toISOString(),
 }
 
-async function mockFeatures(page: Page, features: Record<string, boolean>) {
-  await page.route('**/api/features', (route) =>
+async function mockCapabilities(page: Page, capabilities: Record<string, boolean>) {
+  await page.route('**/api/v1/capabilities', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ features }),
+      body: JSON.stringify({
+        api_version: 'v1',
+        capabilities: Object.entries(capabilities)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([id, enabled]) => ({
+            id,
+            state: enabled ? 'enabled' : 'disabled',
+            ...(enabled ? {} : { reason_code: 'not_enabled' }),
+          })),
+      }),
     }),
   )
 }
@@ -74,7 +83,7 @@ const sampleProvider = {
 test.describe('SSO admin — feature flag gating', () => {
   test('hides SSO sub-link when feature is off (community-only build)', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, {})
+    await mockCapabilities(page, {})
     await page.goto('/admin')
     await expect(page.getByRole('link', { name: /SSO providers/i })).toHaveCount(0)
 
@@ -84,7 +93,7 @@ test.describe('SSO admin — feature flag gating', () => {
 
   test('shows SSO sub-link when feature is on and user has settings:manage', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
     await mockProviders(page, [])
     await page.goto('/admin')
     await page.getByRole('link', { name: /SSO providers/i }).click()
@@ -94,7 +103,7 @@ test.describe('SSO admin — feature flag gating', () => {
 
   test('redirects when user is editor (lacks settings:manage)', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [editorGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
     // Dashboard APIs must be stubbed so an incidental redirect to "/" does not
     // hit the backend and produce a 401 that the axios interceptor re-routes to /login.
     await mockDashboard(page)
@@ -106,19 +115,22 @@ test.describe('SSO admin — feature flag gating', () => {
   })
 
   // Regression test for the boot-time race: useFeature must not return a
-  // stale "disabled" verdict before /api/features resolves, otherwise pages
+  // stale "disabled" verdict before /api/v1/capabilities resolves, otherwise pages
   // that gate on `if (!enabled) <Navigate />` redirect away during the
   // initial fetch. The deliberate 300 ms delay below makes the race
   // deterministic.
-  test('Providers does not redirect during /api/features initial load', async ({ loggedInPage: page }) => {
+  test('Providers does not redirect during /api/v1/capabilities initial load', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
     await mockProviders(page, [])
-    await page.route('**/api/features', async (route) => {
+    await page.route('**/api/v1/capabilities', async (route) => {
       await new Promise((r) => setTimeout(r, 300))
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ features: { 'sso.admin': true } }),
+        body: JSON.stringify({
+          api_version: 'v1',
+          capabilities: [{ id: 'sso.admin', state: 'enabled' }],
+        }),
       })
     })
 
@@ -127,14 +139,17 @@ test.describe('SSO admin — feature flag gating', () => {
     await expect(page).toHaveURL(/\/admin\/sso\/providers$/)
   })
 
-  test('ProviderEdit does not redirect during /api/features initial load', async ({ loggedInPage: page }) => {
+  test('ProviderEdit does not redirect during /api/v1/capabilities initial load', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await page.route('**/api/features', async (route) => {
+    await page.route('**/api/v1/capabilities', async (route) => {
       await new Promise((r) => setTimeout(r, 300))
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ features: { 'sso.admin': true } }),
+        body: JSON.stringify({
+          api_version: 'v1',
+          capabilities: [{ id: 'sso.admin', state: 'enabled' }],
+        }),
       })
     })
 
@@ -147,7 +162,7 @@ test.describe('SSO admin — feature flag gating', () => {
 test.describe('SSO admin — providers list', () => {
   test('lists existing providers', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
     await mockProviders(page, [sampleProvider])
     await page.goto('/admin/sso/providers')
     await expect(page.getByTestId('providers-table')).toBeVisible()
@@ -157,7 +172,7 @@ test.describe('SSO admin — providers list', () => {
 
   test('toggles provider active state via PATCH', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
     await mockProviders(page, [sampleProvider])
 
     let patchedActive: boolean | null = null
@@ -175,7 +190,7 @@ test.describe('SSO admin — providers list', () => {
 
   test('deletes a provider with confirmation', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
     await mockProviders(page, [sampleProvider])
 
     let deleted = false
@@ -198,7 +213,7 @@ test.describe('SSO admin — providers list', () => {
 test.describe('SSO admin — provider create', () => {
   test('creates a SAML provider with metadata URL', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
 
     let payload: Record<string, unknown> | null = null
     await page.route('**/api/admin/sso/providers', async (route) => {
@@ -234,7 +249,7 @@ test.describe('SSO admin — provider create', () => {
 
   test('creates a SAML provider with metadata XML uploaded via file picker', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
 
     let payload: Record<string, unknown> | null = null
     await page.route('**/api/admin/sso/providers', async (route) => {
@@ -272,7 +287,7 @@ test.describe('SSO admin — provider create', () => {
 
   test('shows backend validation error inline (400)', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
 
     await page.route('**/api/admin/sso/providers', async (route) => {
       if (route.request().method() === 'POST') {
@@ -303,7 +318,7 @@ test.describe('SSO admin — provider create', () => {
 test.describe('SSO admin — mappings', () => {
   test('CRUD mappings inline on edit page', async ({ loggedInPage: page }) => {
     await mockMe(page, { groups: [adminGroup] })
-    await mockFeatures(page, { 'sso.admin': true })
+    await mockCapabilities(page, { 'sso.admin': true })
 
     let mappings: Array<{ provider_id: string; idp_group: string; system_group: string; created_at: string }> = [
       { provider_id: 'okta-main', idp_group: 'magnify-admins', system_group: 'administrator', created_at: '...' },

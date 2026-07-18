@@ -25,7 +25,7 @@ const (
 	FeatureAuditViewer = "audit.viewer"
 )
 
-// RequireFeature blocks access to Pro/Enterprise-only endpoint groups unless
+// RequireFeature blocks access to edition extension endpoint groups unless
 // the static API feature map or the optional license checker enables the named
 // capability. The response body is intentionally stable and machine-readable so
 // clients can render disabled-feature states without scraping prose.

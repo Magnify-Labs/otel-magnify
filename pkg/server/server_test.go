@@ -481,28 +481,6 @@ func TestWithFeatures_NotSet_ReturnsEmptyMap(t *testing.T) {
 	if len(body.Features) != 0 {
 		t.Fatalf("features: got %v, want empty map", body.Features)
 	}
-
-	for _, paidKey := range []string{
-		"config_safety.approvals",
-		"config_safety.guided_rollback",
-		"config_safety.canary_rollout",
-		"config_safety.scoped_push",
-		"config_safety.drift_dashboard",
-		"config_safety.version_intelligence",
-		"config_safety.gitops_export",
-		"config_safety.policy_preview",
-		"config_safety.policy_enforcement",
-		"reports.evidence_pack",
-		"reports.signed_evidence",
-		"audit.viewer",
-		"sso.admin",
-		"rbac.custom_roles",
-		"tenancy.multi_tenant",
-	} {
-		if body.Features[paidKey] {
-			t.Fatalf("community default must not advertise paid feature %q: %v", paidKey, body.Features)
-		}
-	}
 }
 
 type serverTestLicenseChecker map[string]bool

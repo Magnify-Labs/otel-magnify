@@ -1,4 +1,4 @@
-import { test, expect, mockFeatures, mockMe } from './fixtures'
+import { test, expect, mockCapabilities, mockMe } from './fixtures'
 import type { Page, Route } from '@playwright/test'
 
 const WORKLOAD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -322,7 +322,7 @@ async function gotoWorkloadDetail(
 ) {
   // Seed auth on the app origin through a stable document before hitting the
   // protected route; this keeps the spec independent from login submission.
-  await mockFeatures(page, features)
+  await mockCapabilities(page, features)
   await page.route('**/api/auth/methods', (route) =>
     route.fulfill({
       status: 200,
@@ -464,7 +464,7 @@ test('viewer login after editor cache does not expose cached config content acti
       }),
     }),
   )
-  await mockFeatures(page, {})
+  await mockCapabilities(page, {})
   await mockWorkloadsListForSession()
   await mockWorkload(page)
   await page.route(`**/api/configs/${ACTIVE_CONFIG_ID}`, (route) => {

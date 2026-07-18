@@ -679,11 +679,6 @@
             "configurable": "Politique serveur Community",
             "tenant_hook": "Hook de politique Community"
           },
-          "pro": {
-            "core": "Règle serveur Pro",
-            "configurable": "Politique Pro configurable",
-            "tenant_hook": "Hook de politique Pro"
-          },
           "enterprise": {
             "core": "Règle serveur Enterprise",
             "configurable": "Politique Enterprise configurable",
@@ -1314,7 +1309,7 @@
       "algorithm": "Algorithme",
       "digest": "Digest payload",
       "key_id": "ID clé",
-      "community_signature_note": "Les exports Community/Pro ne sont pas présentés comme signés Enterprise.",
+      "community_signature_note": "Les exports Community ne sont pas présentés comme signés Enterprise.",
       "download": {
         "markdown": "Télécharger Markdown",
         "csv": "Télécharger CSV",

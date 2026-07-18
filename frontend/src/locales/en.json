@@ -679,11 +679,6 @@
             "configurable": "Community server policy",
             "tenant_hook": "Community policy hook"
           },
-          "pro": {
-            "core": "Pro server rule",
-            "configurable": "Pro configurable policy",
-            "tenant_hook": "Pro policy hook"
-          },
           "enterprise": {
             "core": "Enterprise server rule",
             "configurable": "Enterprise configurable policy",
@@ -1314,7 +1309,7 @@
       "algorithm": "Algorithm",
       "digest": "Payload digest",
       "key_id": "Key ID",
-      "community_signature_note": "Community/Pro exports are not shown as enterprise signed.",
+      "community_signature_note": "Community exports are not shown as enterprise signed.",
       "download": {
         "markdown": "Download Markdown",
         "csv": "Download CSV",

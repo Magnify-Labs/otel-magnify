@@ -581,7 +581,7 @@ export interface ConfigPolicyFinding {
   paths?: string[]
   message: string
   remediation: string
-  packaging: 'community' | 'pro' | 'enterprise' | string
+  packaging: 'community' | 'enterprise' | string
   tier: 'core' | 'configurable' | 'tenant_hook' | string
 }
 
