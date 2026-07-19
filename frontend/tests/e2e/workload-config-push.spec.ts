@@ -2899,7 +2899,9 @@ test('community features generate a plan and submit the governed workload config
   await expect(page.locator('.config-approval-panel')).toContainText('Pushed')
 })
 
-test('viewer permission keeps config push controls read-only', async ({ loggedInPage: page }) => {
+test('viewer permission hides restricted config content and push controls', async ({
+  loggedInPage: page,
+}) => {
   await mockMe(page, { groups: [viewerGroup] })
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -2912,16 +2914,11 @@ test('viewer permission keeps config push controls read-only', async ({ loggedIn
   await page.goto(`/workloads/${WORKLOAD_ID}`)
 
   await expect(page.getByText('Configuration', { exact: true })).toBeVisible()
-  await expect(page.locator('.cm-content').first()).toContainText('receivers')
-  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
-    'title',
-    /don't have permission to push workload configurations/,
-  )
-  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
-    'aria-describedby',
-    'config-permission-note',
-  )
+  await expect(
+    page.getByText('Config content is restricted by role. Metadata and history remain available.'),
+  ).toBeVisible()
+  await expect(page.locator('.cm-content')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
   await expect(page.locator('select.apply-config-select')).toBeDisabled()
   await expect(page.locator('select.apply-config-select')).toHaveAttribute(
     'title',
