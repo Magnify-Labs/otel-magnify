@@ -16,7 +16,8 @@ See [Authentication](authentication.md) for login, token lifetime, WebSocket aut
 |--------|------|------|-------|
 | `POST` | `/api/auth/login` | No | Email/password login. Returns `{ "token": "..." }`. |
 | `GET` | `/api/auth/methods` | No | Lists available login methods. Community default is password login only. |
-| `GET` | `/api/features` | No | Returns `{ "features": { ... } }`. Feature names are not authorization. |
+| `GET` | `/api/v1/capabilities` | No | Canonical capability discovery. It returns the versioned capability document. |
+| `GET` | `/api/features` | No | Legacy boolean compatibility endpoint. It returns `{ "features": { ... } }`. |
 | `GET` | `/healthz` | No | Plain `ok` liveness response; independent of database connectivity. |
 | `GET` | `/readyz` | No | Plain `ready` response when PostgreSQL is reachable; otherwise `503 not ready`. |
 | `GET` | `/api/system/database` | Yes + `ManageSettings` permission | Numeric PostgreSQL connection-pool statistics. |
@@ -109,9 +110,31 @@ Community response:
 
 Edition binaries may replace or extend this list through server options.
 
-### `GET /api/features`
+### `GET /api/v1/capabilities`
 
-Community response:
+This is the canonical public capability-discovery endpoint. The exact Community response in this release is:
+
+```json
+{
+  "api_version": "v1",
+  "capabilities": [
+    {
+      "id": "config_safety.approvals",
+      "state": "enabled"
+    },
+    {
+      "id": "config_safety.policy_preview",
+      "state": "enabled"
+    }
+  ]
+}
+```
+
+Community advertises only `config_safety.approvals` and `config_safety.policy_preview` in this release.
+
+### Legacy `GET /api/features`
+
+`GET /api/features` remains a legacy boolean compatibility endpoint. Its exact Community response is:
 
 ```json
 {
@@ -122,7 +145,7 @@ Community response:
 }
 ```
 
-Feature flags are public discovery metadata. Protected APIs must still enforce auth and RBAC.
+Capability discovery is not authorization; protected APIs still enforce authentication, RBAC, and server-side gates. `WithCapabilities` is preferred for typed declarations; `WithFeatures` remains supported for legacy edition overlays.
 
 ## Workload contracts
 

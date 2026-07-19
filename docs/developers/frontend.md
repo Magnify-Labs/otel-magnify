@@ -29,7 +29,11 @@ Vite listens on `http://localhost:5173` by default. Run the Go backend separatel
 
 The workload detail page is centered on a workload, not an individual pod. Current tabs and panels include config/history, live instances, activity, safety approvals, guided rollback, canary rollout, policy preview, migration assistance, drift/version intelligence, report evidence, and archive/delete actions where the server feature flags and RBAC permissions allow them.
 
-Feature flags are discovery metadata from `GET /api/features`; they hide or show UI affordances only. Protected endpoints must still enforce RBAC and feature gates on the server.
+`GET /api/v1/capabilities` is the canonical public capability-discovery endpoint. `GET /api/features` remains a legacy boolean compatibility endpoint. The client validates the versioned document at runtime: it requires `api_version: "v1"`, an array of unique capability IDs, a known state, no `reason_code` for `enabled`, and a non-empty `reason_code` for `disabled` or `read_only`.
+
+There is no legacy compatibility fallback from the versioned endpoint to `/api/features`. An invalid or failed capability response is fail-closed: conditional UI affordances stay unavailable and the layout shows an error. Capability discovery is not authorization; protected APIs still enforce authentication, RBAC, and server-side gates.
+
+Community advertises only `config_safety.approvals` and `config_safety.policy_preview` in this release. `WithCapabilities` is preferred for typed declarations; `WithFeatures` remains supported for legacy edition overlays.
 
 ## Verification
 

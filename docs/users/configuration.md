@@ -102,26 +102,23 @@ Archived workloads are hidden from the default inventory but remain available fo
 
 Invalid or non-positive duration values fall back to safe defaults in code. For day-based settings the fallback is 30 days; for second-based settings the floor is one second.
 
-## Feature flags
+## Capability discovery
 
-Community otel-magnify does not expose runtime feature-flag environment variables. Feature flags are registered by a binary at construction time through `server.WithFeatures(...)` and surfaced by `GET /api/features`.
+Community otel-magnify does not expose runtime capability environment variables. `GET /api/v1/capabilities` is the canonical public capability-discovery endpoint. `GET /api/features` remains a legacy boolean compatibility endpoint.
 
-The Community response is:
+Community advertises only `config_safety.approvals` and `config_safety.policy_preview` in this release. The canonical response is:
 
 ```json
 {
-  "features": {
-    "config_safety.approvals": true,
-    "config_safety.policy_preview": true
-  }
+  "api_version": "v1",
+  "capabilities": [
+    { "id": "config_safety.approvals", "state": "enabled" },
+    { "id": "config_safety.policy_preview", "state": "enabled" }
+  ]
 }
 ```
 
-Together, these flags enable the safety plan and request → approve → push
-workflow while direct config push remains disabled. Edition binaries may
-expose additional flags such as `sso.admin`. Flags control discovery and UI
-rendering only; protected APIs still require authentication and RBAC
-permissions.
+Capability discovery is not authorization; protected APIs still enforce authentication, RBAC, and server-side gates. For edition binary maintainers, `WithCapabilities` is preferred for typed declarations; `WithFeatures` remains supported for legacy edition overlays.
 
 ## Secret handling
 

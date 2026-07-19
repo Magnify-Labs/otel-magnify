@@ -67,31 +67,36 @@ For frontend development, run Vite separately from `frontend/`; the default back
 - `WithAuditLogger` for persistent audit sinks.
 - `WithRouterHook` and `WithProtectedRouterHook` for extra routes/middleware.
 - `WithAuthMethod` and `WithAuthMethodProvider` for additional login methods.
-- `WithFeatures` for build/edition feature flags exposed by `GET /api/features`.
+- `WithCapabilities` for typed capability declarations exposed by `GET /api/v1/capabilities`.
+- `WithFeatures` for legacy edition overlays exposed by `GET /api/features`.
 - `WithLicenseChecker` for edition/entitlement checks on gated endpoints.
 
-## Feature flags
+## Capability discovery
 
-Feature flags are not environment variables in the community binary. They are static server options registered by a binary at construction time:
+`GET /api/v1/capabilities` is the canonical public capability-discovery endpoint. `GET /api/features` remains a legacy boolean compatibility endpoint. `WithCapabilities` is preferred for typed declarations; `WithFeatures` remains supported for legacy edition overlays.
 
 ```go
-server.WithFeatures(map[string]bool{
-    "sso.admin": true,
-})
+import (
+    "github.com/magnify-labs/otel-magnify/pkg/capabilities"
+    "github.com/magnify-labs/otel-magnify/pkg/server"
+)
+
+func capabilityOption() (server.Option, error) {
+	registry, err := capabilities.New([]capabilities.Capability{
+		{ID: "config_safety.approvals", State: capabilities.StateEnabled},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return server.WithCapabilities(registry), nil
+}
 ```
 
-The public `GET /api/features` endpoint always returns a JSON object shaped as:
+The versioned document has three states: `enabled`, `disabled`, and `read_only`. An `enabled` capability must not include `reason_code`; every `disabled` or `read_only` capability requires one. Valid reason codes are `not_enabled`, `prerequisite_unavailable`, and `read_only_mode`.
 
-```json
-{ "features": { "sso.admin": true } }
-```
+Community advertises only `config_safety.approvals` and `config_safety.policy_preview` in this release. The legacy endpoint projects the same registry into booleans for older edition overlays.
 
-Community enables `config_safety.approvals` and its required UI dependency
-`config_safety.policy_preview` by default. The remaining Config Safety flags
-stay disabled. Flags are intentionally not secrets; protected feature pages
-and APIs must still enforce authentication and permissions.
-
-Current server-side feature gate names are defined in `internal/api/feature_gate.go`. Examples include `config_safety.approvals`, `config_safety.guided_rollback`, `config_safety.canary_rollout`, `config_safety.scoped_push`, `config_safety.drift_dashboard`, `config_safety.version_intelligence`, `config_safety.gitops_export`, `config_safety.policy_preview`, `reports.evidence_pack`, and `audit.viewer`.
+Capability discovery is not authorization. Protected APIs still enforce authentication, RBAC, and server-side gates. `WithLicenseChecker` is consulted by server-side gates and does not add capabilities to either public discovery response.
 
 ## Database notes
 
