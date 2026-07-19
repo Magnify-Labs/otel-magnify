@@ -11,7 +11,12 @@ import (
 // newTestDB returns a migrated PostgreSQL schema for tests.
 func newTestDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(testdb.New(t).DSN, testPoolConfig())
+	return newTestDBWithPoolConfig(t, testPoolConfig())
+}
+
+func newTestDBWithPoolConfig(t *testing.T, poolConfig PoolConfig) *DB {
+	t.Helper()
+	db, err := Open(testdb.New(t).DSN, poolConfig)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -20,6 +25,35 @@ func newTestDB(t *testing.T) *DB {
 	}
 	t.Cleanup(func() { db.Close() })
 	return db
+}
+
+func waitForPostgresTableLockWaiters(t *testing.T, db *DB, tableName string) {
+	t.Helper()
+
+	deadline := time.NewTimer(5 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer deadline.Stop()
+	defer ticker.Stop()
+
+	for {
+		var blockedSessions int
+		if err := db.QueryRow(`
+			SELECT COUNT(*)
+			FROM pg_stat_activity
+			WHERE datname = current_database()
+			  AND wait_event_type = 'Lock'
+			  AND query LIKE ?`, "%"+tableName+"%").Scan(&blockedSessions); err != nil {
+			t.Fatalf("count blocked PostgreSQL sessions: %v", err)
+		}
+		if blockedSessions >= 2 {
+			return
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("timed out waiting for two PostgreSQL sessions blocked on %s; last count = %d", tableName, blockedSessions)
+		case <-ticker.C:
+		}
+	}
 }
 
 func testPoolConfig() PoolConfig {

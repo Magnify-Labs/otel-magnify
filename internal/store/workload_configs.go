@@ -75,12 +75,30 @@ func (d *DB) UpdateWorkloadConfigStatus(workloadID, configID, status, errorMessa
 // UpdateWorkloadConfigInstanceStatus merges a single instance's remote status into the latest push row.
 func (d *DB) UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUID, status, errorMessage string, updatedAt time.Time) error {
 	errorMessage = models.SanitizeRemoteConfigErrorMessage(errorMessage)
-	wc, err := d.GetLatestWorkloadConfigByHash(workloadID, configID)
+	tx, err := d.Begin()
 	if err != nil {
 		return err
 	}
-	if wc == nil {
+	defer func() { _ = tx.Rollback() }()
+
+	wc, err := scanWorkloadConfig(tx.QueryRow(`
+		SELECT wc.workload_id, wc.config_id, wc.applied_at, wc.status,
+		       COALESCE(wc.error_message, ''), COALESCE(wc.pushed_by, ''), COALESCE(c.content, ''), wc.label,
+		       COALESCE(wc.push_id, ''), COALESCE(wc.submitted_at, wc.applied_at), wc.sent_at, wc.opamp_status_timeout_at,
+		       COALESCE(wc.rollback_of_push_id, ''), COALESCE(wc.instance_statuses, '[]')
+		FROM workload_configs wc
+		LEFT JOIN configs c ON c.id = wc.config_id
+		WHERE wc.workload_id = ? AND wc.config_id = ?
+		ORDER BY wc.applied_at DESC LIMIT 1
+		FOR UPDATE OF wc`, workloadID, configID))
+	if errors.Is(err, sql.ErrNoRows) {
+		if err := tx.Rollback(); err != nil {
+			return err
+		}
 		return d.UpdateCanaryTargetStatus(workloadID, configID, instanceUID, status, updatedAt)
+	}
+	if err != nil {
+		return err
 	}
 	if updatedAt.IsZero() {
 		updatedAt = time.Now().UTC()
@@ -112,15 +130,22 @@ func (d *DB) UpdateWorkloadConfigInstanceStatus(workloadID, configID, instanceUI
 	if err != nil {
 		return err
 	}
-	_, err = d.Exec(`
+	result, err := tx.Exec(`
 		UPDATE workload_configs SET status = ?, error_message = ?, instance_statuses = ?
-		WHERE workload_id = ? AND config_id = ?
-		  AND applied_at = (
-		    SELECT MAX(applied_at) FROM workload_configs WHERE workload_id = ? AND config_id = ?
-		  )`,
-		wc.Status, nullIfEmpty(errorMessage), string(instancesJSON), workloadID, configID, workloadID, configID,
+		WHERE workload_id = ? AND config_id = ? AND applied_at = ?`,
+		wc.Status, nullIfEmpty(errorMessage), string(instancesJSON), workloadID, configID, wc.AppliedAt,
 	)
 	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected != 1 {
+		return fmt.Errorf("update workload config instance status affected %d rows, want 1", rowsAffected)
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return d.UpdateCanaryTargetStatus(workloadID, configID, instanceUID, status, updatedAt)

@@ -40,6 +40,14 @@ func (d *DB) CreateCanaryStatus(status models.CanaryStatus) error {
 
 // UpdateCanaryStatus replaces the mutable status fields for a canary workflow.
 func (d *DB) UpdateCanaryStatus(status models.CanaryStatus) error {
+	return updateCanaryStatus(d, status)
+}
+
+type canaryStatusExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func updateCanaryStatus(execer canaryStatusExecer, status models.CanaryStatus) error {
 	if status.UpdatedAt.IsZero() {
 		status.UpdatedAt = time.Now().UTC()
 	}
@@ -56,7 +64,7 @@ func (d *DB) UpdateCanaryStatus(status models.CanaryStatus) error {
 	if err != nil {
 		return err
 	}
-	_, err = d.Exec(`UPDATE workload_config_canaries
+	_, err = execer.Exec(`UPDATE workload_config_canaries
 		SET status = ?, selection = ?, targets = ?, stop_reasons = ?, actor = ?, updated_at = ?, promoted_at = ?, aborted_at = ?, rolled_back_at = ?
 		WHERE id = ? AND workload_id = ?`,
 		status.Status, string(selectionJSON), string(targetsJSON), string(reasonsJSON), nullIfEmpty(status.Actor), status.UpdatedAt.UTC(),
@@ -79,7 +87,13 @@ func (d *DB) UpdateCanaryTargetStatus(workloadID, configID, instanceUID, status 
 	if updatedAt.IsZero() {
 		updatedAt = time.Now().UTC()
 	}
-	canaries, err := d.activeCanariesForConfig(workloadID, configID)
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	canaries, err := activeCanariesForConfig(tx, workloadID, configID)
 	if err != nil {
 		return err
 	}
@@ -112,17 +126,19 @@ func (d *DB) UpdateCanaryTargetStatus(workloadID, configID, instanceUID, status 
 		default:
 			canary.Status = models.CanaryStatusRunning
 		}
-		if err := d.UpdateCanaryStatus(*canary); err != nil {
+		if err := updateCanaryStatus(tx, *canary); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
-func (d *DB) activeCanariesForConfig(workloadID, configID string) ([]*models.CanaryStatus, error) {
-	rows, err := d.Query(`SELECT id, workload_id, config_id, status, selection, targets, stop_reasons, COALESCE(actor,''), created_at, updated_at, promoted_at, aborted_at, rolled_back_at
+func activeCanariesForConfig(tx *Tx, workloadID, configID string) ([]*models.CanaryStatus, error) {
+	rows, err := tx.Query(`SELECT id, workload_id, config_id, status, selection, targets, stop_reasons, COALESCE(actor,''), created_at, updated_at, promoted_at, aborted_at, rolled_back_at
 		FROM workload_config_canaries
-		WHERE workload_id = ? AND config_id = ? AND status IN (?, ?)`, workloadID, configID, models.CanaryStatusRunning, models.CanaryStatusSucceeded)
+		WHERE workload_id = ? AND config_id = ? AND status IN (?, ?)
+		ORDER BY id
+		FOR UPDATE`, workloadID, configID, models.CanaryStatusRunning, models.CanaryStatusSucceeded)
 	if err != nil {
 		return nil, err
 	}

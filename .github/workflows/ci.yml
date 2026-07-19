@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_DB: magnify
           POSTGRES_USER: magnify
@@ -34,6 +34,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify PostgreSQL 18 service
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          server_version_num="$(
+            docker exec "${POSTGRES_CONTAINER_ID}" \
+              psql -U magnify -d magnify -X -A -t \
+              -c "SELECT current_setting('server_version_num')"
+          )"
+          test "$((server_version_num / 10000))" -eq 18
+          echo "PostgreSQL major=18 server_version_num=${server_version_num}"
+
       - name: Run pre-tag gate in golang:1.25.12 container
         run: |
           docker run --rm \
@@ -42,7 +55,36 @@ jobs:
             --network host \
             -e GOFLAGS='-mod=mod -buildvcs=false' \
             -e TEST_POSTGRES_DSN='postgres://magnify:test-postgres-password@localhost:5432/magnify?sslmode=disable' \
+            -e TEST_POSTGRES_MAJOR=18 \
             golang:1.25.12 sh -c 'bash scripts/pre-tag-gate.sh'
+
+  postgres-lifecycle-18:
+    name: PostgreSQL 16 to 18 lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Run ShellCheck 0.11.0
+        run: |
+          docker run --rm \
+            --volume "$PWD:/mnt:ro" \
+            --workdir /mnt \
+            koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            scripts/postgres-lifecycle-test.sh
+
+      - name: Run PostgreSQL lifecycle test
+        run: bash scripts/postgres-lifecycle-test.sh
 
   build-frontend:
     name: Frontend build + lint

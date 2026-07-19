@@ -19,12 +19,14 @@ activation_require_command() {
   fi
 }
 
-activation_wait_for_health() {
+activation_wait_for_readiness() {
   local deadline="$1"
+  local readiness_body
 
-  until curl --fail --silent --show-error "${ACTIVATION_API_URL}/healthz" >/dev/null 2>&1; do
+  until readiness_body="$(curl --fail --silent --show-error "${ACTIVATION_API_URL}/readyz" 2>/dev/null)" \
+    && [[ "${readiness_body}" == "ready" ]]; do
     if ((SECONDS >= deadline)); then
-      echo "timed out waiting for the API health check" >&2
+      echo "timed out waiting for the exact API readiness response" >&2
       return 1
     fi
     sleep 2
@@ -136,7 +138,23 @@ activation_main() {
   fi
 
   local deadline=$((SECONDS + ACTIVATION_TIMEOUT_SECONDS))
-  activation_wait_for_health "${deadline}"
+  activation_wait_for_readiness "${deadline}"
+
+  local postgres_version
+  postgres_version="$("${compose[@]}" exec --no-TTY postgres \
+    psql --username magnify --dbname magnify --no-align --tuples-only \
+    --command 'SHOW server_version')"
+  local postgres_major
+  if [[ "${postgres_version}" =~ ^([0-9]+)(\.|$) ]]; then
+    postgres_major="${BASH_REMATCH[1]}"
+  else
+    echo "could not parse PostgreSQL server version: ${postgres_version}" >&2
+    return 1
+  fi
+  if [[ "${postgres_major}" != "18" ]]; then
+    echo "PostgreSQL 18 is required, got ${postgres_version}" >&2
+    return 1
+  fi
 
   curl --fail --silent --show-error \
     --output "${response_file}" \
@@ -207,6 +225,7 @@ activation_main() {
   activation_completed=true
   echo "activation smoke: OK"
   echo "health=ready features=approvals+policy_preview login=ok workload=connected governed_push=applied"
+  echo "postgres_version=${postgres_version}"
   echo "activation_seconds=${elapsed_seconds}"
 }
 

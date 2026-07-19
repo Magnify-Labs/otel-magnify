@@ -1,6 +1,8 @@
 package store
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -242,6 +244,109 @@ func TestWorkloadConfigPushStatusPersistsTimelineAndInstances(t *testing.T) {
 	}
 	if wc.TargetCount != 1 || wc.AppliedCount != 1 || len(wc.Timeline) < 3 {
 		t.Fatalf("hydrated status incomplete: %+v", wc)
+	}
+}
+
+func TestUpdateWorkloadConfigInstanceStatusConcurrentUpdatesDoNotLoseStatuses(t *testing.T) {
+	const instanceCount = 16
+
+	poolConfig := testPoolConfig()
+	poolConfig.MaxOpenConns = 20
+	db := newTestDBWithPoolConfig(t, poolConfig)
+	seedWorkload(t, db, "concurrent-workload")
+	seedConfig(t, db, "concurrent-config", "receivers: {}")
+
+	now := time.Now().UTC()
+	instances := make([]models.WorkloadConfigInstanceStatus, 0, instanceCount)
+	instanceUIDs := make([]string, 0, instanceCount)
+	for i := 0; i < instanceCount; i++ {
+		instanceUID := fmt.Sprintf("instance-%02d", i)
+		instanceUIDs = append(instanceUIDs, instanceUID)
+		instances = append(instances, models.WorkloadConfigInstanceStatus{
+			InstanceUID: instanceUID,
+			Required:    true,
+			Status:      models.PushStatusSent,
+			ConfigHash:  "concurrent-config",
+			UpdatedAt:   now,
+		})
+	}
+	if err := db.RecordWorkloadConfig(models.WorkloadConfig{
+		WorkloadID:       "concurrent-workload",
+		ConfigID:         "concurrent-config",
+		AppliedAt:        now,
+		SubmittedAt:      now,
+		Status:           models.PushStatusSent,
+		InstanceStatuses: instances,
+	}); err != nil {
+		t.Fatalf("RecordWorkloadConfig: %v", err)
+	}
+
+	controlTx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin control transaction: %v", err)
+	}
+	t.Cleanup(func() { _ = controlTx.Rollback() })
+	var appliedAt time.Time
+	if err := controlTx.QueryRow(`
+		SELECT wc.applied_at
+		FROM workload_configs wc
+		WHERE wc.workload_id = ? AND wc.config_id = ?
+		ORDER BY wc.applied_at DESC LIMIT 1
+		FOR UPDATE OF wc`, "concurrent-workload", "concurrent-config").Scan(&appliedAt); err != nil {
+		t.Fatalf("lock workload config: %v", err)
+	}
+
+	start := make(chan struct{})
+	updateErrs := make(chan error, instanceCount)
+	var updates sync.WaitGroup
+	for _, instanceUID := range instanceUIDs {
+		updates.Add(1)
+		go func() {
+			defer updates.Done()
+			<-start
+			if err := db.UpdateWorkloadConfigInstanceStatus(
+				"concurrent-workload",
+				"concurrent-config",
+				instanceUID,
+				models.PushStatusApplied,
+				"",
+				now.Add(time.Second),
+			); err != nil {
+				updateErrs <- fmt.Errorf("update %s: %w", instanceUID, err)
+			}
+		}()
+	}
+	close(start)
+
+	waitForPostgresTableLockWaiters(t, db, "workload_configs")
+
+	if err := controlTx.Commit(); err != nil {
+		t.Fatalf("release control transaction: %v", err)
+	}
+	updates.Wait()
+	close(updateErrs)
+	for err := range updateErrs {
+		t.Error(err)
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	got, err := db.GetLatestWorkloadConfigByHash("concurrent-workload", "concurrent-config")
+	if err != nil {
+		t.Fatalf("GetLatestWorkloadConfigByHash: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetLatestWorkloadConfigByHash returned nil")
+	}
+	appliedStatuses := 0
+	for _, instance := range got.InstanceStatuses {
+		if instance.Status == models.PushStatusApplied {
+			appliedStatuses++
+		}
+	}
+	if appliedStatuses != instanceCount || got.AppliedCount != instanceCount {
+		t.Fatalf("applied statuses = %d, AppliedCount = %d, want %d; result = %+v", appliedStatuses, got.AppliedCount, instanceCount, got)
 	}
 }
 

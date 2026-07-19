@@ -86,12 +86,9 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 		MaxAge:           300,
 	}))
 
-	// Health check (public, no auth)
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		//nolint:errcheck,gosec // status already committed; a Write failure here only signals a closed client connection
-		w.Write([]byte("ok"))
-	})
+	// Liveness and readiness probes (public, no auth)
+	r.Get("/healthz", healthHandler)
+	r.Get("/readyz", readinessHandler(db))
 
 	// Public routes
 	r.Post("/api/auth/login", api.handleLogin)
@@ -137,6 +134,8 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(a.Middleware)
+
+		r.With(api.RequirePerm(perm.ManageSettings)).Get("/api/system/database", api.handleDatabaseStats)
 
 		r.With(api.RequireFeature(FeatureConfigSafetyDriftDashboard)).Get("/api/config-safety/drift", api.handleListConfigDrift)
 		r.With(api.RequireFeature(FeatureReportsEvidencePack), api.RequirePerm(perm.ExportReports)).Post("/api/reports/evidence-pack", api.handlePreviewEvidencePack)

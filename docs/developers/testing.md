@@ -7,7 +7,9 @@ Use this page as the quick pre-PR checklist for local verification. Run the smal
 The Go module lives at the repository root and currently declares Go `1.25.12` in `go.mod`.
 
 ```bash
-TEST_POSTGRES_DSN="${TEST_POSTGRES_DSN:?set a disposable PostgreSQL DSN}" go test ./...
+TEST_POSTGRES_DSN="${TEST_POSTGRES_DSN:?set a disposable PostgreSQL 18 DSN}" \
+  TEST_POSTGRES_MAJOR=18 \
+  go test ./...
 go build ./...
 ```
 
@@ -18,11 +20,12 @@ docker run --rm \
   -v "$PWD:/app" \
   -w /app \
   -e GOFLAGS='-mod=mod -buildvcs=false' \
-  -e TEST_POSTGRES_DSN="${TEST_POSTGRES_DSN:?set TEST_POSTGRES_DSN to a disposable PostgreSQL database}" \
+  -e TEST_POSTGRES_DSN="${TEST_POSTGRES_DSN:?set TEST_POSTGRES_DSN to a disposable PostgreSQL 18 database}" \
+  -e TEST_POSTGRES_MAJOR=18 \
   golang:1.25.12 sh -c 'go build ./... && go test ./...'
 ```
 
-Go tests require a PostgreSQL database. Set `TEST_POSTGRES_DSN` to a disposable PostgreSQL 16+ database; the test helper creates and removes an isolated schema for each test.
+Go tests require a PostgreSQL 18 database. Set `TEST_POSTGRES_DSN` to a disposable database; the test suite verifies the major version and creates and removes an isolated schema for each test.
 
 ## Benchmarks
 
@@ -50,7 +53,8 @@ npm run test:unit
 
 ## End-to-end and integration checks
 
-- Cold Community activation: `./scripts/activation-smoke.sh` builds an isolated Compose stack and verifies bootstrap, login, workload discovery, governed push, and the final OpAMP `applied` status within 15 minutes.
+- Cold Community activation: `./scripts/activation-smoke.sh` builds an isolated Compose stack, requires an exact `ready` response, verifies PostgreSQL major 18, and exercises bootstrap, login, workload discovery, governed push, and the final OpAMP `applied` status within 15 minutes.
+- PostgreSQL lifecycle: `./scripts/postgres-lifecycle-test.sh` verifies the signed v0.7.1 baseline, PostgreSQL 16-to-18 dump/restore, current migrations, restart, and pre-upgrade restore paths with real isolated databases.
 - Helm activation contract: `./scripts/helm-activation-test.sh` verifies Secret references and fail-closed rendering without exposing secret values.
 - Mocked Playwright E2E: `cd frontend && npm run test:e2e`.
 - Real-backend Playwright flow: `./scripts/e2e-real.sh` or `cd frontend && npm run test:e2e:real` when you intentionally want Docker-backed services.

@@ -72,6 +72,7 @@ func TestLoadDatabasePoolDefaults(t *testing.T) {
 	for _, key := range []string{
 		"DB_MAX_OPEN_CONNS",
 		"DB_MAX_IDLE_CONNS",
+		"DB_CONN_MAX_IDLE_TIME_SECONDS",
 		"DB_CONN_MAX_LIFETIME_SECONDS",
 	} {
 		t.Setenv(key, "")
@@ -84,8 +85,20 @@ func TestLoadDatabasePoolDefaults(t *testing.T) {
 	if c.DBMaxIdleConns != 10 {
 		t.Fatalf("DBMaxIdleConns = %d, want 10", c.DBMaxIdleConns)
 	}
+	if c.DBConnMaxIdleTime != 5*time.Minute {
+		t.Fatalf("DBConnMaxIdleTime = %v, want %v", c.DBConnMaxIdleTime, 5*time.Minute)
+	}
 	if c.DBConnMaxLifetime != 30*time.Minute {
 		t.Fatalf("DBConnMaxLifetime = %v, want %v", c.DBConnMaxLifetime, 30*time.Minute)
+	}
+}
+
+func TestLoadDatabasePoolIdleTimeOverride(t *testing.T) {
+	t.Setenv("DB_CONN_MAX_IDLE_TIME_SECONDS", "45")
+
+	c := Load()
+	if c.DBConnMaxIdleTime != 45*time.Second {
+		t.Fatalf("DBConnMaxIdleTime = %v, want %v", c.DBConnMaxIdleTime, 45*time.Second)
 	}
 }
 

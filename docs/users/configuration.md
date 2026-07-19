@@ -7,7 +7,7 @@ otel-magnify is configured primarily through environment variables. See the [ref
 | Variable | Description |
 |----------|-------------|
 | `JWT_SECRET` | HS256 signing key for JWTs issued at login. Startup fails when this is unset, when the placeholder value is used, or when the value is shorter than 32 characters. Use a strong random value in production; at least 32 bytes is recommended. |
-| `DB_DSN` | PostgreSQL connection string. Startup fails when this is unset or empty. Use `sslmode=require` outside the local Compose network. |
+| `DB_DSN` | PostgreSQL 18 connection string. Startup fails when this is unset or empty. Use `sslmode=verify-full` with a trusted root certificate and hostname verification in production. |
 
 ## Persistence
 
@@ -16,11 +16,38 @@ otel-magnify is configured primarily through environment variables. See the [ref
 | `DB_DSN` | *(required)* | PostgreSQL connection string. |
 | `DB_MAX_OPEN_CONNS` | `40` | Maximum PostgreSQL connections held open. |
 | `DB_MAX_IDLE_CONNS` | `10` | Maximum idle PostgreSQL connections retained. |
+| `DB_CONN_MAX_IDLE_TIME_SECONDS` | `300` | Maximum idle time for a pooled connection in seconds. |
 | `DB_CONN_MAX_LIFETIME_SECONDS` | `1800` | Maximum lifetime for a pooled connection in seconds. |
 
-PostgreSQL is the only supported database for development and deployment. Use a managed service or an operator-managed PostgreSQL instance for backups, recovery, and scaling.
+PostgreSQL 18.x is the only supported database for development and deployment.
+Use a managed service or an operator-managed PostgreSQL instance for backups,
+recovery, and scaling. See the [PostgreSQL lifecycle
+runbook](../operations/postgresql-lifecycle.md) before an upgrade or credential
+rotation.
 
-Migrations run automatically on startup via [`pressly/goose`](https://github.com/pressly/goose).
+Migrations run automatically on startup via
+[`pressly/goose`](https://github.com/pressly/goose). The current single
+application role owns the schemas and objects so Goose can perform DDL; a
+separate least-privilege runtime role is future hardening, not the current
+deployment contract.
+
+Call `GET /api/system/database` with the `settings:manage` permission to inspect
+numeric connection-pool counters. Budget `DB_MAX_OPEN_CONNS` across every
+database client and leave capacity for administration and migrations.
+
+### Helm deployment controls
+
+The Helm chart fixes `replicaCount` at `1` while the OpAMP registry and live
+connections remain process-local, and it uses `Recreate`. Upgrades therefore
+have brief downtime and collectors reconnect to the replacement process.
+`/healthz` is used for startup and liveness checks; `/readyz` is the readiness
+check and depends on PostgreSQL.
+
+When an external Secret changes, apply the Secret first and then set a new
+opaque value in `deployment.secretRevision` so Helm changes the pod template.
+The chart does not look up external Secret contents. Helm rollback behavior
+does not cover the database: `helm upgrade --atomic` never restores PostgreSQL
+schemas or data.
 
 ## Network
 

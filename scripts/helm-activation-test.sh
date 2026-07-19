@@ -24,10 +24,19 @@ helm_activation_assert_contains() {
   fi
 }
 
+helm_activation_assert_not_contains() {
+  local unexpected="$1"
+  if grep -Fq -- "$unexpected" "$rendered_file"; then
+    helm_activation_fail "rendered chart unexpectedly contains: $unexpected"
+  fi
+}
+
 helm template magnify "$chart_path" \
   --namespace observability \
   --set database.existingSecret=magnify-db \
+  --set-string database.dsn=synthetic-ignored-inline-dsn \
   --set auth.existingSecret=magnify-auth \
+  --set-string jwtSecret=synthetic-ignored-inline-jwt \
   --set auth.seedAdmin.enabled=true \
   --set auth.seedAdmin.existingSecret=magnify-bootstrap \
   >"$rendered_file"
@@ -48,8 +57,41 @@ for expected in \
 done
 
 if grep -Fq "kind: Secret" "$rendered_file"; then
-  helm_activation_fail "reference-only install unexpectedly rendered a Secret containing inline values"
+  helm_activation_fail "operator-managed references unexpectedly rendered ignored legacy inline values"
 fi
+
+helm template magnify "$chart_path" \
+  --namespace observability \
+  --set-string database.dsn=synthetic-inline-dsn \
+  --set-string jwtSecret=synthetic-inline-jwt \
+  --set-string opampSharedSecret=synthetic-inline-opamp \
+  >"$rendered_file"
+
+for expected in \
+  "kind: Secret" \
+  "jwt-secret: \"synthetic-inline-jwt\"" \
+  "db-dsn: \"synthetic-inline-dsn\"" \
+  "opamp-shared-secret: \"synthetic-inline-opamp\""; do
+  helm_activation_assert_contains "$expected"
+done
+
+helm template magnify "$chart_path" \
+  --namespace observability \
+  --set database.existingSecret=magnify-db \
+  --set-string database.dsn=synthetic-ignored-inline-dsn \
+  --set auth.existingSecret=magnify-auth \
+  --set-string jwtSecret=synthetic-ignored-inline-jwt \
+  --set-string opampSharedSecret=synthetic-inline-opamp \
+  >"$rendered_file"
+
+helm_activation_assert_contains "opamp-shared-secret: \"synthetic-inline-opamp\""
+for unexpected in \
+  "jwt-secret:" \
+  "db-dsn:" \
+  "synthetic-ignored-inline-jwt" \
+  "synthetic-ignored-inline-dsn"; do
+  helm_activation_assert_not_contains "$unexpected"
+done
 
 if helm template magnify "$chart_path" \
   --set database.existingSecret=magnify-db \

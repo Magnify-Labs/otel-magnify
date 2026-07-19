@@ -69,9 +69,10 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	db, err := store.Open(cfg.DBDSN, store.PoolConfig{
+	db, err := store.OpenContext(ctx, cfg.DBDSN, store.PoolConfig{
 		MaxOpenConns:    cfg.DBMaxOpenConns,
 		MaxIdleConns:    cfg.DBMaxIdleConns,
+		ConnMaxIdleTime: cfg.DBConnMaxIdleTime,
 		ConnMaxLifetime: cfg.DBConnMaxLifetime,
 	})
 	if err != nil {
@@ -80,7 +81,7 @@ func Run(ctx context.Context, opts Options) error {
 	//nolint:errcheck // deferred until process exit; close error not actionable here
 	defer db.Close()
 
-	if err := db.Migrate(); err != nil {
+	if err := db.MigrateContext(ctx); err != nil {
 		return err
 	}
 	log.Println("Database migrations applied")
