@@ -20,6 +20,7 @@ commit_parsers = [
   { message = "^fix", group = "Bug Fixes" },
   { message = "^docs", group = "Documentation" },
   { message = "^refactor", group = "Refactoring" },
+  { message = "^build", group = "Build" },
   { message = "^ci", group = "CI/CD" },
   { message = "^i18n", group = "Internationalization" },
   { message = "^test", group = "Testing" },
