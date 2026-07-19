@@ -1,6 +1,28 @@
 # Changelog
 
 All notable changes to this project are documented here.
+## v0.8.0 — 2026-07-19
+
+### Build
+- Bump docker/build-push-action from 7.2.0 to 7.3.0 (#293)
+- Bump actions/setup-python from 6.2.0 to 6.3.0 (#295)
+- Bump docker/metadata-action from 6.1.0 to 6.2.0 (#298)
+- Bump i18next from 26.3.1 to 26.3.4 in /frontend (#308)
+- Bump @codemirror/state from 6.7.0 to 6.7.1 in /frontend (#304)
+- Bump @codemirror/view from 6.43.4 to 6.43.6 in /frontend (#305)
+- Bump @tanstack/react-query in /frontend (#306)
+- Bump prettier from 3.8.4 to 3.9.4 in /frontend (#307)
+- Bump golang from 1.25.12-alpine to 1.26.5-alpine (#321)
+
+
+### Documentation
+- Update changelog for v0.7.1 (#325)
+
+
+### Features
+- Complete PostgreSQL 18 production lifecycle (#326)
+
+
 ## v0.7.1 — 2026-07-14
 
 ### Bug Fixes
@@ -487,6 +509,5 @@ All notable changes to this project are documented here.
 - Integration coverage for onConnectionClose broadcast
 - Add Playwright coverage for workload inventory, instances, activity
 - Migrate legacy agent specs to workload endpoints
-
 
 
