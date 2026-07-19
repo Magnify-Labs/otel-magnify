@@ -6,6 +6,10 @@
 ^https?://127\.0\.0\.1
 ^https?://example\.(com|org)
 
+# Dynamic badge images are presentation assets; their destination links remain checked.
+^https://img\.shields\.io/
+^https://api\.scorecard\.dev/projects/github\.com/Magnify-Labs/otel-magnify/badge$
+
 # GitHub anchors that may not exist at check time
 ^https?://github\.com/Magnify-Labs/otel-magnify/issues/
 ^https?://github\.com/Magnify-Labs/otel-magnify/security/advisories/new

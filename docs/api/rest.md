@@ -17,7 +17,9 @@ See [Authentication](authentication.md) for login, token lifetime, WebSocket aut
 | `POST` | `/api/auth/login` | No | Email/password login. Returns `{ "token": "..." }`. |
 | `GET` | `/api/auth/methods` | No | Lists available login methods. Community default is password login only. |
 | `GET` | `/api/features` | No | Returns `{ "features": { ... } }`. Feature names are not authorization. |
-| `GET` | `/healthz` | No | Plain `ok` liveness/readiness response. |
+| `GET` | `/healthz` | No | Plain `ok` liveness response; independent of database connectivity. |
+| `GET` | `/readyz` | No | Plain `ready` response when PostgreSQL is reachable; otherwise `503 not ready`. |
+| `GET` | `/api/system/database` | Yes + `ManageSettings` permission | Numeric PostgreSQL connection-pool statistics. |
 | `GET` | `/api/workloads` | Yes | Lists active, non-archived workloads; pass `?include_archived=true` to include archived rows. |
 | `GET` | `/api/workloads/version-intelligence?recommended_version=...` | Yes + feature gate | Fleet version posture; gated by `config_safety.version_intelligence`. |
 | `GET` | `/api/workloads/{id}` | Yes | Fetches one workload. |
@@ -59,6 +61,14 @@ Feature-gated endpoints return `403` with `code=feature_disabled` when their ser
     The previous `/api/agents/*` routes still resolve for the core workload endpoints. They reply with HTTP `307 Temporary Redirect` to the matching `/api/workloads/*` path with the query string preserved. New integrations should call `/api/workloads/*` directly.
 
 ## Public endpoints
+
+### `GET /healthz`
+
+Returns plain text `ok` with `200 OK` while the HTTP process is live. This probe does not query PostgreSQL and remains successful when the database is unavailable.
+
+### `GET /readyz`
+
+Checks PostgreSQL connectivity with a one-second timeout derived from the HTTP request context. It returns plain text `ready` with `200 OK` when the check succeeds, or the generic plain text `not ready` with `503 Service Unavailable` otherwise. Database errors and connection details are never included in the response.
 
 ### `POST /api/auth/login`
 
@@ -317,6 +327,28 @@ Response is a `pkg/models.Config`:
 }
 ```
 
+## System operations
+
+### `GET /api/system/database`
+
+Requires the `settings:manage` permission (`ManageSettings`). The response contains only numeric `database/sql.DBStats` pool counters and durations:
+
+```json
+{
+  "max_open_connections": 40,
+  "open_connections": 3,
+  "in_use": 1,
+  "idle": 2,
+  "wait_count": 0,
+  "wait_duration_ms": 0,
+  "max_idle_closed": 0,
+  "max_idle_time_closed": 0,
+  "max_lifetime_closed": 0
+}
+```
+
+The endpoint never returns a DSN, host, database name, user, or SQL error. If the configured store cannot provide pool statistics, it fails closed with `503 Service Unavailable`.
+
 ## User self-service contracts
 
 ### `GET /api/me`
@@ -373,4 +405,4 @@ Common status codes:
 | `409` | Conflict, such as pushing remote config to a workload that cannot accept it. |
 | `410` | Legacy endpoint intentionally disabled. |
 | `500` | Unexpected server/store error. |
-| `503` | Audit sink unavailable for an audited operation. |
+| `503` | Audit sink unavailable, database readiness failed, or database statistics are unsupported. |

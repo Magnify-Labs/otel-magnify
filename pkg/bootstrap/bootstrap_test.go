@@ -2,6 +2,7 @@ package bootstrap_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/pkg/bootstrap"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/server"
+	"github.com/pressly/goose/v3/lock"
 )
 
 // TestRun_ReturnsOnContextCancel confirms that bootstrap.Run honours
@@ -36,6 +38,69 @@ func TestRun_ReturnsOnContextCancel(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return within 5 seconds of cancel")
+	}
+}
+
+func TestOpenDatabaseHonorsRunCancellation(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret-key-at-least-32-bytes!")
+	t.Setenv("DB_DSN", "postgres://postgres:postgres@127.0.0.1:1/postgres?sslmode=disable")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := bootstrap.Run(ctx, bootstrap.Options{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestMigrateContextCancelsBootstrapWhileWaitingForSessionLock(t *testing.T) {
+	database := testdb.New(t)
+	holder, err := sql.Open("pgx", database.DSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = holder.Close() })
+
+	conn, err := holder.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(
+		context.Background(),
+		"SELECT pg_advisory_lock($1)",
+		lock.DefaultLockID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = conn.ExecContext(
+			context.Background(),
+			"SELECT pg_advisory_unlock($1)",
+			lock.DefaultLockID,
+		)
+	}()
+
+	t.Setenv("JWT_SECRET", "test-secret-at-least-32-bytes-long-for-hmac")
+	t.Setenv("DB_DSN", database.DSN)
+	t.Setenv("LISTEN_ADDR", ":0")
+	t.Setenv("OPAMP_ADDR", ":0")
+
+	preRunCalled := false
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	err = bootstrap.Run(ctx, bootstrap.Options{
+		PreRun: func(_ ext.Store, _ ext.AuthProvider) ([]server.Option, error) {
+			preRunCalled = true
+			return nil, errors.New("migration lock was bypassed")
+		},
+	})
+	if preRunCalled {
+		t.Fatal("PreRun was called before the migration lock became available")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Run() error = %v, want context.DeadlineExceeded", err)
 	}
 }
 

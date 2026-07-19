@@ -12,6 +12,17 @@ bash scripts/pre-tag-gate.sh
 
 The gate runs the Go test suite, a targeted benchmark smoke check, and the server build. It does not create tags, GitHub releases, container images, or deployment side effects.
 
+CI also runs `scripts/postgres-lifecycle-test.sh` against real, isolated
+PostgreSQL 16 and 18 containers. It verifies the signed v0.7.1 baseline,
+dump/restore into a distinct PostgreSQL 18 instance, current migrations, a
+second application start, and the pre-upgrade restore path. Do not replace
+this gate with a mocked database.
+
+Before upgrading a deployed environment, record the pinned application image
+digest and follow the [PostgreSQL lifecycle
+runbook](../operations/postgresql-lifecycle.md). A release, `helm --atomic`, or
+a Goose down migration does not create or restore a database backup.
+
 ```bash
 # 1. Tag the new version
 git tag v0.x.y -m "release: v0.x.y"

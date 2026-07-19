@@ -1,5 +1,9 @@
 replicaCount: 1
 
+deployment:
+  # Increment after rotating an operator-managed Secret.
+  secretRevision: ""
+
 image:
   repository: ghcr.io/magnify-labs/otel-magnify
   # Defaults to .Chart.AppVersion when empty.
@@ -30,6 +34,7 @@ database:
   dsn: ""
   maxOpenConns: 40
   maxIdleConns: 10
+  connMaxIdleTimeSeconds: 300
   connMaxLifetimeSeconds: 1800
 
 config:

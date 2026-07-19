@@ -12,15 +12,23 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver with database/sql for Postgres
 	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+const (
+	migrationLockRetrySeconds       = uint64(1)
+	migrationLockFailureThreshold   = uint64(30)
+	migrationUnlockFailureThreshold = uint64(5)
+)
+
 // PoolConfig controls the database connection pool.
 type PoolConfig struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
+	ConnMaxIdleTime time.Duration
 	ConnMaxLifetime time.Duration
 }
 
@@ -31,8 +39,22 @@ type DB struct {
 
 // Open opens a database connection and verifies it is reachable.
 func Open(dsn string, pool PoolConfig) (*DB, error) {
+	return OpenContext(context.Background(), dsn, pool)
+}
+
+// OpenContext opens a database connection and verifies it is reachable within the caller's context.
+func OpenContext(ctx context.Context, dsn string, pool PoolConfig) (*DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, fmt.Errorf("DB_DSN environment variable is required")
+	}
+	if pool.MaxOpenConns <= 0 {
+		return nil, fmt.Errorf("MaxOpenConns must be greater than 0")
+	}
+	if pool.MaxIdleConns < 0 {
+		return nil, fmt.Errorf("MaxIdleConns must be non-negative")
+	}
+	if pool.MaxIdleConns > pool.MaxOpenConns {
+		return nil, fmt.Errorf("MaxIdleConns must not exceed MaxOpenConns")
 	}
 
 	db, err := sql.Open("pgx", dsn)
@@ -41,8 +63,11 @@ func Open(dsn string, pool PoolConfig) (*DB, error) {
 	}
 	db.SetMaxOpenConns(pool.MaxOpenConns)
 	db.SetMaxIdleConns(pool.MaxIdleConns)
+	db.SetConnMaxIdleTime(pool.ConnMaxIdleTime)
 	db.SetConnMaxLifetime(pool.ConnMaxLifetime)
-	if err := db.Ping(); err != nil {
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
@@ -69,6 +94,21 @@ func (d *DB) Query(query string, args ...any) (*sql.Rows, error) {
 // QueryRow executes a query after converting question-mark placeholders to PostgreSQL parameters.
 func (d *DB) QueryRow(query string, args ...any) *sql.Row {
 	return d.DB.QueryRow(rebind(query), args...)
+}
+
+// ExecPostgres executes a PostgreSQL query with native $n placeholders.
+func (d *DB) ExecPostgres(query string, args ...any) (sql.Result, error) {
+	return d.DB.Exec(query, args...)
+}
+
+// QueryPostgres executes a PostgreSQL query with native $n placeholders.
+func (d *DB) QueryPostgres(query string, args ...any) (*sql.Rows, error) {
+	return d.DB.Query(query, args...)
+}
+
+// QueryRowPostgres executes a PostgreSQL query with native $n placeholders.
+func (d *DB) QueryRowPostgres(query string, args ...any) *sql.Row {
+	return d.DB.QueryRow(query, args...)
 }
 
 // Begin starts a transaction whose query methods rebind PostgreSQL parameters.
@@ -102,6 +142,21 @@ func (tx *Tx) Query(query string, args ...any) (*sql.Rows, error) {
 // QueryRow executes a query after converting question-mark placeholders to PostgreSQL parameters.
 func (tx *Tx) QueryRow(query string, args ...any) *sql.Row {
 	return tx.Tx.QueryRow(rebind(query), args...)
+}
+
+// ExecPostgres executes a PostgreSQL query with native $n placeholders.
+func (tx *Tx) ExecPostgres(query string, args ...any) (sql.Result, error) {
+	return tx.Tx.Exec(query, args...)
+}
+
+// QueryPostgres executes a PostgreSQL query with native $n placeholders.
+func (tx *Tx) QueryPostgres(query string, args ...any) (*sql.Rows, error) {
+	return tx.Tx.Query(query, args...)
+}
+
+// QueryRowPostgres executes a PostgreSQL query with native $n placeholders.
+func (tx *Tx) QueryRowPostgres(query string, args ...any) *sql.Row {
+	return tx.Tx.QueryRow(query, args...)
 }
 
 func rebind(query string) string {
@@ -184,21 +239,44 @@ func rebind(query string) string {
 
 // Migrate runs all pending goose migrations embedded in the binary.
 func (d *DB) Migrate() error {
+	return d.MigrateContext(context.Background())
+}
+
+// MigrateContext runs all pending goose migrations within the caller's context.
+func (d *DB) MigrateContext(ctx context.Context) error {
+	locker, err := newMigrationLocker(migrationLockFailureThreshold)
+	if err != nil {
+		return fmt.Errorf("goose migration locker: %w", err)
+	}
+	return d.migrate(ctx, locker)
+}
+
+func newMigrationLocker(failureThreshold uint64) (lock.SessionLocker, error) {
+	return lock.NewPostgresSessionLocker(
+		lock.WithLockTimeout(migrationLockRetrySeconds, failureThreshold),
+		lock.WithUnlockTimeout(migrationLockRetrySeconds, migrationUnlockFailureThreshold),
+	)
+}
+
+func (d *DB) migrate(ctx context.Context, locker lock.SessionLocker) error {
 	fsys, err := fs.Sub(migrationsFS, "migrations")
 	if err != nil {
 		return fmt.Errorf("migrations fs: %w", err)
 	}
 
-	provider, err := goose.NewProvider(goose.DialectPostgres, d.DB, fsys)
+	provider, err := goose.NewProvider(
+		goose.DialectPostgres,
+		d.DB,
+		fsys,
+		goose.WithGoMigrations(migration00026),
+		goose.WithSessionLocker(locker),
+	)
 	if err != nil {
 		return fmt.Errorf("goose provider: %w", err)
 	}
 
-	if _, err := provider.Up(context.Background()); err != nil {
+	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("goose up: %w", err)
-	}
-	if err := d.sanitizeLegacyRemoteConfigStatuses(); err != nil {
-		return err
 	}
 	return nil
 }

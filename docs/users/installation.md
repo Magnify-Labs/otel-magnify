@@ -6,12 +6,18 @@ otel-magnify ships as a single binary that embeds the frontend. Three deployment
 
 - Go version compatible with `go.mod` when building from source.
 - Node.js/npm only when rebuilding the frontend locally. The production binary embeds pre-built frontend assets.
-- PostgreSQL 16 or later. `DB_DSN` is required by the binary.
+- PostgreSQL 18.x. `DB_DSN` is required by the binary.
 - A strong `JWT_SECRET`. Startup fails when it is missing, too short, or still set to the production placeholder.
 
-## Breaking change: fresh database required
+## PostgreSQL 18 support boundary
 
-This release does not convert existing data. Before upgrading, back up or export any data you need from an existing SQLite or PostgreSQL database. Do not upgrade this release against an existing database. Create a fresh, empty PostgreSQL database and point `DB_DSN` to it; no conversion tool is supplied.
+PostgreSQL 18.x is the only supported server version. An existing v0.7.1
+database on PostgreSQL 16 must be dumped or migrated into a distinct
+PostgreSQL 18 instance and validated with the same v0.7.1 artifact before the
+application is upgraded. Never reuse a PostgreSQL 16 physical data directory
+with PostgreSQL 18. Follow the [PostgreSQL lifecycle
+runbook](../operations/postgresql-lifecycle.md) for backup, upgrade, and
+rollback.
 
 ## Docker Compose
 
@@ -51,19 +57,23 @@ To verify the whole path automatically on a clean PostgreSQL volume:
 ```
 
 The smoke test generates ephemeral credentials, requires the Community
-approval and policy-preview features, and fails if health, first-admin login,
-workload discovery, approval, push, and the `applied` acknowledgement do not
-complete within 15 minutes. It removes its containers, network, volume, and
-credential files on exit.
+approval and policy-preview features, and fails unless `/readyz` returns
+exactly `ready`, the database reports PostgreSQL major 18, and first-admin
+login, workload discovery, approval, push, and the `applied` acknowledgement
+complete within 15 minutes. It removes its isolated containers, network,
+volume, and credential files on exit.
 
 Compose defaults:
 
 - `DB_DSN=postgres://magnify:***@postgres:5432/magnify?sslmode=disable`
 - `CORS_ORIGINS=http://localhost:8080`
-- PostgreSQL data persisted in the `pg-data` Docker volume
+- PostgreSQL data persisted in a fresh `pg18-data` Docker volume, mounted at
+  `/var/lib/postgresql` with `PGDATA=/var/lib/postgresql/18/docker`
 - `OPAMP_SHARED_SECRET` empty unless you set it in the shell environment
 
-Do not use sample password values from docs in a shared environment.
+Do not use sample password values from docs in a shared environment. Do not
+run `docker compose down --volumes` against an older project until its database
+has been migrated, validated on PostgreSQL 18, and backed up.
 
 ### Published GHCR image
 
@@ -178,7 +188,8 @@ Important values:
 
 | Value | Default | Notes |
 |-------|---------|-------|
-| `replicaCount` | `1` | PostgreSQL supports single- and multi-replica deployments. |
+| `replicaCount` | `1` | Must remain `1` while the OpAMP registry and live connections are process-local. |
+| `deployment.secretRevision` | empty | Change after rotating an operator-managed Secret to restart the pod. |
 | `image.repository` | `ghcr.io/magnify-labs/otel-magnify` | Container image repository. |
 | `image.tag` | chart app version | Override to pin a release/image digest. |
 | `service.type` | `ClusterIP` | Exposes both API and OpAMP service ports inside the cluster. |
@@ -190,6 +201,7 @@ Important values:
 | `database.dsn` | empty | Explicit DSN used to create the release Secret when `database.existingSecret` is empty. |
 | `database.maxOpenConns` | `40` | Maximum PostgreSQL connections held open. |
 | `database.maxIdleConns` | `10` | Maximum idle PostgreSQL connections retained. |
+| `database.connMaxIdleTimeSeconds` | `300` | Maximum idle time for a pooled connection. |
 | `database.connMaxLifetimeSeconds` | `1800` | Maximum lifetime for a pooled connection. |
 | `config.corsOrigins` | empty | Passed to `CORS_ORIGINS`. Set this to your external UI origin when using ingress. |
 | `auth.existingSecret` | empty | Operator-managed Secret containing the durable JWT signing key; required for the supported install path. |
@@ -200,6 +212,35 @@ Important values:
 | `opampSharedSecret` | empty | Stored in the generated Kubernetes Secret as `opamp-shared-secret`; leave empty only for trusted local/internal OpAMP networks. |
 | `automountServiceAccountToken` | `false` | The binary does not call the Kubernetes API. |
 | `podSecurityContext` / `containerSecurityContext` | hardened non-root defaults | Keep these defaults unless your runtime requires a documented exception. |
+
+### Deployment availability and probes
+
+The chart deliberately supports one replica only while the OpAMP registry and
+live collector connections are process-local. It rejects any `replicaCount`
+other than `1`. The Deployment uses the `Recreate` strategy, so an upgrade has
+brief downtime and connected collectors must reconnect after the replacement
+pod starts.
+
+The startup and liveness probes call `/healthz`, which checks that the process
+is alive. The readiness probe calls `/readyz`, which depends on PostgreSQL and
+keeps the pod out of Service endpoints while the database is unavailable.
+
+For an operator-managed external Secret, first apply the updated Secret and
+then change `deployment.secretRevision` in the Helm release. This explicit pod
+template change triggers a restart; the chart does not read external Secret
+contents during rendering. For example:
+
+```bash
+kubectl --namespace otel-magnify apply -f magnify-secrets.yaml
+helm upgrade magnify helm/otel-magnify/ \
+  --namespace otel-magnify \
+  --reuse-values \
+  --set-string deployment.secretRevision="rev-2"
+```
+
+`helm upgrade --atomic` can roll back Kubernetes release objects after a failed
+upgrade, but it never restores PostgreSQL schemas or data. Back up PostgreSQL
+and verify recovery independently before an application upgrade.
 
 ### Helm security caveats
 
@@ -264,6 +305,7 @@ Use this as an initial bootstrap mechanism only. After first login, rotate the p
 
 ```bash
 curl -fsS http://localhost:8080/healthz
+curl -fsS http://localhost:8080/readyz
 curl -fsS http://localhost:8080/api/features
 curl -fsS http://localhost:8080/api/auth/methods
 ```
@@ -271,6 +313,7 @@ curl -fsS http://localhost:8080/api/auth/methods
 Expected unauthenticated responses:
 
 - `/healthz` returns `ok`.
+- `/readyz` returns `ready` when PostgreSQL is reachable.
 - `/api/features` returns the Community `config_safety.approvals` and `config_safety.policy_preview` flags.
 - `/api/auth/methods` lists the password login method by default.
 
@@ -279,7 +322,11 @@ Expected unauthenticated responses:
 Before exposing otel-magnify beyond a developer machine:
 
 - Generate a strong `JWT_SECRET`; do not reuse docs/examples.
-- Configure PostgreSQL backups, recovery, and connection limits for the expected workload.
+- Use PostgreSQL 18.x with `sslmode=verify-full`, a trusted root certificate,
+  and hostname verification.
+- Configure and rehearse PostgreSQL backups and recovery, and budget connection
+  limits for the expected workload. Community makes no PITR, RPO, or RTO
+  promise; follow the [lifecycle runbook](../operations/postgresql-lifecycle.md).
 - Set `CORS_ORIGINS` to the exact browser origin(s) that should access the API.
 - Serve the API/frontend and WebSocket hub over TLS.
 - Treat legacy WebSocket URLs containing `?token=` as sensitive; browser clients should normally use the `om_session` HttpOnly cookie on `/ws`.

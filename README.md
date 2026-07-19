@@ -63,7 +63,7 @@ Monitor, configure, and alert on your OTel Collectors and SDK agents from a sing
 |-------|-----------|
 | Backend | Go, [chi](https://github.com/go-chi/chi), [opamp-go](https://github.com/open-telemetry/opamp-go), [goose](https://github.com/pressly/goose) |
 | Frontend | React 19, TypeScript, Vite, Zustand, TanStack Query, CodeMirror 6 |
-| Database | PostgreSQL 16+ |
+| Database | PostgreSQL 18.x |
 | Auth | JWT (HS256), bcrypt |
 | Deployment | Docker, Docker Compose, Helm |
 
@@ -110,9 +110,16 @@ The complete cold path is automated and fails if it exceeds 15 minutes:
 ./scripts/activation-smoke.sh
 ```
 
-The script generates ephemeral credentials, starts a fresh PostgreSQL volume,
-creates and logs in as the first admin, discovers a workload, performs a
-governed config push, verifies the OpAMP `applied` status, and cleans up.
+The script generates ephemeral credentials, starts a fresh PostgreSQL 18
+volume, waits for database-backed readiness, checks the server major, creates
+and logs in as the first admin, discovers a workload, performs a governed
+config push, verifies the OpAMP `applied` status, and cleans up.
+
+Compose uses a new `pg18-data` volume mounted at `/var/lib/postgresql` with
+`PGDATA=/var/lib/postgresql/18/docker`. Do not point PostgreSQL 18 at an older
+physical data directory. Follow the [PostgreSQL lifecycle
+runbook](docs/operations/postgresql-lifecycle.md) to move an existing database
+or prepare an application upgrade.
 
 ### Development
 
@@ -164,7 +171,9 @@ helm install magnify helm/otel-magnify/ \
 
 Create those Secrets through a secret manager or the [documented bootstrap
 workflow](docs/users/installation.md#kubernetes-helm). Keep the durable JWT key
-separate from the removable first-admin bootstrap Secret.
+separate from the removable first-admin bootstrap Secret. Keep
+`replicaCount: 1` while OpAMP connections and the live registry remain
+process-local.
 
 ## Configuration
 
@@ -213,6 +222,7 @@ the supported distinction and workload identity rules.
 | `POST` | `/api/alerts/:id/resolve` | Yes | Resolve an alert |
 | `GET` | `/ws` | Yes | Real-time WebSocket; browser sessions authenticate with the HttpOnly session cookie (`?token=` remains as a legacy compatibility fallback) |
 | `GET` | `/healthz` | No | Health check |
+| `GET` | `/readyz` | No | Readiness check; returns `ready` only when PostgreSQL is reachable |
 
 > Legacy `/api/agents/*` paths still resolve — they reply with HTTP `307 Temporary Redirect` to the matching `/api/workloads/*` endpoint for backwards compatibility.
 

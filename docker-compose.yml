@@ -41,15 +41,16 @@ services:
         condition: service_healthy
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: magnify
       POSTGRES_USER: magnify
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set to a strong PostgreSQL password}
+      PGDATA: /var/lib/postgresql/18/docker
     ports:
       - "5432:5432"
     volumes:
-      - pg-data:/var/lib/postgresql/data
+      - pg18-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U magnify -d magnify"]
       interval: 5s
@@ -57,4 +58,4 @@ services:
       retries: 5
 
 volumes:
-  pg-data:
+  pg18-data:

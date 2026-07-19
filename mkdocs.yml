@@ -73,6 +73,9 @@ nav:
       - OpAMP flow: developers/opamp-flow.md
       - Testing: developers/testing.md
       - Release: developers/release.md
+  - Operations:
+      - PostgreSQL lifecycle: operations/postgresql-lifecycle.md
+      - Load testing: operations/load-testing.md
   - API:
       - Overview: api/index.md
       - Authentication: api/authentication.md

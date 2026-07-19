@@ -1,3 +1,8 @@
+{{- $replicaCountKind := kindOf .Values.replicaCount }}
+{{- $replicaCountIsNumeric := or (eq $replicaCountKind "float64") (eq $replicaCountKind "int64") }}
+{{- if not (and $replicaCountIsNumeric (eq (printf "%v" .Values.replicaCount) "1")) }}
+{{- fail "replicaCount must remain 1 because OpAMP connections are process-local" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 {{- if not (or .Values.database.existingSecret .Values.database.dsn) }}
@@ -25,7 +30,9 @@ metadata:
   labels:
     app: {{ .Release.Name }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ .Release.Name }}
@@ -33,6 +40,11 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}
+      annotations:
+        checksum/release-secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.deployment.secretRevision }}
+        otel-magnify.io/secret-revision: {{ . | quote }}
+        {{- end }}
     spec:
       automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
       securityContext:
@@ -58,6 +70,8 @@ spec:
               value: {{ .Values.database.maxOpenConns | quote }}
             - name: DB_MAX_IDLE_CONNS
               value: {{ .Values.database.maxIdleConns | quote }}
+            - name: DB_CONN_MAX_IDLE_TIME_SECONDS
+              value: {{ .Values.database.connMaxIdleTimeSeconds | quote }}
             - name: DB_CONN_MAX_LIFETIME_SECONDS
               value: {{ .Values.database.connMaxLifetimeSeconds | quote }}
             - name: JWT_SECRET
@@ -101,12 +115,23 @@ spec:
             httpGet:
               path: /healthz
               port: api
-            initialDelaySeconds: 5
-          readinessProbe:
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 1
+          startupProbe:
             httpGet:
               path: /healthz
               port: api
-            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 60
+            timeoutSeconds: 1
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: api
+            periodSeconds: 5
+            failureThreshold: 3
+            timeoutSeconds: 1
       volumes:
         - name: tmp
           emptyDir: {}
