@@ -878,6 +878,9 @@ export default function WorkloadConfigSection({ workload }: Props) {
   )
   const { enabled: approvalsEnabled, isLoading: approvalsLoading } =
     useCapability('config_safety.approvals')
+  const { enabled: policyPreviewEnabled, isLoading: policyPreviewLoading } = useCapability(
+    'config_safety.policy_preview',
+  )
   const { enabled: gitOpsExportEnabled, isLoading: gitOpsExportLoading } = useCapability(
     'config_safety.gitops_export',
   )
@@ -1006,7 +1009,11 @@ export default function WorkloadConfigSection({ workload }: Props) {
   } = useQuery({
     queryKey: ['workload-config-plan-readonly', workload.id, activeContent],
     queryFn: () => workloadsAPI.planConfig(workload.id, activeContent),
-    enabled: workload.type === 'collector' && isReadOnlyCollector(workload) && !!activeContent,
+    enabled:
+      workload.type === 'collector' &&
+      isReadOnlyCollector(workload) &&
+      policyPreviewEnabled &&
+      !!activeContent,
     retry: false,
   })
 
@@ -1464,6 +1471,7 @@ export default function WorkloadConfigSection({ workload }: Props) {
             ? t('workloads.config.scope.disabled.plan_blocks_push')
             : ''
   const canGeneratePlan =
+    policyPreviewEnabled &&
     canValidateConfig &&
     !!draftYaml &&
     !pendingHash &&
@@ -1557,16 +1565,19 @@ export default function WorkloadConfigSection({ workload }: Props) {
                   : scopeMode === 'dynamic' && !hasDynamicSelector(dynamicSelector)
                     ? t('workloads.config.scope.disabled.enter_selector')
                     : ''
-  const planDisabledReason =
-    validation === null
-      ? t('workloads.config.scope.disabled.validate_first')
-      : !validation.valid
-        ? t('workloads.config.scope.disabled.fix_validation_plan')
-        : pendingHash
-          ? t('workloads.config.scope.disabled.wait_current_plan')
-          : !canValidateConfig
-            ? t('workloads.config.permission.validate_blocked')
-            : ''
+  const planDisabledReason = policyPreviewLoading
+    ? t('workloads.config.policy.feature_loading')
+    : !policyPreviewEnabled
+      ? t('workloads.config.policy.feature_disabled')
+      : validation === null
+        ? t('workloads.config.scope.disabled.validate_first')
+        : !validation.valid
+          ? t('workloads.config.scope.disabled.fix_validation_plan')
+          : pendingHash
+            ? t('workloads.config.scope.disabled.wait_current_plan')
+            : !canValidateConfig
+              ? t('workloads.config.permission.validate_blocked')
+              : ''
 
   const canRollback = hasPushPermission && canReadConfigContent && guidedRollbackEnabled
   const scopeDisabled = !scopedPushEnabled || !hasPushPermission

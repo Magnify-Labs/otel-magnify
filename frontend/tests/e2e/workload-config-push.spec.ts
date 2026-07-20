@@ -38,11 +38,41 @@ const CONFIG_SAFETY_CAPABILITIES = {
   'config_safety.policy_preview': true,
 }
 
+const POLICY_PREVIEW_FAILURES = [
+  { label: 'is absent', response: 'absent' },
+  { label: 'has an unknown state', response: 'unknown-state' },
+  { label: 'returns an HTTP error', response: 'http-error' },
+] as const
+
 async function mockConfigSafetyCapabilities(
   page: Page,
   overrides: Record<string, boolean> = {},
 ) {
   await mockCapabilities(page, { ...CONFIG_SAFETY_CAPABILITIES, ...overrides })
+}
+
+async function mockUnavailablePolicyPreview(
+  page: Page,
+  response: (typeof POLICY_PREVIEW_FAILURES)[number]['response'],
+) {
+  if (response === 'absent') {
+    await mockCapabilities(page, { 'config_safety.approvals': true })
+    return
+  }
+
+  await page.route('**/api/v1/capabilities', (route) => {
+    if (response === 'http-error') {
+      return route.fulfill({ status: 500 })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        api_version: 'v1',
+        capabilities: [{ id: 'config_safety.policy_preview', state: 'future' }],
+      }),
+    })
+  })
 }
 
 function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
@@ -1572,6 +1602,7 @@ test('canary start stays disabled until a safety plan is ready', async ({ logged
 test('plan blocks push for validation failure and read-only targets with reasons', async ({
   loggedInPage: page,
 }) => {
+  await mockCapabilities(page, { 'config_safety.policy_preview': true })
   await mockWorkload(page, { accepts_remote_config: false })
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1623,6 +1654,7 @@ test('plan blocks push for validation failure and read-only targets with reasons
 })
 
 test('plan surfaces high-risk changes reported by backend', async ({ loggedInPage: page }) => {
+  await mockCapabilities(page, { 'config_safety.policy_preview': true })
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1859,6 +1891,7 @@ test('validation details separate non-blocking warnings from blocking errors', a
 test('validation details explain when otelcol runtime check is skipped', async ({
   loggedInPage: page,
 }) => {
+  await mockCapabilities(page, { 'config_safety.policy_preview': true })
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2849,6 +2882,65 @@ test('dynamic all-capable preview stays preview-only and does not push bulk targ
   await expect(page.getByRole('button', { name: 'Push approved config' })).toHaveCount(0)
   expect(pushRequestCount).toBe(0)
 })
+
+for (const failure of POLICY_PREVIEW_FAILURES) {
+  test(`policy preview ${failure.label} keeps safety plan generation closed`, async ({
+    loggedInPage: page,
+  }) => {
+    await mockUnavailablePolicyPreview(page, failure.response)
+    await mockWorkload(page)
+    await mockConfig(page, 'receivers:\n  otlp: {}\n')
+    await mockHistory(page, [])
+    await mockValidate(page, { valid: true })
+
+    let planRequestCount = 0
+    await page.route(`**/api/workloads/${WORKLOAD_ID}/config/plan`, (route) => {
+      planRequestCount += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildPlan()),
+      })
+    })
+
+    await page.goto(`/workloads/${WORKLOAD_ID}`)
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    await page
+      .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+      .click()
+    await expect(page.locator('.validation-ok')).toContainText('valid')
+
+    const generatePlan = page.getByRole('button', { name: 'Generate safety plan' })
+    await expect(generatePlan).toBeDisabled()
+    await expect(generatePlan).toHaveAttribute('title', /policy preview is not enabled/i)
+    expect(planRequestCount).toBe(0)
+  })
+
+  test(`policy preview ${failure.label} blocks the automatic read-only plan`, async ({
+    loggedInPage: page,
+  }) => {
+    await mockUnavailablePolicyPreview(page, failure.response)
+    await mockWorkload(page, { accepts_remote_config: false })
+    await mockConfig(page, 'receivers:\n  otlp: {}\n')
+    await mockHistory(page, [])
+
+    let planRequestCount = 0
+    await page.route(`**/api/workloads/${WORKLOAD_ID}/config/plan`, (route) => {
+      planRequestCount += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildPlan({ can_push: false, apply_allowed: false })),
+      })
+    })
+
+    await page.goto(`/workloads/${WORKLOAD_ID}`)
+    await expect(page.getByText('Configuration', { exact: true })).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    expect(planRequestCount).toBe(0)
+  })
+}
 
 test('community features generate a plan and submit the governed workload config push', async ({
   loggedInPage: page,

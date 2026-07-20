@@ -657,6 +657,8 @@
         "title": "Config policy findings",
         "helper": "Backend policy evaluation runs before push and enforces blocking findings server-side.",
         "loading": "Evaluating config policy…",
+        "feature_disabled": "Policy preview is not enabled for this workspace.",
+        "feature_loading": "Loading policy preview capability…",
         "unavailable_body": "The backend did not return policy findings for this plan. Push enforcement still happens server-side.",
         "counts_label": "Policy finding counts",
         "findings_title": "Findings",

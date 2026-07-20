@@ -7,6 +7,12 @@ const ACTIVE_CONFIG_ID = 'hash-current'
 const HASH_OLD = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const HASH_NEW = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 
+const POLICY_PREVIEW_FAILURES = [
+  { label: 'is absent', response: 'absent' },
+  { label: 'has an unknown state', response: 'unknown-state' },
+  { label: 'returns an HTTP error', response: 'http-error' },
+] as const
+
 const YAML_OLD = `receivers:
   otlp: {}
 exporters:
@@ -309,20 +315,45 @@ function mockConfigsList(page: Page) {
   )
 }
 
+async function mockUnavailablePolicyPreview(
+  page: Page,
+  response: (typeof POLICY_PREVIEW_FAILURES)[number]['response'],
+) {
+  if (response === 'absent') {
+    await mockCapabilities(page, {})
+    return
+  }
+
+  await page.route('**/api/v1/capabilities', (route) => {
+    if (response === 'http-error') {
+      return route.fulfill({ status: 500 })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        api_version: 'v1',
+        capabilities: [{ id: 'config_safety.policy_preview', state: 'future' }],
+      }),
+    })
+  })
+}
+
 async function gotoWorkloadDetail(
   page: Page,
   role: 'editor' | 'viewer' = 'editor',
-  features: Record<string, boolean> = {
+  features: Record<string, boolean> | null = {
     'config_safety.guided_rollback': true,
     'config_safety.canary_rollout': true,
     'config_safety.scoped_push': true,
     'config_safety.approvals': true,
     'config_safety.gitops_export': true,
+    'config_safety.policy_preview': true,
   },
 ) {
   // Seed auth on the app origin through a stable document before hitting the
   // protected route; this keeps the spec independent from login submission.
-  await mockCapabilities(page, features)
+  if (features !== null) await mockCapabilities(page, features)
   await page.route('**/api/auth/methods', (route) =>
     route.fulfill({
       status: 200,
@@ -695,6 +726,59 @@ test('compare dialog diffs two arbitrary revisions', async ({ loggedInPage: page
   // The MergeView from CodeMirror renders two .cm-content panes side-by-side.
   await expect(page.locator('.config-diff-view .cm-content')).toHaveCount(2)
 })
+
+for (const failure of POLICY_PREVIEW_FAILURES) {
+  test(`compare dialog stays closed to policy preview when the capability ${failure.label}`, async ({
+    loggedInPage: page,
+  }) => {
+    await mockUnavailablePolicyPreview(page, failure.response)
+    await mockWorkload(page)
+    await mockActiveConfig(page)
+    await mockSavedConfigs(page)
+    await mockHistory(page, BASE_HISTORY)
+    await mockConfigsList(page)
+
+    await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/${HASH_OLD}`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...BASE_HISTORY[1], content: YAML_OLD }),
+      }),
+    )
+    await page.route(`**/api/workloads/${WORKLOAD_ID}/configs/${HASH_NEW}`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...BASE_HISTORY[0], content: YAML_NEW }),
+      }),
+    )
+    await page.route('**/api/configs/diff', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(HIGH_OTEL_DIFF),
+      }),
+    )
+
+    let policyRequestCount = 0
+    await page.route('**/api/configs/policy/preview', (route) => {
+      policyRequestCount += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(BLOCKING_POLICY),
+      })
+    })
+
+    await gotoWorkloadDetail(page, 'editor', null)
+    await page.getByRole('button', { name: 'Compare revisions' }).click()
+
+    await expect(page.getByRole('dialog', { name: 'Compare two revisions' })).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    expect(policyRequestCount).toBe(0)
+    await expect(page.getByText('Policy evaluation unavailable')).toBeVisible()
+  })
+}
 
 test('viewer cannot initiate rollback or known-good history actions', async ({
   loggedInPage: page,

@@ -657,6 +657,8 @@
         "title": "Constats de politique de config",
         "helper": "L’évaluation de politique backend s’exécute avant le push et applique les blocages côté serveur.",
         "loading": "Évaluation de la politique de config…",
+        "feature_disabled": "La prévisualisation de politique n’est pas activée pour cet espace de travail.",
+        "feature_loading": "Chargement de la capacité de prévisualisation de politique…",
         "unavailable_body": "Le backend n’a pas renvoyé de constats de politique pour ce plan. L’application des règles reste côté serveur.",
         "counts_label": "Compteurs de constats de politique",
         "findings_title": "Constats",

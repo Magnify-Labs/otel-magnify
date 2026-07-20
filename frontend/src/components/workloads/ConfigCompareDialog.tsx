@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { configsAPI, workloadsAPI } from '../../api/client'
 import ConfigDiffView from './ConfigDiffView'
+import { useCapability } from '../../hooks/useCapability'
 import type { WorkloadConfig } from '../../types'
 
 interface Props {
@@ -36,6 +37,9 @@ function isForbiddenError(err: unknown) {
 
 export default function ConfigCompareDialog({ workloadId, history, onClose }: Props) {
   const { t } = useTranslation()
+  const { enabled: policyPreviewEnabled, isLoading: policyPreviewLoading } = useCapability(
+    'config_safety.policy_preview',
+  )
   const revisions = useMemo(() => dedupeRevisions(history), [history])
 
   // Default to comparing the two most recent revisions when available.
@@ -93,7 +97,7 @@ export default function ConfigCompareDialog({ workloadId, history, onClose }: Pr
         candidate_yaml: rightYaml,
         target: { workload_id: workloadId },
       }),
-    enabled: canCompare,
+    enabled: canCompare && policyPreviewEnabled,
     retry: false,
   })
 
@@ -163,9 +167,13 @@ export default function ConfigCompareDialog({ workloadId, history, onClose }: Pr
               otelDiff={otelDiffQuery.data}
               otelDiffLoading={otelDiffQuery.isLoading}
               otelDiffUnavailable={otelDiffQuery.isError}
-              policy={policyQuery.data}
-              policyLoading={policyQuery.isLoading}
-              policyUnavailable={policyQuery.isError}
+              policy={policyPreviewEnabled ? policyQuery.data : undefined}
+              policyLoading={
+                policyPreviewLoading || (policyPreviewEnabled && policyQuery.isLoading)
+              }
+              policyUnavailable={
+                !policyPreviewLoading && (!policyPreviewEnabled || policyQuery.isError)
+              }
             />
           )}
         </div>
