@@ -114,3 +114,25 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  ci-required:
+    name: CI required
+    if: ${{ always() }}
+    permissions: {}
+    needs:
+      - build-test-go
+      - postgres-lifecycle-18
+      - build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a required CI job did not succeed
+        if: >-
+          ${{
+            needs.build-test-go.result != 'success' ||
+            needs.postgres-lifecycle-18.result != 'success' ||
+            needs.build-frontend.result != 'success'
+          }}
+        run: exit 1
+
+      - name: Confirm required CI jobs succeeded
+        run: echo "All required CI jobs succeeded."

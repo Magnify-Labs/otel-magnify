@@ -205,3 +205,31 @@ jobs:
           allowed=$(grep -v '^#' ../licenses.allowlist.txt | grep -v '^$' | paste -sd';' -)
           npx --yes license-checker --production --onlyAllow "${allowed}" \
             --excludePackages 'frontend@0.4.0'
+
+  security-required:
+    name: Security required
+    if: ${{ always() }}
+    permissions: {}
+    needs:
+      - secrets
+      - lint-go
+      - lint-fe
+      - vulns-go
+      - vulns-fe
+      - licenses
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a required security job did not succeed
+        if: >-
+          ${{
+            needs.secrets.result != 'success' ||
+            needs.lint-go.result != 'success' ||
+            needs.lint-fe.result != 'success' ||
+            needs.vulns-go.result != 'success' ||
+            needs.vulns-fe.result != 'success' ||
+            needs.licenses.result != 'success'
+          }}
+        run: exit 1
+
+      - name: Confirm required security jobs succeeded
+        run: echo "All required security jobs succeeded."
