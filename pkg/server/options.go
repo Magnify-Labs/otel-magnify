@@ -125,6 +125,7 @@ func WithAuthMethodProvider(fn func() []ext.AuthMethod) Option {
 	}
 }
 
+// WithCapabilities replaces the server's static capability snapshot.
 func WithCapabilities(registry capabilities.Registry) Option {
 	return func(s *Server) {
 		s.capabilities = registry

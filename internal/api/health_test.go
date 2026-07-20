@@ -184,7 +184,7 @@ func newHealthTestRouter(db ext.Store) http.Handler {
 		nil,
 		nil,
 		30*24*time.Hour,
-		nil,
+		testCapabilities(nil),
 		nil,
 		nil,
 	)

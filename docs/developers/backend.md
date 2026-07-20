@@ -82,13 +82,13 @@ import (
 )
 
 func capabilityOption() (server.Option, error) {
-	registry, err := capabilities.New([]capabilities.Capability{
-		{ID: "config_safety.approvals", State: capabilities.StateEnabled},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return server.WithCapabilities(registry), nil
+    registry, err := capabilities.New([]capabilities.Capability{
+        {ID: "config_safety.approvals", State: capabilities.StateEnabled},
+    })
+    if err != nil {
+        return nil, err
+    }
+    return server.WithCapabilities(registry), nil
 }
 ```
 

@@ -6,40 +6,53 @@ import (
 	"sort"
 )
 
+// APIVersion identifies the schema used by the public capability document.
 const APIVersion = "v1"
 
+// State describes whether an edition binary exposes a capability for use.
 type State string
 
 const (
-	StateEnabled  State = "enabled"
+	// StateEnabled marks a capability as available for use.
+	StateEnabled State = "enabled"
+	// StateDisabled marks a known capability as unavailable.
 	StateDisabled State = "disabled"
+	// StateReadOnly marks a capability whose mutation paths are unavailable.
 	StateReadOnly State = "read_only"
 )
 
+// ReasonCode explains why a capability is not enabled.
 type ReasonCode string
 
 const (
-	ReasonNotEnabled              ReasonCode = "not_enabled"
+	// ReasonNotEnabled indicates that the edition binary did not enable the capability.
+	ReasonNotEnabled ReasonCode = "not_enabled"
+	// ReasonPrerequisiteUnavailable indicates that a required dependency is unavailable.
 	ReasonPrerequisiteUnavailable ReasonCode = "prerequisite_unavailable"
-	ReasonReadOnlyMode            ReasonCode = "read_only_mode"
+	// ReasonReadOnlyMode indicates that the capability is intentionally limited to reads.
+	ReasonReadOnlyMode ReasonCode = "read_only_mode"
 )
 
+// Capability describes one entry in the versioned discovery document.
 type Capability struct {
 	ID         string     `json:"id"`
 	State      State      `json:"state"`
 	ReasonCode ReasonCode `json:"reason_code,omitempty"`
 }
 
+// Document is the public versioned capability-discovery response.
 type Document struct {
 	APIVersion   string       `json:"api_version"`
 	Capabilities []Capability `json:"capabilities"`
 }
 
+// Registry stores a validated, deterministic snapshot of binary capabilities.
 type Registry struct {
 	entries []Capability
 	states  map[string]State
 }
 
+// New validates capability entries and returns an independent registry snapshot.
 func New(entries []Capability) (Registry, error) {
 	copyOfEntries := append([]Capability(nil), entries...)
 	seen := make(map[string]struct{}, len(copyOfEntries))
@@ -56,6 +69,7 @@ func New(entries []Capability) (Registry, error) {
 	return build(copyOfEntries), nil
 }
 
+// FromFeatures converts the legacy boolean feature map into a registry snapshot.
 func FromFeatures(features map[string]bool) Registry {
 	entries := make([]Capability, 0, len(features))
 	for id, enabled := range features {
@@ -70,14 +84,17 @@ func FromFeatures(features map[string]bool) Registry {
 	return build(entries)
 }
 
+// Document returns a defensive copy of the versioned discovery document.
 func (r Registry) Document() Document {
 	entries := make([]Capability, len(r.entries))
 	copy(entries, r.entries)
 	return Document{APIVersion: APIVersion, Capabilities: entries}
 }
 
+// Enabled reports whether the registry marks an identifier as enabled.
 func (r Registry) Enabled(id string) bool { return r.states[id] == StateEnabled }
 
+// LegacyFeatures returns an independent boolean projection for legacy clients.
 func (r Registry) LegacyFeatures() map[string]bool {
 	features := make(map[string]bool, len(r.entries))
 	for _, capability := range r.entries {
