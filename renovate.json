@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Custom regex managers for tool versions hardcoded in workflow YAML. Renovate complements Dependabot here: Dependabot keeps handling gomod/npm/docker/github-actions; this config only enables the custom.regex manager.",
+  "description": "Renovate manages Dockerfile image tags and digests plus tool versions extracted by custom regex managers. Dependabot manages Go modules, npm, and GitHub Actions.",
   "extends": [
     "config:recommended",
     ":semanticCommits",
@@ -9,7 +9,8 @@
   "labels": ["deps", "deps:renovate"],
   "schedule": ["before 06:00 on monday"],
   "timezone": "Europe/Paris",
-  "enabledManagers": ["custom.regex"],
+  "enabledManagers": ["custom.regex", "dockerfile"],
+  "pinDigests": true,
   "customManagers": [
     {
       "customType": "regex",
@@ -30,6 +31,16 @@
       "datasourceTemplate": "docker",
       "depNameTemplate": "zricethezav/gitleaks",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/security-pr\\.yml$/"],
+      "matchStrings": [
+        "go install github\\.com/google/go-licenses@(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "google/go-licenses",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
@@ -38,6 +49,20 @@
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": false,
       "prCreation": "immediate"
+    },
+    {
+      "description": "Keep go-licenses on the v1 CLI contract until a v2 migration is explicitly planned.",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["google/go-licenses"],
+      "allowedVersions": "<2.0.0"
+    },
+    {
+      "description": "Coordinate SDK agent Go major and minor upgrades with go.mod, CI, and the main Dockerfile.",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["cmd/sdkagent/Dockerfile"],
+      "matchPackageNames": ["golang"],
+      "matchUpdateTypes": ["major", "minor"],
+      "enabled": false
     }
   ]
 }
