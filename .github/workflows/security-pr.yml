@@ -79,7 +79,8 @@ jobs:
       # so it only flags vulnerabilities reachable from our code. We previously
       # also ran osv-scanner here, but it does naive dependency scanning and
       # produced noise on non-reachable CVEs (e.g. pgx GHSA-j88v-2chj-qfwx).
-      # osv-scanner stays in vulns-fe for npm where no call-graph tool exists.
+      # osv-scanner remains enabled for npm and Python, where no call-graph-aware
+      # scanner is available.
       - name: govulncheck
         uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
         with:
@@ -87,17 +88,18 @@ jobs:
           go-package: ./...
 
   vulns-fe:
-    name: osv-scanner (npm)
+    name: osv-scanner (npm + Python docs)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: osv-scanner (frontend)
+      - name: osv-scanner (frontend + docs)
         uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v1.9.2
         with:
           scan-args: |-
             --lockfile=frontend/package-lock.json
+            --lockfile=requirements.txt:docs/requirements.txt
 
   docker-lint:
     name: hadolint (Dockerfile)
