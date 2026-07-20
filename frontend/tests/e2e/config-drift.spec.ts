@@ -1,4 +1,4 @@
-import { test, expect, mockFeatures, mockMe } from './fixtures'
+import { test, expect, mockCapabilities, mockMe } from './fixtures'
 
 const editorGroup = {
   id: 'grp_system_editor',
@@ -154,7 +154,7 @@ const evidenceReport = {
 
 test.describe('Config drift dashboard', () => {
   test.beforeEach(async ({ loggedInPage: page }) => {
-    await mockFeatures(page, {
+    await mockCapabilities(page, {
       'config_safety.drift_dashboard': true,
       'reports.evidence_pack': true,
     })
@@ -249,7 +249,7 @@ test.describe('Config drift dashboard', () => {
     await expect(page.getByText('Unsigned digest ready')).toBeVisible()
     await expect(page.getByText('sha256-unsigned-digest-v1')).toBeVisible()
     await expect(
-      page.getByText('Community/Pro exports are not shown as enterprise signed.'),
+      page.getByText('Community exports are not shown as enterprise signed.'),
     ).toBeVisible()
 
     await page.getByRole('button', { name: 'Download Markdown' }).click()
@@ -262,7 +262,7 @@ test.describe('Config drift dashboard', () => {
   test('does not query or render evidence report when evidence pack feature is disabled', async ({
     loggedInPage: page,
   }) => {
-    await mockFeatures(page, { 'config_safety.drift_dashboard': true })
+    await mockCapabilities(page, { 'config_safety.drift_dashboard': true })
     await mockMe(page, { groups: [editorGroup] })
     let reportHit = false
     await page.route('**/api/reports/config-safety*', (route) => {

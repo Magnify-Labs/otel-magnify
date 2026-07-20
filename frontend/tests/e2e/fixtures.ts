@@ -170,12 +170,21 @@ export const pushPreviewScenarios = {
   dynamicCapableCollectors: buildPushPreview(dynamicCapableTargets, dynamicPaymentsSelector),
 }
 
-export async function mockFeatures(page: Page, features: Record<string, boolean> = {}) {
-  return page.route('**/api/features', (route) =>
+export async function mockCapabilities(page: Page, capabilities: Record<string, boolean> = {}) {
+  return page.route('**/api/v1/capabilities', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ features }),
+      body: JSON.stringify({
+        api_version: 'v1',
+        capabilities: Object.entries(capabilities)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([id, enabled]) => ({
+            id,
+            state: enabled ? 'enabled' : 'disabled',
+            ...(enabled ? {} : { reason_code: 'not_enabled' }),
+          })),
+      }),
     }),
   )
 }
@@ -291,7 +300,7 @@ export const test = base.extend<{ loggedInPage: Page }>({
         body: JSON.stringify(defaultMe),
       }),
     )
-    await mockFeatures(page, {})
+    await mockCapabilities(page, {})
     await page.route('**/api/push-groups', (route) =>
       route.fulfill({
         status: 200,

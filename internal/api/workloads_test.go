@@ -18,6 +18,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/store"
 	"github.com/magnify-labs/otel-magnify/internal/testdb"
+	"github.com/magnify-labs/otel-magnify/pkg/capabilities"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 )
@@ -81,8 +82,8 @@ func newTestAPI(t *testing.T) (ext.Store, http.Handler, *fakeOpAMPPusher) {
 	return db, router, fake
 }
 
-func testEnabledFeatures() map[string]bool {
-	return map[string]bool{
+func testEnabledFeatures() capabilities.Registry {
+	return testCapabilities(map[string]bool{
 		FeatureConfigSafetyApprovals:           true,
 		FeatureConfigSafetyGuidedRollback:      true,
 		FeatureConfigSafetyCanaryRollout:       true,
@@ -93,7 +94,7 @@ func testEnabledFeatures() map[string]bool {
 		FeatureConfigSafetyPolicyPreview:       true,
 		FeatureReportsEvidencePack:             true,
 		FeatureAuditViewer:                     true,
-	}
+	})
 }
 
 func authedRequest(t *testing.T, method, url string) *http.Request {

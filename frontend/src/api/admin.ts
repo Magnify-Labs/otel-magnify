@@ -46,8 +46,3 @@ export const adminSSOAPI = {
   deleteMapping: (id: string, m: Pick<SSOMapping, 'idp_group' | 'system_group'>) =>
     api.delete(`/admin/sso/providers/${id}/mappings`, { data: m }),
 }
-
-export const featuresAPI = {
-  get: () =>
-    api.get<{ features: Record<string, boolean> }>('/features').then((r) => r.data.features ?? {}),
-}

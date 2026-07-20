@@ -15,6 +15,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/auth"
 	"github.com/magnify-labs/otel-magnify/internal/opamp"
 	"github.com/magnify-labs/otel-magnify/internal/perm"
+	"github.com/magnify-labs/otel-magnify/pkg/capabilities"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 )
 
@@ -35,7 +36,7 @@ type API struct {
 	audit             ext.AuditLogger
 	authMethods       func() []ext.AuthMethod
 	workloadRetention time.Duration
-	features          map[string]bool
+	capabilities      capabilities.Registry
 	licenseChecker    ext.LicenseChecker
 	reportSigner      ext.ReportSigner
 	loginLimiter      *loginRateLimiter
@@ -58,18 +59,14 @@ type tokenExpirationProvider interface {
 // auditLogger may be nil — handlers fall back to ext.NopAuditLogger so the
 // community binary works without an audit sink configured. EE wires its
 // sink via pkg/server.WithAuditLogger.
-func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, features map[string]bool, licenseChecker ext.LicenseChecker, protectedHooks []func(chi.Router), reportSigner ...ext.ReportSigner) http.Handler {
+func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher, auditLogger ext.AuditLogger, corsOrigins string, staticFS fs.FS, authMethods func() []ext.AuthMethod, workloadRetention time.Duration, capabilityRegistry capabilities.Registry, licenseChecker ext.LicenseChecker, protectedHooks []func(chi.Router), reportSigner ...ext.ReportSigner) http.Handler {
 	if auditLogger == nil {
 		auditLogger = ext.NopAuditLogger{}
 	}
-	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, features: features, licenseChecker: licenseChecker, reportSigner: ext.NopReportSigner{}, loginLimiter: newLoginRateLimiter()}
+	api := &API{db: db, auth: a, hub: hub, opamp: opampSrv, audit: auditLogger, authMethods: authMethods, workloadRetention: workloadRetention, capabilities: capabilityRegistry, licenseChecker: licenseChecker, reportSigner: ext.NopReportSigner{}, loginLimiter: newLoginRateLimiter()}
 	if len(reportSigner) > 0 && reportSigner[0] != nil {
 		api.reportSigner = reportSigner[0]
 	}
-	if api.features == nil {
-		api.features = map[string]bool{}
-	}
-
 	r := chi.NewRouter()
 	r.Use(securityHeaders)
 	r.Use(requestLogger)
@@ -95,6 +92,7 @@ func NewRouter(db ext.Store, a ext.AuthProvider, hub *Hub, opampSrv OpAMPPusher,
 	r.Post("/api/auth/logout", api.handleLogout)
 	r.Get("/api/auth/methods", api.handleListAuthMethods)
 	r.Get("/api/features", api.handleListFeatures)
+	r.Get("/api/v1/capabilities", api.handleListCapabilities)
 	r.With(api.RequireFeature(FeatureConfigSafetyGitOpsExport)).Post("/api/gitops/webhooks/{provider}", api.handleGitOpsWebhook)
 
 	// WebSocket validates its own token because browsers cannot set custom

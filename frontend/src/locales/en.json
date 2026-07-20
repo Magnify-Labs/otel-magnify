@@ -17,7 +17,8 @@
     "footer": {
       "live": "LIVE"
     },
-    "subtitle": "OpAMP Control Plane"
+    "subtitle": "OpAMP Control Plane",
+    "capabilities_error": "Unable to load product capabilities. Gated actions remain unavailable."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -656,6 +657,8 @@
         "title": "Config policy findings",
         "helper": "Backend policy evaluation runs before push and enforces blocking findings server-side.",
         "loading": "Evaluating config policy…",
+        "feature_disabled": "Policy preview is not enabled for this workspace.",
+        "feature_loading": "Loading policy preview capability…",
         "unavailable_body": "The backend did not return policy findings for this plan. Push enforcement still happens server-side.",
         "counts_label": "Policy finding counts",
         "findings_title": "Findings",
@@ -677,11 +680,6 @@
             "core": "Community built-in rule",
             "configurable": "Community server policy",
             "tenant_hook": "Community policy hook"
-          },
-          "pro": {
-            "core": "Pro server rule",
-            "configurable": "Pro configurable policy",
-            "tenant_hook": "Pro policy hook"
           },
           "enterprise": {
             "core": "Enterprise server rule",
@@ -1313,7 +1311,7 @@
       "algorithm": "Algorithm",
       "digest": "Payload digest",
       "key_id": "Key ID",
-      "community_signature_note": "Community/Pro exports are not shown as enterprise signed.",
+      "community_signature_note": "Community exports are not shown as enterprise signed.",
       "download": {
         "markdown": "Download Markdown",
         "csv": "Download CSV",

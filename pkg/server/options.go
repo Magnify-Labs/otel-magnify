@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/magnify-labs/otel-magnify/pkg/capabilities"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 )
 
@@ -124,6 +125,13 @@ func WithAuthMethodProvider(fn func() []ext.AuthMethod) Option {
 	}
 }
 
+// WithCapabilities replaces the server's static capability snapshot.
+func WithCapabilities(registry capabilities.Registry) Option {
+	return func(s *Server) {
+		s.capabilities = registry
+	}
+}
+
 // WithFeatures registers a static map of feature flags exposed on
 // GET /api/features. Edition binaries use it to advertise capabilities
 // (e.g. "sso.admin") that the frontend uses to conditionally render
@@ -137,8 +145,9 @@ func WithAuthMethodProvider(fn func() []ext.AuthMethod) Option {
 // 200 with {"features": {}} rather than 404, so the frontend can
 // distinguish "feature off" from "endpoint missing".
 func WithFeatures(features map[string]bool) Option {
+	registry := capabilities.FromFeatures(features)
 	return func(s *Server) {
-		s.features = features
+		s.capabilities = registry
 	}
 }
 

@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workloadsAPI } from '../../api/client'
 import { useStore } from '../../store'
 import { hasPerm } from '../../lib/perm'
-import { useFeature } from '../../hooks/useFeature'
+import { useCapability } from '../../hooks/useCapability'
 import YamlEditor from '../config/YamlEditor'
 import ConfigCompareDialog from './ConfigCompareDialog'
 import GuidedRollbackDialog from './GuidedRollbackDialog'
@@ -63,7 +63,7 @@ export default function PushHistoryTable({ workloadId }: Props) {
   const me = useStore((s) => s.me)
   const canPushConfig = hasPerm(me?.groups, 'workload:push_config')
   const canReadConfigContent = hasPerm(me?.groups, 'config:read_content')
-  const { enabled: guidedRollbackEnabled, isLoading: guidedRollbackLoading } = useFeature(
+  const { enabled: guidedRollbackEnabled, isLoading: guidedRollbackLoading } = useCapability(
     'config_safety.guided_rollback',
   )
   const guidedRollbackDisabledReason = guidedRollbackLoading

@@ -49,7 +49,7 @@ func newWSTestServer(t *testing.T, corsOrigins string, expires map[string]time.T
 	hub := NewHub()
 	go hub.Run()
 	t.Cleanup(hub.Stop)
-	router := NewRouter(nil, wsTestAuth{expires: expires}, hub, nil, nil, corsOrigins, nil, nil, 30*24*time.Hour, nil, nil, nil)
+	router := NewRouter(nil, wsTestAuth{expires: expires}, hub, nil, nil, corsOrigins, nil, nil, 30*24*time.Hour, testCapabilities(nil), nil, nil)
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	return server, hub

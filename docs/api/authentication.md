@@ -93,7 +93,9 @@ Browsers cannot set custom `Authorization` headers during WebSocket handshakes, 
 
 ## Feature discovery is not auth
 
-`GET /api/features` is public because feature names are not secrets and the SPA needs them before rendering menus. A feature flag only controls discovery/rendering; protected APIs must still require bearer auth and RBAC permissions.
+`GET /api/v1/capabilities` is the canonical public capability-discovery endpoint. `GET /api/features` remains a legacy boolean compatibility endpoint. Capability discovery is not authorization: protected APIs still enforce authentication, RBAC, and server-side gates.
+
+Community advertises only `config_safety.approvals` and `config_safety.policy_preview` in this release. For binaries that declare capabilities, `WithCapabilities` is preferred for typed declarations; `WithFeatures` remains supported for legacy edition overlays.
 
 ## Seeded admin bootstrap
 

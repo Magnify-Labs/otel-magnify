@@ -306,7 +306,7 @@ Use this as an initial bootstrap mechanism only. After first login, rotate the p
 ```bash
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
-curl -fsS http://localhost:8080/api/features
+curl -fsS http://localhost:8080/api/v1/capabilities
 curl -fsS http://localhost:8080/api/auth/methods
 ```
 
@@ -314,8 +314,10 @@ Expected unauthenticated responses:
 
 - `/healthz` returns `ok`.
 - `/readyz` returns `ready` when PostgreSQL is reachable.
-- `/api/features` returns the Community `config_safety.approvals` and `config_safety.policy_preview` flags.
+- `/api/v1/capabilities` is the canonical public capability-discovery endpoint and returns only the Community `config_safety.approvals` and `config_safety.policy_preview` capabilities in this release.
 - `/api/auth/methods` lists the password login method by default.
+
+`GET /api/features` remains a legacy boolean compatibility endpoint; it is not the smoke-check path for new integrations. Capability discovery is not authorization: protected APIs still enforce authentication, RBAC, and server-side gates. For edition binary maintainers, `WithCapabilities` is preferred for typed declarations; `WithFeatures` remains supported for legacy edition overlays.
 
 ## Production checklist
 

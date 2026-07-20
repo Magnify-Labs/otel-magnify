@@ -5,6 +5,6 @@ export const adminSSOKeys = {
   mappings: (id: string) => [...adminSSOKeys.all, 'provider', id, 'mappings'] as const,
 }
 
-export const featuresKeys = {
-  all: ['features'] as const,
+export const capabilitiesKeys = {
+  all: ['capabilities'] as const,
 }

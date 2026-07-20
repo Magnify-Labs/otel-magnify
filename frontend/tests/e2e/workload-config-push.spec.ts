@@ -6,7 +6,7 @@ import {
   test,
   expect,
   mockMe,
-  mockFeatures,
+  mockCapabilities,
 } from './fixtures'
 import type { Page } from '@playwright/test'
 import { safeRemoteErrorText } from '../../src/lib/safeRemoteErrorText'
@@ -30,20 +30,49 @@ const viewerGroup = {
   created_at: new Date().toISOString(),
 }
 
-const PRO_CONFIG_SAFETY_FEATURES = {
+const CONFIG_SAFETY_CAPABILITIES = {
   'config_safety.approvals': true,
-  'config_safety.break_glass': true,
   'config_safety.canary_rollout': true,
   'config_safety.scoped_push': true,
   'config_safety.gitops_export': true,
   'config_safety.policy_preview': true,
 }
 
-async function mockProConfigSafetyFeatures(
+const POLICY_PREVIEW_FAILURES = [
+  { label: 'is absent', response: 'absent' },
+  { label: 'has an unknown state', response: 'unknown-state' },
+  { label: 'returns an HTTP error', response: 'http-error' },
+] as const
+
+async function mockConfigSafetyCapabilities(
   page: Page,
   overrides: Record<string, boolean> = {},
 ) {
-  await mockFeatures(page, { ...PRO_CONFIG_SAFETY_FEATURES, ...overrides })
+  await mockCapabilities(page, { ...CONFIG_SAFETY_CAPABILITIES, ...overrides })
+}
+
+async function mockUnavailablePolicyPreview(
+  page: Page,
+  response: (typeof POLICY_PREVIEW_FAILURES)[number]['response'],
+) {
+  if (response === 'absent') {
+    await mockCapabilities(page, { 'config_safety.approvals': true })
+    return
+  }
+
+  await page.route('**/api/v1/capabilities', (route) => {
+    if (response === 'http-error') {
+      return route.fulfill({ status: 500 })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        api_version: 'v1',
+        capabilities: [{ id: 'config_safety.policy_preview', state: 'future' }],
+      }),
+    })
+  })
 }
 
 function mockWorkload(page: Page, overrides: Record<string, unknown> = {}) {
@@ -337,7 +366,7 @@ const PUSH_STATUS_LABEL_CASES = [
 ] as const
 
 test('imports a config from Git and displays sanitized provenance', async ({ loggedInPage: page }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -398,7 +427,7 @@ test('imports a config from Git and displays sanitized provenance', async ({ log
 test('export as PR stays disabled until Git provider and validation gates pass', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n', {
     source_type: 'git',
@@ -469,7 +498,7 @@ test('export as PR stays disabled until Git provider and validation gates pass',
 test('read-only collectors compare Git expected provenance with OpAMP effective config', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page, { accepts_remote_config: false, active_config_hash: 'effec7edcafebabe' })
   await mockConfig(page, 'receivers:\n  otlp: {}\n', {
     source_type: 'git',
@@ -611,7 +640,7 @@ test('viewer sees restricted config content while metadata and history remain av
   await expect(page.getByText('safe metadata')).toBeVisible()
   await expect(page.getByText('hash-vie')).toBeVisible()
   await expect(page.locator('select.apply-config-select')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Compare revisions' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Compare revisions' })).toHaveCount(0)
   await expect(page.locator('body')).not.toContainText('secret-yaml')
   await expect(page.locator('body')).not.toContainText('SECRET_TOKEN')
 })
@@ -708,7 +737,7 @@ test('validate exposes errors and blocks push', async ({ loggedInPage: page }) =
 })
 
 test('valid config shows plan counters before approval request', async ({ loggedInPage: page }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -747,7 +776,7 @@ test('valid config shows plan counters before approval request', async ({ logged
 test('safety plan shows high risk score and redacted reasons before approval actions', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -824,7 +853,7 @@ function mockApprovalList(page: Page, approvals: unknown[] = []) {
 }
 
 async function prepareApprovedDraft(page: Page) {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -874,7 +903,7 @@ async function requestAndApproveDraft(page: Page) {
 }
 
 test('blocked policy finding is visible and gates approval request', async ({ loggedInPage: page }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -940,9 +969,9 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
             tier: 'core',
           },
           {
-            policy_id: 'pro-endpoints',
-            policy_name: 'Pro endpoint allowlist',
-            rule_id: 'pro.exporters.endpoint_allowlist',
+            policy_id: 'community-endpoints',
+            policy_name: 'Community endpoint allowlist',
+            rule_id: 'community.exporters.endpoint_allowlist',
             rule_code: 'exporters.endpoint_allowlist',
             severity: 'critical',
             decision: 'block',
@@ -952,7 +981,7 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
             paths: ['exporters.otlp.endpoint'],
             message: 'Exporter endpoint is outside the allowlist.',
             remediation: 'Use an approved endpoint from the policy allowlist.',
-            packaging: 'pro',
+            packaging: 'community',
             tier: 'configurable',
           },
           {
@@ -988,9 +1017,9 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
             tier: 'tenant_hook',
           },
           {
-            policy_id: 'pro-sampling',
-            policy_name: 'Pro sampling policy',
-            rule_id: 'pro.sampling.unsafe_percentage',
+            policy_id: 'community-sampling',
+            policy_name: 'Community sampling policy',
+            rule_id: 'community.sampling.unsafe_percentage',
             rule_code: 'sampling.unsafe_percentage',
             severity: 'warning',
             decision: 'warn',
@@ -999,8 +1028,8 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
             path: 'processors.probabilistic_sampler.sampling_percentage',
             paths: ['processors.probabilistic_sampler.sampling_percentage'],
             message: 'Sampling percentage is outside the configured safe range.',
-            remediation: 'Keep sampling within the configured Pro policy range.',
-            packaging: 'pro',
+            remediation: 'Keep sampling within the configured Community policy range.',
+            packaging: 'community',
             tier: 'configurable',
           },
         ],
@@ -1027,14 +1056,14 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
   await expect(policy).toContainText('Pipeline is missing memory_limiter.')
   await expect(policy).toContainText('community.processors.batch_missing')
   await expect(policy).toContainText('Pipeline is missing batch.')
-  await expect(policy).toContainText('Pro endpoint allowlist')
-  await expect(policy).toContainText('Pro configurable policy')
-  await expect(policy).toContainText('pro.exporters.endpoint_allowlist')
+  await expect(policy).toContainText('Community endpoint allowlist')
+  await expect(policy).toContainText('Community server policy')
+  await expect(policy).toContainText('community.exporters.endpoint_allowlist')
   await expect(policy).toContainText('Enterprise tenant policy')
   await expect(policy).toContainText('Enterprise tenant policy hook')
   await expect(policy).toContainText('enterprise.exporters.critical_removal')
   await expect(policy).toContainText('enterprise.resource_attributes.required')
-  await expect(policy).toContainText('pro.sampling.unsafe_percentage')
+  await expect(policy).toContainText('community.sampling.unsafe_percentage')
   await expect(policy).toContainText('Sampling percentage is outside the configured safe range.')
   await expect(page.getByRole('button', { name: 'Request approval' })).toBeDisabled()
 })
@@ -1042,7 +1071,7 @@ test('blocked policy finding is visible and gates approval request', async ({ lo
 test('policy evaluation unavailable state is explicit and non-alarming', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1201,7 +1230,7 @@ test('viewer cannot request approval, approve, or push config', async ({ loggedI
 
   await page.goto(`/workloads/${WORKLOAD_ID}`)
 
-  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Request approval' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Approve request' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Push approved config|Break-glass push/ })).toHaveCount(0)
@@ -1210,7 +1239,7 @@ test('viewer cannot request approval, approve, or push config', async ({ loggedI
 test('canary wizard validates a percentage target group before starting canary', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -1242,7 +1271,7 @@ test('canary wizard validates a percentage target group before starting canary',
 test('canary wizard selects one eligible instance and explains disabled options', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -1339,7 +1368,7 @@ test('canary wizard selects one eligible instance and explains disabled options'
 test('canary wizard treats healthy remote-config capable instances without prior status as eligible', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -1391,7 +1420,7 @@ test('canary wizard treats healthy remote-config capable instances without prior
 test('canary wizard does not treat unknown remote-config capability as read-only', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -1442,7 +1471,7 @@ test('canary wizard does not treat unknown remote-config capability as read-only
 test('canary validation expires when the draft changes before push', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -1472,7 +1501,7 @@ test('canary validation expires when the draft changes before push', async ({
 test('canary validation failure blocks submit and explains stop reason', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -1507,7 +1536,7 @@ test('canary validation failure blocks submit and explains stop reason', async (
 })
 
 test('canary status panel shows stop reasons and action states', async ({ loggedInPage: page }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockEditorMe(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -1556,7 +1585,7 @@ test('canary status panel shows stop reasons and action states', async ({ logged
 })
 
 test('canary start stays disabled until a safety plan is ready', async ({ loggedInPage: page }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1573,6 +1602,7 @@ test('canary start stays disabled until a safety plan is ready', async ({ logged
 test('plan blocks push for validation failure and read-only targets with reasons', async ({
   loggedInPage: page,
 }) => {
+  await mockCapabilities(page, { 'config_safety.policy_preview': true })
   await mockWorkload(page, { accepts_remote_config: false })
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1624,6 +1654,7 @@ test('plan blocks push for validation failure and read-only targets with reasons
 })
 
 test('plan surfaces high-risk changes reported by backend', async ({ loggedInPage: page }) => {
+  await mockCapabilities(page, { 'config_safety.policy_preview': true })
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1679,7 +1710,7 @@ test('plan surfaces high-risk changes reported by backend', async ({ loggedInPag
 test('export plan action exposes an accessible markdown download affordance', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1705,7 +1736,7 @@ test('export plan action exposes an accessible markdown download affordance', as
 test('export plan falls back to client-side JSON when backend export is unavailable', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -1860,6 +1891,7 @@ test('validation details separate non-blocking warnings from blocking errors', a
 test('validation details explain when otelcol runtime check is skipped', async ({
   loggedInPage: page,
 }) => {
+  await mockCapabilities(page, { 'config_safety.policy_preview': true })
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2097,7 +2129,7 @@ test('remote config errors are grouped by cause with affected instances', async 
 })
 
 test('push failed shows error banner and preserves draft', async ({ loggedInPage: page }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2216,7 +2248,7 @@ test('rollback reasons map config snippets and tenant identifiers to concise saf
 test('push applied closes edit mode, clears draft, shows applied banner', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2732,7 +2764,7 @@ test('selecting a config overwrites in-progress draft silently (no confirm)', as
 test('capable user sees enabled push scope selector and preview buckets', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2778,7 +2810,7 @@ test('saved group blocked preview cannot submit an accidental config push', asyn
   loggedInPage: page,
 }) => {
   let pushRequestCount = 0
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2816,7 +2848,7 @@ test('dynamic all-capable preview stays preview-only and does not push bulk targ
   loggedInPage: page,
 }) => {
   let pushRequestCount = 0
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2851,10 +2883,69 @@ test('dynamic all-capable preview stays preview-only and does not push bulk targ
   expect(pushRequestCount).toBe(0)
 })
 
+for (const failure of POLICY_PREVIEW_FAILURES) {
+  test(`policy preview ${failure.label} keeps safety plan generation closed`, async ({
+    loggedInPage: page,
+  }) => {
+    await mockUnavailablePolicyPreview(page, failure.response)
+    await mockWorkload(page)
+    await mockConfig(page, 'receivers:\n  otlp: {}\n')
+    await mockHistory(page, [])
+    await mockValidate(page, { valid: true })
+
+    let planRequestCount = 0
+    await page.route(`**/api/workloads/${WORKLOAD_ID}/config/plan`, (route) => {
+      planRequestCount += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildPlan()),
+      })
+    })
+
+    await page.goto(`/workloads/${WORKLOAD_ID}`)
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    await page
+      .getByRole('button', { name: /Validate for this collector|Valider pour ce collecteur/ })
+      .click()
+    await expect(page.locator('.validation-ok')).toContainText('valid')
+
+    const generatePlan = page.getByRole('button', { name: 'Generate safety plan' })
+    await expect(generatePlan).toBeDisabled()
+    await expect(generatePlan).toHaveAttribute('title', /policy preview is not enabled/i)
+    expect(planRequestCount).toBe(0)
+  })
+
+  test(`policy preview ${failure.label} blocks the automatic read-only plan`, async ({
+    loggedInPage: page,
+  }) => {
+    await mockUnavailablePolicyPreview(page, failure.response)
+    await mockWorkload(page, { accepts_remote_config: false })
+    await mockConfig(page, 'receivers:\n  otlp: {}\n')
+    await mockHistory(page, [])
+
+    let planRequestCount = 0
+    await page.route(`**/api/workloads/${WORKLOAD_ID}/config/plan`, (route) => {
+      planRequestCount += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildPlan({ can_push: false, apply_allowed: false })),
+      })
+    })
+
+    await page.goto(`/workloads/${WORKLOAD_ID}`)
+    await expect(page.getByText('Configuration', { exact: true })).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    expect(planRequestCount).toBe(0)
+  })
+}
+
 test('community features generate a plan and submit the governed workload config push', async ({
   loggedInPage: page,
 }) => {
-  await mockFeatures(page, {
+  await mockCapabilities(page, {
     'config_safety.approvals': true,
     'config_safety.policy_preview': true,
   })
@@ -2900,7 +2991,9 @@ test('community features generate a plan and submit the governed workload config
   await expect(page.locator('.config-approval-panel')).toContainText('Pushed')
 })
 
-test('viewer permission keeps config push controls read-only', async ({ loggedInPage: page }) => {
+test('viewer permission hides restricted config content and push controls', async ({
+  loggedInPage: page,
+}) => {
   await mockMe(page, { groups: [viewerGroup] })
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
@@ -2913,16 +3006,11 @@ test('viewer permission keeps config push controls read-only', async ({ loggedIn
   await page.goto(`/workloads/${WORKLOAD_ID}`)
 
   await expect(page.getByText('Configuration', { exact: true })).toBeVisible()
-  await expect(page.locator('.cm-content').first()).toContainText('receivers')
-  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
-    'title',
-    /don't have permission to push workload configurations/,
-  )
-  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute(
-    'aria-describedby',
-    'config-permission-note',
-  )
+  await expect(
+    page.getByText('Config content is restricted by role. Metadata and history remain available.'),
+  ).toBeVisible()
+  await expect(page.locator('.cm-content')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
   await expect(page.locator('select.apply-config-select')).toBeDisabled()
   await expect(page.locator('select.apply-config-select')).toHaveAttribute(
     'title',
@@ -2949,7 +3037,7 @@ test('French scope UX renders translated labels and blocked preview copy', async
   loggedInPage: page,
 }) => {
   await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -2985,7 +3073,7 @@ test('French scope UX renders translated labels and blocked preview copy', async
 test('saved scope selector reports empty and failed group states', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -3024,7 +3112,7 @@ test('French saved scope selector reports localized empty and failed group state
   loggedInPage: page,
 }) => {
   await page.addInitScript(() => window.localStorage.setItem('lang', 'fr'))
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -3063,7 +3151,7 @@ test('French saved scope selector reports localized empty and failed group state
 test('saved scope preview failure shows inline error and clears preview panel', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])
@@ -3093,7 +3181,7 @@ test('saved scope preview failure shows inline error and clears preview panel', 
 test('dynamic push selector posts labels version and capability for safe preview', async ({
   loggedInPage: page,
 }) => {
-  await mockProConfigSafetyFeatures(page)
+  await mockConfigSafetyCapabilities(page)
   await mockWorkload(page)
   await mockConfig(page, 'receivers:\n  otlp: {}\n')
   await mockHistory(page, [])

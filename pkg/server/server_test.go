@@ -14,6 +14,7 @@ import (
 	"github.com/magnify-labs/otel-magnify/internal/auth"
 	"github.com/magnify-labs/otel-magnify/internal/store"
 	"github.com/magnify-labs/otel-magnify/internal/testdb"
+	"github.com/magnify-labs/otel-magnify/pkg/capabilities"
 	"github.com/magnify-labs/otel-magnify/pkg/ext"
 	"github.com/magnify-labs/otel-magnify/pkg/models"
 	"github.com/magnify-labs/otel-magnify/pkg/server"
@@ -298,6 +299,73 @@ func TestWithFeatures_PopulatesServerField(t *testing.T) {
 	}
 }
 
+func newServerTestInstance(t *testing.T, opts ...server.Option) *server.Server {
+	t.Helper()
+	db, err := store.Open(testdb.New(t).DSN, testPoolConfig())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	a := auth.New("test-secret-key-at-least-32-bytes!")
+	return server.New(server.Config{ListenAddr: ":0", OpAMPAddr: ":0"}, db, a, opts...)
+}
+
+func getFeatures(t *testing.T, handler http.Handler) map[string]bool {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/features", nil))
+	var body struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal features: %v", err)
+	}
+	return body.Features
+}
+
+func getCapabilities(t *testing.T, handler http.Handler) capabilities.Document {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/capabilities", nil))
+	var body capabilities.Document
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal capabilities: %v", err)
+	}
+	return body
+}
+
+func TestWithFeaturesPreservesFalseValuesAndCopiesInput(t *testing.T) {
+	features := map[string]bool{"enabled": true, "disabled": false}
+	srv := newServerTestInstance(t, server.WithFeatures(features))
+	features["enabled"] = false
+
+	legacy := getFeatures(t, srv.Handler())
+	if !legacy["enabled"] || legacy["disabled"] {
+		t.Fatalf("features = %#v", legacy)
+	}
+	document := getCapabilities(t, srv.Handler())
+	if len(document.Capabilities) != 2 || document.Capabilities[0].ID != "disabled" || document.Capabilities[0].ReasonCode != capabilities.ReasonNotEnabled {
+		t.Fatalf("capabilities = %#v", document)
+	}
+}
+
+func TestCapabilityOptionsUseLastSnapshot(t *testing.T) {
+	first, err := capabilities.New([]capabilities.Capability{{ID: "first", State: capabilities.StateEnabled}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newServerTestInstance(t,
+		server.WithCapabilities(first),
+		server.WithFeatures(map[string]bool{"second": true}),
+	)
+	if got := getFeatures(t, srv.Handler()); len(got) != 1 || !got["second"] {
+		t.Fatalf("features = %#v", got)
+	}
+}
+
 // TestWithProtectedRouterHook_AppliesAuthMiddleware locks in the contract
 // that routes registered via WithProtectedRouterHook reject anonymous
 // requests with 401 and only invoke the handler once the Bearer token has
@@ -413,28 +481,6 @@ func TestWithFeatures_NotSet_ReturnsEmptyMap(t *testing.T) {
 	if len(body.Features) != 0 {
 		t.Fatalf("features: got %v, want empty map", body.Features)
 	}
-
-	for _, paidKey := range []string{
-		"config_safety.approvals",
-		"config_safety.guided_rollback",
-		"config_safety.canary_rollout",
-		"config_safety.scoped_push",
-		"config_safety.drift_dashboard",
-		"config_safety.version_intelligence",
-		"config_safety.gitops_export",
-		"config_safety.policy_preview",
-		"config_safety.policy_enforcement",
-		"reports.evidence_pack",
-		"reports.signed_evidence",
-		"audit.viewer",
-		"sso.admin",
-		"rbac.custom_roles",
-		"tenancy.multi_tenant",
-	} {
-		if body.Features[paidKey] {
-			t.Fatalf("community default must not advertise paid feature %q: %v", paidKey, body.Features)
-		}
-	}
 }
 
 type serverTestLicenseChecker map[string]bool
@@ -470,6 +516,10 @@ func TestWithLicenseChecker_AllowsGatedEndpointWithoutAdvertisingFeature(t *test
 	}
 	if len(featuresBody.Features) != 0 {
 		t.Fatalf("license checker should not mutate advertised features, got %v", featuresBody.Features)
+	}
+	capabilitiesBody := getCapabilities(t, handler)
+	if len(capabilitiesBody.Capabilities) != 0 {
+		t.Fatalf("license checker should not advertise capabilities, got %v", capabilitiesBody.Capabilities)
 	}
 
 	token, err := a.GenerateToken("u1", "admin@x.com", []string{"administrator"})

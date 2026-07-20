@@ -9,23 +9,26 @@ import (
 
 	"github.com/magnify-labs/otel-magnify/internal/api"
 	"github.com/magnify-labs/otel-magnify/pkg/bootstrap"
+	"github.com/magnify-labs/otel-magnify/pkg/capabilities"
 	"github.com/magnify-labs/otel-magnify/pkg/server"
 )
 
 func main() {
+	registry, err := communityCapabilities()
+	if err != nil {
+		log.Fatalf("server capabilities: %v", err)
+	}
 	opts := bootstrap.Options{
-		ExtraServerOptions: []server.Option{
-			server.WithFeatures(communityFeatures()),
-		},
+		ExtraServerOptions: []server.Option{server.WithCapabilities(registry)},
 	}
 	if err := bootstrap.Run(context.Background(), opts); err != nil {
 		log.Fatalf("server: %v", err)
 	}
 }
 
-func communityFeatures() map[string]bool {
-	return map[string]bool{
-		api.FeatureConfigSafetyApprovals:     true,
-		api.FeatureConfigSafetyPolicyPreview: true,
-	}
+func communityCapabilities() (capabilities.Registry, error) {
+	return capabilities.New([]capabilities.Capability{
+		{ID: api.FeatureConfigSafetyApprovals, State: capabilities.StateEnabled},
+		{ID: api.FeatureConfigSafetyPolicyPreview, State: capabilities.StateEnabled},
+	})
 }

@@ -282,7 +282,7 @@ const (
 
 // ConfigApprovalRequest tracks a validated draft config that must be approved
 // before it is pushed to a workload. It is intentionally part of the community
-// domain model so enterprise/pro frontends can build gated UX on the same safe
+// domain model so additional edition frontends can build gated UX on the same safe
 // backend contract without forking the push pipeline.
 type ConfigApprovalRequest struct {
 	ID                  string     `json:"id"`

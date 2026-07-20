@@ -17,7 +17,8 @@
     "footer": {
       "live": "LIVE"
     },
-    "subtitle": "OpAMP Control Plane"
+    "subtitle": "OpAMP Control Plane",
+    "capabilities_error": "Impossible de charger les capacités du produit. Les actions conditionnelles restent indisponibles."
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -656,6 +657,8 @@
         "title": "Constats de politique de config",
         "helper": "L’évaluation de politique backend s’exécute avant le push et applique les blocages côté serveur.",
         "loading": "Évaluation de la politique de config…",
+        "feature_disabled": "La prévisualisation de politique n’est pas activée pour cet espace de travail.",
+        "feature_loading": "Chargement de la capacité de prévisualisation de politique…",
         "unavailable_body": "Le backend n’a pas renvoyé de constats de politique pour ce plan. L’application des règles reste côté serveur.",
         "counts_label": "Compteurs de constats de politique",
         "findings_title": "Constats",
@@ -677,11 +680,6 @@
             "core": "Règle Community intégrée",
             "configurable": "Politique serveur Community",
             "tenant_hook": "Hook de politique Community"
-          },
-          "pro": {
-            "core": "Règle serveur Pro",
-            "configurable": "Politique Pro configurable",
-            "tenant_hook": "Hook de politique Pro"
           },
           "enterprise": {
             "core": "Règle serveur Enterprise",
@@ -1313,7 +1311,7 @@
       "algorithm": "Algorithme",
       "digest": "Digest payload",
       "key_id": "ID clé",
-      "community_signature_note": "Les exports Community/Pro ne sont pas présentés comme signés Enterprise.",
+      "community_signature_note": "Les exports Community ne sont pas présentés comme signés Enterprise.",
       "download": {
         "markdown": "Télécharger Markdown",
         "csv": "Télécharger CSV",

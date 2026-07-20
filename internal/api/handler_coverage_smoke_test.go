@@ -40,7 +40,7 @@ func TestListAuthMethods_ReturnsConfiguredMethods(t *testing.T) {
 			return []ext.AuthMethod{{ID: "password", Type: "password", DisplayName: "Email + password", LoginURL: "/api/auth/login"}}
 		},
 		30*24*time.Hour,
-		nil,
+		testCapabilities(nil),
 		nil,
 		nil,
 	)
@@ -153,7 +153,7 @@ func TestFullStackSmoke_LoginRepresentativeAPIAndFrontendFallback(t *testing.T) 
 	t.Cleanup(hub.Stop)
 	staticFS := fstest.MapFS{
 		"index.html":    {Data: []byte(`<!doctype html><title>otel-magnify</title><script type="module" src="/assets/app.js"></script>`)},
-		"assets/app.js": {Data: []byte(`fetch('/api/features')`)},
+		"assets/app.js": {Data: []byte(`fetch('/api/v1/capabilities')`)},
 	}
 	router := NewRouter(
 		db,
@@ -167,7 +167,7 @@ func TestFullStackSmoke_LoginRepresentativeAPIAndFrontendFallback(t *testing.T) 
 			return []ext.AuthMethod{{ID: "password", Type: "password", DisplayName: "Email + password", LoginURL: "/api/auth/login"}}
 		},
 		30*24*time.Hour,
-		map[string]bool{FeatureConfigSafetyVersionIntelligence: true},
+		testCapabilities(map[string]bool{FeatureConfigSafetyVersionIntelligence: true}),
 		nil,
 		nil,
 	)
@@ -244,7 +244,7 @@ func TestFullStackSmoke_LoginRepresentativeAPIAndFrontendFallback(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(assetBody, []byte("/api/features")) {
+	if !bytes.Contains(assetBody, []byte("/api/v1/capabilities")) {
 		t.Fatalf("frontend asset did not include API integration call: %s", string(assetBody))
 	}
 }

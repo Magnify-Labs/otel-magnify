@@ -41,28 +41,21 @@ Compose PostgreSQL DSN.
 
 ## Feature flags
 
-Feature flags are not configured through environment variables in the community binary. They are static server options registered by the binary with `server.WithFeatures(...)`, optionally backed by an edition `WithLicenseChecker(...)`, and exposed by the public endpoint `GET /api/features`.
+Feature flags are not configured through environment variables in the community binary. `GET /api/v1/capabilities` is the canonical public capability-discovery endpoint; `GET /api/features` remains a legacy boolean compatibility endpoint. `WithCapabilities` is preferred for typed declarations; `WithFeatures` remains supported for legacy edition overlays.
 
-Community response:
+Community advertises only `config_safety.approvals` and `config_safety.policy_preview` in this release. The canonical response is:
 
 ```json
 {
-  "features": {
-    "config_safety.approvals": true,
-    "config_safety.policy_preview": true
-  }
+  "api_version": "v1",
+  "capabilities": [
+    { "id": "config_safety.approvals", "state": "enabled" },
+    { "id": "config_safety.policy_preview", "state": "enabled" }
+  ]
 }
 ```
 
-Edition or extension binaries may advertise capabilities such as:
-
-```json
-{ "features": { "sso.admin": true } }
-```
-
-Known server-side feature gate names are code-defined in `internal/api/feature_gate.go`. They include `config_safety.approvals`, `config_safety.guided_rollback`, `config_safety.canary_rollout`, `config_safety.scoped_push`, `config_safety.drift_dashboard`, `config_safety.version_intelligence`, `config_safety.gitops_export`, `config_safety.policy_preview`, `reports.evidence_pack`, and `audit.viewer`.
-
-Do not use feature flags as an authorization boundary. They are UI/API discovery metadata; protected handlers must still enforce authentication and RBAC.
+Capability discovery is not authorization; protected APIs still enforce authentication, RBAC, and server-side gates. `WithLicenseChecker` is a server-side gate input and does not change the public capability document.
 
 ## Sensitive values
 

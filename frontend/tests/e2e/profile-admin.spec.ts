@@ -28,8 +28,10 @@ test('administrator sees Administration link and stub page', async ({ loggedInPa
     contentType: 'application/json',
     body: JSON.stringify({ total: 0, drifted: 0, current: 0, unknown: 0, items: [] }),
   }))
-  await page.route('**/api/features*', (route) => route.fulfill({
-    status: 200, contentType: 'application/json', body: JSON.stringify({ features: {} }),
+  await page.route('**/api/v1/capabilities*', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ api_version: 'v1', capabilities: [] }),
   }))
   await mockMe(page, {
     groups: [{ id: 'grp_system_administrator', name: 'administrator', role: 'administrator', is_system: true, created_at: new Date().toISOString() }],

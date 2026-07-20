@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { configSafetyAPI } from '../api/client'
-import { useFeature } from '../hooks/useFeature'
+import { useCapability } from '../hooks/useCapability'
 import { hasPerm } from '../lib/perm'
 import { useStore } from '../store'
 import type {
@@ -340,11 +340,11 @@ function EvidenceReportPanel({
 export default function ConfigDriftDashboard() {
   const { t } = useTranslation()
   const me = useStore((s) => s.me)
-  const { enabled: driftDashboardEnabled, isLoading: driftDashboardLoading } = useFeature(
+  const { enabled: driftDashboardEnabled, isLoading: driftDashboardLoading } = useCapability(
     'config_safety.drift_dashboard',
   )
   const { enabled: evidencePackEnabled, isLoading: evidencePackLoading } =
-    useFeature('reports.evidence_pack')
+    useCapability('reports.evidence_pack')
   const canExportReports = hasPerm(me?.groups, 'reports:export')
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['config-safety', 'drift'],
