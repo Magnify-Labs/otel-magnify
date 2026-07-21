@@ -1,0 +1,3 @@
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "Not reachable: the repository imports only golang.org/x/crypto/bcrypt; GO-2026-5932 affects golang.org/x/crypto/openpgp. govulncheck is the CI reachability gate."
