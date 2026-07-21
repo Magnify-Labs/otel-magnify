@@ -87,13 +87,15 @@ type RuntimeOptions struct {
 
 const defaultRuntimeTimeout = 5 * time.Second
 
-// pipelineSectionToCategory maps the plural section name used inside a pipeline
-// to the corresponding top-level section (both happen to match, but we keep
-// the mapping explicit so callers don't rely on the identity).
-var pipelineSectionToCategory = map[string]string{
-	"receivers":  "receivers",
-	"processors": "processors",
-	"exporters":  "exporters",
+// pipelineSections keeps validation output stable while mapping each pipeline
+// section to the corresponding top-level component category.
+var pipelineSections = [...]struct {
+	name     string
+	category string
+}{
+	{name: "receivers", category: "receivers"},
+	{name: "processors", category: "processors"},
+	{name: "exporters", category: "exporters"},
 }
 
 // Validate runs the light validation. `available` may be nil, in which case
@@ -268,7 +270,9 @@ func validateCollectorStructure(root map[string]any) (Check, []componentRef, map
 				check.Messages = append(check.Messages, Message{Code: "missing_pipeline_section", Severity: "error", Message: fmt.Sprintf("pipeline %q is missing '%s'", name, required), Path: "service.pipelines." + name + "." + required})
 			}
 		}
-		for section, category := range pipelineSectionToCategory {
+		for _, pipelineSection := range pipelineSections {
+			section := pipelineSection.name
+			category := pipelineSection.category
 			refsInSection := toStringSlice(pipeline[section])
 			for i, id := range refsInSection {
 				path := fmt.Sprintf("service.pipelines.%s.%s[%d]", name, section, i)

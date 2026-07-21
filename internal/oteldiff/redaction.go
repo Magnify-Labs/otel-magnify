@@ -75,7 +75,7 @@ func redactValue(v any, path string) any {
 	}
 }
 func isSensitivePath(path string) bool {
-	parts := strings.FieldsFunc(strings.ToLower(path), func(r rune) bool { return r == '.' || r == '_' || r == '-' || r == '/' || r == '[' || r == ']' })
+	parts := strings.FieldsFunc(strings.ToLower(path), func(r rune) bool { return r == '.' || r == '/' || r == '[' || r == ']' })
 	for _, p := range parts {
 		if isSecretKey(p) {
 			return true
