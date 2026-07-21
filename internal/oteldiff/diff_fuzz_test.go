@@ -12,6 +12,22 @@ import (
 
 const maxDiffFuzzInputBytes = 64 << 10
 
+func TestFuzzRedactionValuesAreOpaque(t *testing.T) {
+	values := fuzzRedactionValues("base", []byte("fixture"))
+	assertFuzzRedactionValuesAreOpaque(t, values)
+
+	authorization := "Custom " + values.authorization
+	if looksSecret(authorization) {
+		t.Fatalf("generated authorization must not satisfy looksSecret: %q", authorization)
+	}
+	if looksSecret("credentials") {
+		t.Fatal("endpoint query key must not satisfy looksSecret")
+	}
+	if bytes.Contains(fuzzConfigWithRedactionValues(values), []byte("Bearer ")) {
+		t.Fatal("generated authorization must not use the Bearer scheme")
+	}
+}
+
 func FuzzCompare(f *testing.F) {
 	base := loadFuzzFixture(f, "base.yaml")
 
@@ -50,20 +66,23 @@ func FuzzCompare(f *testing.F) {
 			t.Fatalf("Compare is not deterministic:\nfirst:  %s\nsecond: %s", firstJSON, secondJSON)
 		}
 
-		baseSecret := fuzzSecret("base", baseYAML)
-		targetSecret := fuzzSecret("target", targetYAML)
+		baseValues := fuzzRedactionValues("base", baseYAML)
+		targetValues := fuzzRedactionValues("target", targetYAML)
+		assertFuzzRedactionValuesAreOpaque(t, baseValues, targetValues)
 		redacted := Compare(
-			fuzzConfigWithSecret(baseSecret),
-			fuzzConfigWithSecret(targetSecret),
+			fuzzConfigWithRedactionValues(baseValues),
+			fuzzConfigWithRedactionValues(targetValues),
 		)
 		redactedJSON := assertConfigDiffInvariants(t, redacted)
 
 		if !redacted.Valid {
 			t.Fatalf("generated redaction configs must be valid: %#v", redacted.Diagnostics)
 		}
-		for _, secret := range []string{baseSecret, targetSecret} {
-			if bytes.Contains(redactedJSON, []byte(secret)) {
-				t.Fatalf("diff leaked secret %q: %s", secret, redactedJSON)
+		for _, values := range []fuzzRedactionValueSet{baseValues, targetValues} {
+			for _, value := range values.all() {
+				if bytes.Contains(redactedJSON, []byte(value)) {
+					t.Fatalf("diff leaked redaction value %q: %s", value, redactedJSON)
+				}
 			}
 		}
 		if !bytes.Contains(redactedJSON, []byte(MaskedValue)) {
@@ -135,12 +154,55 @@ func assertConfigDiffInvariants(t *testing.T, diff ConfigDiff) []byte {
 	return body
 }
 
-func fuzzSecret(side string, input []byte) string {
-	sum := sha256.Sum256(input)
-	return side + "-secret-" + hex.EncodeToString(sum[:])
+type fuzzRedactionValueSet struct {
+	endpointUserinfo string
+	endpointQuery    string
+	authorization    string
+	apiKey           string
+	password         string
 }
 
-func fuzzConfigWithSecret(secret string) []byte {
+func (v fuzzRedactionValueSet) all() []string {
+	return []string{v.endpointUserinfo, v.endpointQuery, v.authorization, v.apiKey, v.password}
+}
+
+func fuzzRedactionValues(side string, input []byte) fuzzRedactionValueSet {
+	return fuzzRedactionValueSet{
+		endpointUserinfo: fuzzOpaqueValue(side, 1, input),
+		endpointQuery:    fuzzOpaqueValue(side, 2, input),
+		authorization:    fuzzOpaqueValue(side, 3, input),
+		apiKey:           fuzzOpaqueValue(side, 4, input),
+		password:         fuzzOpaqueValue(side, 5, input),
+	}
+}
+
+func fuzzOpaqueValue(side string, location int, input []byte) string {
+	sum := sha256.Sum256(append([]byte(side), input...))
+	sidePrefix := "a"
+	if side == "target" {
+		sidePrefix = "b"
+	}
+	return fmt.Sprintf("v%s%d%s", sidePrefix, location, hex.EncodeToString(sum[:]))
+}
+
+func assertFuzzRedactionValuesAreOpaque(t *testing.T, valueSets ...fuzzRedactionValueSet) {
+	t.Helper()
+
+	seen := make(map[string]struct{})
+	for _, values := range valueSets {
+		for _, value := range values.all() {
+			if looksSecret(value) {
+				t.Fatalf("generated redaction value must not satisfy looksSecret: %q", value)
+			}
+			if _, ok := seen[value]; ok {
+				t.Fatalf("generated redaction values must be distinct: %q", value)
+			}
+			seen[value] = struct{}{}
+		}
+	}
+}
+
+func fuzzConfigWithRedactionValues(values fuzzRedactionValueSet) []byte {
 	return []byte(fmt.Sprintf(`
 receivers:
   otlp: {}
@@ -148,9 +210,9 @@ processors:
   batch: {}
 exporters:
   otlp:
-    endpoint: https://collector:%s@telemetry.example:4317/v1/traces?token=%s
+    endpoint: https://collector:%s@telemetry.example:4317/v1/traces?credentials=%s
     headers:
-      Authorization: Bearer %s
+      Authorization: Custom %s
       x-api-key: %s
     auth:
       username: collector
@@ -161,5 +223,11 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp]
-`, secret, secret, secret, secret, secret))
+`,
+		values.endpointUserinfo,
+		values.endpointQuery,
+		values.authorization,
+		values.apiKey,
+		values.password,
+	))
 }
